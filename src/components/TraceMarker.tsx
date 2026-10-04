@@ -12,6 +12,10 @@ export function TraceMarker(props: { hit: TraceHit | null }) {
         return (
           <div
             class="trace"
+            classList={{
+              'flip-x': hit().sx > hit().viewWidth - 170,
+              'flip-y': hit().sy < 44,
+            }}
             style={{
               transform: `translate(${hit().sx}px, ${hit().sy}px)`,
               '--swatch': hit().color,

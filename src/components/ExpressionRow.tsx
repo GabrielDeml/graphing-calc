@@ -1,4 +1,13 @@
-import { createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Switch } from 'solid-js';
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  Match,
+  on,
+  onCleanup,
+  Show,
+  Switch,
+} from 'solid-js';
 import { formatValue } from '../engine/format';
 import { analysis } from '../state/analysis';
 import { type Row, removeRow, setColor, toggleHidden, updateSource } from '../state/doc';
@@ -148,7 +157,12 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
               <Match when={res().kind === 'slider' && res().slider}>
                 {(s) => <SliderControl row={props.row} name={s().name} value={s().value} />}
               </Match>
-              <Match when={(res().kind === 'constant' || res().kind === 'varDef') && res().value !== undefined}>
+              <Match
+                when={
+                  (res().kind === 'constant' || res().kind === 'varDef') &&
+                  res().value !== undefined
+                }
+              >
                 <output class="expr-value">= {formatValue(res().value as number)}</output>
               </Match>
               <Match when={res().kind === 'parametric'}>

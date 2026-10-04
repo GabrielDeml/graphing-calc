@@ -1,5 +1,5 @@
-import { Show } from 'solid-js';
 import { useRegisterSW } from 'virtual:pwa-register/solid';
+import { createEffect, onCleanup, Show } from 'solid-js';
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -13,6 +13,13 @@ export function UpdatePrompt() {
     onRegisteredSW(_url, registration) {
       if (registration) setInterval(() => registration.update(), HOUR_MS);
     },
+  });
+
+  // "Ready to work offline" is informational; let it go away by itself.
+  createEffect(() => {
+    if (!offlineReady() || needRefresh()) return;
+    const timer = setTimeout(() => setOfflineReady(false), 4000);
+    onCleanup(() => clearTimeout(timer));
   });
 
   const close = () => {

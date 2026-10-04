@@ -28,8 +28,8 @@
 
   --panel-collapsed: 104px;
   --keypad-key-h: 46px;
-  --font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
   font-family: var(--font);
 }
 
@@ -120,15 +120,14 @@ button {
 
 .app {
   display: grid;
-  height: 100%;
   height: 100dvh;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
   /* Desktop: sidebar (list over keypad) beside the graph. */
   grid-template-columns: 360px minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr) auto;
   grid-template-areas:
-    'panel graph'
-    'keypad graph';
+    "panel graph"
+    "keypad graph";
 }
 
 .app.sidebar-collapsed {
@@ -187,9 +186,9 @@ button {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, var(--graph-row, 55fr)) minmax(0, var(--panel-row, 45fr)) auto;
     grid-template-areas:
-      'graph'
-      'panel'
-      'keypad';
+      "graph"
+      "panel"
+      "keypad";
     padding-bottom: env(safe-area-inset-bottom);
   }
 
@@ -220,9 +219,9 @@ button {
     display: block;
   }
 
-  .desktop-only,
-  .show-sidebar {
-    display: none !important;
+  .app .desktop-only,
+  .app .show-sidebar {
+    display: none;
   }
 
   .graph-controls {
@@ -405,7 +404,19 @@ button {
   text-align: right;
 }
 
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .color-picker {
+  margin: 0;
+  border: none;
+  min-inline-size: 0;
   position: absolute;
   top: 36px;
   right: 4px;
@@ -428,7 +439,7 @@ button {
   cursor: pointer;
 }
 
-.color-choice[aria-checked='true'] {
+.color-choice[aria-pressed="true"] {
   border-color: var(--fg);
 }
 
@@ -505,16 +516,21 @@ button {
 /* ---------- Slider ---------- */
 
 .slider {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 56px minmax(60px, 1fr) 56px;
   align-items: center;
   gap: 6px;
   margin-top: 4px;
-  flex-wrap: wrap;
+}
+
+.slider .slider-bound {
+  width: 100%;
 }
 
 .slider-range {
-  flex: 1 1 100px;
-  min-width: 80px;
+  min-width: 0;
+  width: 100%;
+  margin: 0;
   accent-color: var(--accent);
 }
 
@@ -531,15 +547,22 @@ button {
 }
 
 .slider-step {
-  display: flex;
+  /* Step is a detail: shown while the row is being edited. */
+  display: none;
+  grid-column: 2 / -1;
+  justify-self: end;
   align-items: center;
   gap: 4px;
   font-size: 12px;
   color: var(--muted);
 }
 
+.expr-row:focus-within .slider-step {
+  display: flex;
+}
+
 .slider-step .slider-bound {
-  width: 52px;
+  width: 56px;
 }
 
 .range-control {
@@ -612,6 +635,16 @@ button {
   white-space: nowrap;
 }
 
+.trace.flip-x .trace-label {
+  left: auto;
+  right: 10px;
+}
+
+.trace.flip-y .trace-label {
+  bottom: auto;
+  top: 10px;
+}
+
 .debug-overlay {
   position: absolute;
   left: 8px;
@@ -667,7 +700,7 @@ button {
   touch-action: manipulation;
 }
 
-.keypad-tab[aria-selected='true'] {
+.keypad-tab[aria-selected="true"] {
   background: var(--key-bg);
   color: var(--fg);
 }

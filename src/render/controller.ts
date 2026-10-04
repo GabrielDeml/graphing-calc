@@ -31,6 +31,8 @@ export interface TraceHit {
   color: string;
   /** Pixels per unit at trace time (sets the label precision). */
   ppu: number;
+  viewWidth: number;
+  viewHeight: number;
 }
 
 const IDLE_MS = 150;
@@ -118,7 +120,7 @@ export class GraphController {
     const step = (now: number) => {
       const t = Math.min(1, (now - start) / ms);
       const eased = 1 - (1 - t) ** 3;
-      this.setView(lerpViewport(from, target, eased));
+      this.setView(lerpViewport(from, target, eased, this.view));
       if (t < 1) this.animation = requestAnimationFrame(step);
     };
     this.animation = requestAnimationFrame(step);
@@ -150,7 +152,14 @@ export class GraphController {
       const plot = row.plot;
       let hit = null;
       if ((plot.kind === 'explicitY' || plot.kind === 'explicitX') && !plot.ineq) {
-        hit = traceExplicit(plot.f, this.view, plot.kind === 'explicitY' ? 'x' : 'y', sx, sy, bestDist);
+        hit = traceExplicit(
+          plot.f,
+          this.view,
+          plot.kind === 'explicitY' ? 'x' : 'y',
+          sx,
+          sy,
+          bestDist,
+        );
       }
       for (const curve of geom.curves) {
         const h = nearestOnPolyline(curve, this.view, sx, sy, bestDist);
@@ -170,6 +179,8 @@ export class GraphController {
           sy: toScreenY(this.view, hit.y),
           color: this.theme.palette[row.colorIndex] ?? this.theme.palette[0],
           ppu: this.view.ppuX,
+          viewWidth: this.view.width,
+          viewHeight: this.view.height,
         };
       }
     }
@@ -233,7 +244,9 @@ export class GraphController {
     drawScene(ctx, view, drawRows, this.theme.background);
 
     const b = viewBounds(view);
-    this.container.dataset.view = [b.xmin, b.xmax, b.ymin, b.ymax].map((n) => n.toPrecision(6)).join(',');
+    this.container.dataset.view = [b.xmin, b.xmax, b.ymin, b.ymax]
+      .map((n) => n.toPrecision(6))
+      .join(',');
     this.lastFrameMs = performance.now() - t0;
     this.onDraw?.();
   }

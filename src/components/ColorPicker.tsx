@@ -7,7 +7,7 @@ export function ColorPicker(props: {
   onPick: (index: number) => void;
   onClose: () => void;
 }) {
-  let el!: HTMLDivElement;
+  let el!: HTMLFieldSetElement;
   onMount(() => {
     const away = (e: PointerEvent) => {
       if (!el.contains(e.target as Node)) props.onClose();
@@ -19,17 +19,17 @@ export function ColorPicker(props: {
       document.removeEventListener('pointerdown', away, true);
       document.removeEventListener('keydown', esc);
     });
-    (el.querySelector('[aria-checked="true"]') as HTMLElement | null)?.focus();
+    (el.querySelector('[aria-pressed="true"]') as HTMLElement | null)?.focus();
   });
   return (
-    <div class="color-picker" role="radiogroup" aria-label="Curve color" ref={el}>
+    <fieldset class="color-picker" ref={el}>
+      <legend class="visually-hidden">Curve color</legend>
       <For each={props.palette}>
         {(color, i) => (
           <button
             type="button"
-            role="radio"
             class="color-choice"
-            aria-checked={i() === props.selected}
+            aria-pressed={i() === props.selected}
             aria-label={PALETTE_NAMES[i()]}
             style={{ '--swatch': color }}
             onClick={() => {
@@ -39,6 +39,6 @@ export function ColorPicker(props: {
           />
         )}
       </For>
-    </div>
+    </fieldset>
   );
 }

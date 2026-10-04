@@ -1,13 +1,4 @@
-import {
-  BLUE,
-  countColorNear,
-  expect,
-  exprInput,
-  GREEN,
-  openApp,
-  setExpr,
-  test,
-} from './helpers';
+import { BLUE, countColorNear, expect, exprInput, GREEN, openApp, setExpr, test } from './helpers';
 
 test('a slider moves the curves that use it', async ({ page }) => {
   await openApp(page);

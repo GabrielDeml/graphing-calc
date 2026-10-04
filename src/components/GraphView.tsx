@@ -54,7 +54,7 @@ export function GraphView() {
       const rows: SceneRow[] = [];
       for (const row of doc.rows) {
         const res = a.byId.get(row.id);
-        if (!res || res.status !== 'ok' || !res.plot || row.hidden) continue;
+        if (res?.status !== 'ok' || !res.plot || row.hidden) continue;
         rows.push({ id: row.id, plot: res.plot, deps: res.deps, colorIndex: row.colorIndex });
       }
       palette(); // repaint when the scheme changes

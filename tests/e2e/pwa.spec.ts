@@ -25,6 +25,8 @@ test.describe('PWA', () => {
     await page.evaluate(async () => {
       await navigator.serviceWorker.ready;
     });
+    // Shown once, when the service worker has precached everything on first install.
+    await expect(page.getByTestId('sw-toast')).toContainText(/offline/i);
     // The first load isn't controlled yet; reload until the service worker takes over.
     await expect
       .poll(async () => {
@@ -32,7 +34,6 @@ test.describe('PWA', () => {
         return page.evaluate(() => !!navigator.serviceWorker.controller);
       })
       .toBe(true);
-    await expect(page.getByTestId('sw-toast')).toContainText(/offline/i);
 
     await context.setOffline(true);
     await page.reload();

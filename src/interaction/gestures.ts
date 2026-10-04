@@ -99,7 +99,8 @@ export function attachGestures(
     e.preventDefault();
     const p = local(e);
     const factor = wheelZoomFactor(e.deltaY, e.deltaMode, e.ctrlKey, el.clientHeight);
-    controller.setView(zoomAt(controller.view, p.x, p.y, factor));
+    const next = zoomAt(controller.view, p.x, p.y, factor);
+    if (next !== controller.view) controller.setView(next);
     cb.hover(p.x, p.y);
   };
 

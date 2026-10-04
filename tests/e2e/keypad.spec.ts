@@ -26,7 +26,10 @@ test.describe('math keypad on touch devices', () => {
     await openApp(page);
     await exprInput(page, 0).tap();
     for (const id of ['y', 'eq', 'x', 'pow', '2']) {
-      await page.getByTestId(new RegExp(`^key-${id}$`)).first().tap();
+      await page
+        .getByTestId(new RegExp(`^key-${id}$`))
+        .first()
+        .tap();
       await expect(exprInput(page, 0)).toBeFocused();
     }
     await expect(exprInput(page, 0)).toHaveValue('y=x^2');

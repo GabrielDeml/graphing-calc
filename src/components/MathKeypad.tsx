@@ -122,7 +122,7 @@ function Key(props: { def: KeyDef }) {
 export function MathKeypad() {
   const page = () => getPage(keypad.page(), keypad.shift());
   return (
-    <div class="keypad" role="group" aria-label="Math keypad" data-testid="keypad">
+    <section class="keypad" aria-label="Math keypad" data-testid="keypad">
       <div class="keypad-tabs" role="tablist">
         <For each={PAGE_ORDER}>
           {(id) => (
@@ -153,6 +153,6 @@ export function MathKeypad() {
       <div class="keypad-grid" style={{ '--cols': String(page().columns) }}>
         <For each={page().rows.flat()}>{(def) => <Key def={def} />}</For>
       </div>
-    </div>
+    </section>
   );
 }

@@ -15,8 +15,7 @@ export interface EditTarget {
   deleteEmpty?(): void;
 }
 
-const coarsePointer =
-  typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+const coarsePointer = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 
 export const keypad = createRoot(() => {
   /** Keypad mode: math fields suppress the native keyboard (inputmode="none"). */

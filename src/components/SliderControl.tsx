@@ -66,8 +66,8 @@ export function SliderControl(props: { row: Row; name: string; value: number }) 
         onEnter={blurActive}
         ariaLabel={`${props.name} slider maximum`}
       />
-      <label class="slider-step">
-        <span>step</span>
+      <span class="slider-step">
+        <span aria-hidden="true">step</span>
         <MathField
           class="slider-bound"
           value={props.row.slider.step}
@@ -76,7 +76,7 @@ export function SliderControl(props: { row: Row; name: string; value: number }) 
           onEnter={blurActive}
           ariaLabel={`${props.name} slider step`}
         />
-      </label>
+      </span>
     </div>
   );
 }

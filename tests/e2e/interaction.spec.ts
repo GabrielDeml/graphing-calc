@@ -14,9 +14,9 @@ test.describe('desktop interaction', () => {
     const before = await view(page);
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.wheel(0, -400);
-    await expect.poll(async () => (await view(page))[1] - (await view(page))[0]).toBeLessThan(
-      (before[1] - before[0]) * 0.9,
-    );
+    await expect
+      .poll(async () => (await view(page))[1] - (await view(page))[0])
+      .toBeLessThan((before[1] - before[0]) * 0.9);
 
     const zoomed = await view(page);
     await page.mouse.move(box.x + 200, box.y + 200);

@@ -2,7 +2,7 @@ import type { PlotItem } from '../engine/types';
 import { contourImplicit } from './marchingSquares';
 import { explicitRegion } from './regions';
 import { sampleExplicit } from './sampleExplicit';
-import { samplePolar, sampleParametric } from './sampleParametric';
+import { sampleParametric, samplePolar } from './sampleParametric';
 import type { Quality, RowGeometry, Viewport } from './types';
 import { viewKey } from './viewport';
 
@@ -21,7 +21,9 @@ export function buildRowGeometry(plot: PlotItem, view: Viewport, quality: Qualit
       };
     }
     case 'parametric':
-      return curveOnly(sampleParametric(plot.fx, plot.fy, plot.tMin(), plot.tMax(), view, { quality }));
+      return curveOnly(
+        sampleParametric(plot.fx, plot.fy, plot.tMin(), plot.tMax(), view, { quality }),
+      );
     case 'polar':
       return curveOnly(samplePolar(plot.r, plot.thetaMin(), plot.thetaMax(), view, { quality }));
     case 'points': {

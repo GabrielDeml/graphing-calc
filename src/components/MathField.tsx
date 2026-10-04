@@ -114,7 +114,7 @@ export function MathField(props: MathFieldProps) {
           if (keypad.nativeEl() === input) keypad.setNativeEl(null);
           props.onBlur?.();
         }}
-        onPointerDown={openKeypad}
+        onClick={openKeypad}
       />
     </div>
   );
