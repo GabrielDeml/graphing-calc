@@ -50,7 +50,8 @@ export class GraphController {
   lastFrameMs = 0;
 
   private ctx: CanvasRenderingContext2D;
-  private dpr = 1;
+  /** Device pixels per CSS pixel of the backing store, per axis. */
+  private scale = { x: 1, y: 1 };
   private rows: readonly SceneRow[] = [];
   private values: ReadonlyMap<string, number> = new Map();
   private cache = new SceneCache();
@@ -60,6 +61,8 @@ export class GraphController {
   private quality: Quality = 'final';
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
   private animation = 0;
+  /** Where the running zoom/home animation ends, so repeated presses compose. */
+  private animTarget: Viewport | null = null;
   private hasView = false;
   private disposers: Array<() => void> = [];
 
@@ -99,17 +102,24 @@ export class GraphController {
     return this.theme.palette;
   }
 
+  /** Sampling quality of the current frame (shown in the ?debug overlay). */
+  get currentQuality(): Quality {
+    return this.quality;
+  }
+
   setScene(rows: readonly SceneRow[], values: ReadonlyMap<string, number>): void {
+    // Same plots with new variable values (a slider playing or being dragged): sample the rows
+    // that depend on them at interactive quality, then settle to final once the values rest.
+    if (sameItems(rows, this.rows) && changedValues(values, this.values)) this.markInteractive();
     this.rows = rows;
     this.values = values;
     this.invalidate();
   }
 
+  /** A view change from user input; it overrides any running zoom/home animation. */
   setView(v: Viewport, interactive = true): void {
-    this.view = v;
-    if (interactive) this.markInteractive();
-    this.onViewChange?.(v);
-    this.invalidate();
+    this.cancelAnimation();
+    this.applyView(v, interactive);
   }
 
   /** Animate to a target view (zoom buttons, home). */
@@ -117,21 +127,41 @@ export class GraphController {
     cancelAnimationFrame(this.animation);
     const from = this.view;
     const start = performance.now();
+    this.animTarget = target;
     const step = (now: number) => {
       const t = Math.min(1, (now - start) / ms);
       const eased = 1 - (1 - t) ** 3;
-      this.setView(lerpViewport(from, target, eased, this.view));
+      this.applyView(lerpViewport(from, target, eased, this.view));
       if (t < 1) this.animation = requestAnimationFrame(step);
+      else this.cancelAnimation();
     };
     this.animation = requestAnimationFrame(step);
   }
 
+  /**
+   * Jump to the end of a running animation. Gestures, wheel and keys call this before reading
+   * `view`, so input during a zoom applies on top of the zoom instead of being overwritten.
+   */
+  settle(): void {
+    const target = this.animTarget;
+    if (!target) return;
+    this.cancelAnimation();
+    this.applyView(lerpViewport(target, target, 1, this.view));
+  }
+
+  /** Zoom about the center; a press during an animation zooms from where that one ends. */
   zoomCenter(factor: number): void {
-    this.animateTo(zoomAt(this.view, this.view.width / 2, this.view.height / 2, factor));
+    const base = this.animTarget ?? this.view;
+    this.animateTo(zoomAt(base, base.width / 2, base.height / 2, factor));
   }
 
   home(): void {
     this.animateTo(homeViewport(this.view.width, this.view.height));
+  }
+
+  /** Whether a row is in the current scene (a pinned trace drops its anchor when it isn't). */
+  hasRow(id: string): boolean {
+    return this.rows.some((r) => r.id === id);
   }
 
   invalidate(): void {
@@ -187,6 +217,19 @@ export class GraphController {
     return best;
   }
 
+  private applyView(v: Viewport, interactive = true): void {
+    this.view = v;
+    if (interactive) this.markInteractive();
+    this.onViewChange?.(v);
+    this.invalidate();
+  }
+
+  private cancelAnimation(): void {
+    cancelAnimationFrame(this.animation);
+    this.animation = 0;
+    this.animTarget = null;
+  }
+
   private markInteractive(): void {
     this.quality = 'interactive';
     clearTimeout(this.idleTimer);
@@ -197,14 +240,21 @@ export class GraphController {
   }
 
   private onResize(entry: ResizeObserverEntry | undefined): void {
-    const width = this.container.clientWidth;
-    const height = this.container.clientHeight;
-    if (width === 0 || height === 0) return;
+    // Fractional CSS size: grid rows often give the graph heights like 461.4375px.
+    const box = entry?.contentBoxSize?.[0];
+    const rect = box ? null : this.container.getBoundingClientRect();
+    const width = box ? box.inlineSize : (rect as DOMRect).width;
+    const height = box ? box.blockSize : (rect as DOMRect).height;
+    if (!(width > 0 && height > 0)) return;
     const dpr = window.devicePixelRatio || 1;
+    // The exact device-pixel box gives crisp 1:1 pixels, but only trust it when it agrees with
+    // devicePixelRatio (Chromium's DPR emulation reports it in CSS pixels).
     const devBox = entry?.devicePixelContentBoxSize?.[0];
-    const devW = devBox ? devBox.inlineSize : Math.round(width * dpr);
-    const devH = devBox ? devBox.blockSize : Math.round(height * dpr);
-    this.dpr = devW / width;
+    const exact = devBox && Math.abs(devBox.inlineSize / width - dpr) < 0.05;
+    const devW = exact ? devBox.inlineSize : Math.max(1, Math.round(width * dpr));
+    const devH = exact ? devBox.blockSize : Math.max(1, Math.round(height * dpr));
+    // Separate scales so the drawing covers the whole backing store (no unpainted edge row).
+    this.scale = { x: devW / width, y: devH / height };
     this.canvas.width = devW;
     this.canvas.height = devH;
     this.view = this.hasView
@@ -221,8 +271,8 @@ export class GraphController {
   private draw(): void {
     const t0 = performance.now();
     const { ctx, view } = this;
-    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    drawGrid(ctx, view, this.theme, this.dpr);
+    ctx.setTransform(this.scale.x, 0, 0, this.scale.y, 0, 0);
+    drawGrid(ctx, view, this.theme, this.scale);
 
     const drawRows = [];
     const geometries = new Map<string, RowGeometry>();
@@ -250,4 +300,22 @@ export class GraphController {
     this.lastFrameMs = performance.now() - t0;
     this.onDraw?.();
   }
+}
+
+function sameItems(a: readonly SceneRow[], b: readonly SceneRow[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].plot !== b[i].plot || a[i].colorIndex !== b[i].colorIndex) return false;
+  }
+  return true;
+}
+
+function changedValues(a: ReadonlyMap<string, number>, b: ReadonlyMap<string, number>): boolean {
+  if (a === b) return false;
+  if (a.size !== b.size) return true;
+  for (const [name, v] of a) {
+    const w = b.get(name);
+    if (!(v === w || (Number.isNaN(v) && Number.isNaN(w)))) return true;
+  }
+  return false;
 }

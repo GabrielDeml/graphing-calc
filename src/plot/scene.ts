@@ -63,10 +63,12 @@ export interface SceneEntry {
 /**
  * Per-row geometry cache. Keyed by PlotItem identity (stable across slider moves), the view, the
  * quality level and the current values of the row's dependencies — so moving a slider re-samples
- * only the rows that depend on it, and hovering never re-samples anything.
+ * only the rows that depend on it, and hovering never re-samples anything. A 'final' geometry
+ * also answers an 'interactive' request for the same view and values: while one slider plays,
+ * rows that don't use it keep their full-quality geometry instead of being re-sampled coarser.
  */
 export class SceneCache {
-  private cache = new WeakMap<PlotItem, { key: string; geometry: RowGeometry }>();
+  private cache = new WeakMap<PlotItem, { key: string; quality: Quality; geometry: RowGeometry }>();
 
   geometry(
     entry: SceneEntry,
@@ -74,12 +76,14 @@ export class SceneCache {
     view: Viewport,
     quality: Quality,
   ): RowGeometry {
-    let key = `${viewKey(view)}|${quality}`;
+    let key = viewKey(view);
     for (const dep of entry.deps) key += `|${values.get(dep)}`;
     const hit = this.cache.get(entry.plot);
-    if (hit && hit.key === key) return hit.geometry;
+    if (hit && hit.key === key && (hit.quality === quality || hit.quality === 'final')) {
+      return hit.geometry;
+    }
     const geometry = buildRowGeometry(entry.plot, view, quality);
-    this.cache.set(entry.plot, { key, geometry });
+    this.cache.set(entry.plot, { key, quality, geometry });
     return geometry;
   }
 

@@ -2,8 +2,9 @@ import { For, onCleanup } from 'solid-js';
 import { applyEdit, type EditOp } from '../keypad/editing';
 import { getPage, type KeyAction, type KeyDef, PAGE_ORDER, type PageId } from '../keypad/layouts';
 import { doc } from '../state/doc';
-import { focusRow } from '../state/focus';
+import { focusRow, revealRow } from '../state/focus';
 import { type EditTarget, keypad } from '../state/keypad';
+import { revealCaret } from './MathField';
 
 const REPEAT_DELAY_MS = 400;
 const REPEAT_EVERY_MS = 60;
@@ -20,13 +21,27 @@ function currentTarget(): EditTarget | null {
   return next?.el.isConnected ? next : null;
 }
 
-function runEdit(op: EditOp): void {
+/**
+ * Apply one edit to the current field. Returns false when an auto-repeating key should stop:
+ * a repeated ⌫ never deletes an emptied row (only a fresh press does), and nothing is edited in
+ * a field that can no longer take focus.
+ */
+function runEdit(op: EditOp, repeated: boolean): boolean {
   const t = currentTarget();
-  if (!t) return;
+  if (!t) return false;
   const el = t.el;
-  if (op.type === 'backspace' && el.value === '' && t.deleteEmpty) {
-    t.deleteEmpty();
-    return;
+  if (document.activeElement !== el) {
+    el.focus({ preventScroll: true });
+    // A hidden (e.g. slider step after its row blurred) or disabled field: drop it, edit nothing.
+    if (document.activeElement !== el) {
+      keypad.setTarget(null);
+      return false;
+    }
+  }
+  if (op.type === 'backspace' && el.value === '') {
+    if (repeated) return false;
+    t.deleteEmpty?.();
+    return true;
   }
   const len = el.value.length;
   const next = applyEdit(
@@ -38,14 +53,16 @@ function runEdit(op: EditOp): void {
     el.value = next.text;
     t.commit(next.text);
   }
-  if (document.activeElement !== el) el.focus({ preventScroll: true });
   el.setSelectionRange(next.selStart, next.selEnd);
+  revealCaret(el);
+  revealRow(el);
+  return true;
 }
 
-function runAction(action: KeyAction): void {
+function runAction(action: KeyAction, repeated = false): boolean {
   switch (action.type) {
     case 'edit':
-      runEdit(action.op);
+      if (!runEdit(action.op, repeated)) return false;
       if (keypad.shift() && action.op.type === 'insert') keypad.setShift(false);
       break;
     case 'enter':
@@ -64,20 +81,25 @@ function runAction(action: KeyAction): void {
       // Handled on click: iOS only opens its keyboard from focus() inside a user gesture.
       break;
   }
+  return true;
 }
 
 /** ⌨ key: let this field use the device keyboard until it loses focus. */
 function useNativeKeyboard(): void {
   const t = currentTarget();
   if (!t) return;
+  // Blur first: MathField's blur handler ends native mode, so the flag must be set after it.
+  // Solid applies inputmode="text" synchronously, before the focus() that opens the keyboard.
+  t.el.blur();
   keypad.setNativeEl(t.el);
   keypad.setOpen(false);
-  t.el.blur();
   t.el.focus();
 }
 
 function Key(props: { def: KeyDef }) {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  /** A pointer press already ran the action, so the click that follows it must not. */
+  let pressed = false;
   const stop = () => {
     clearTimeout(timer);
     timer = undefined;
@@ -96,22 +118,28 @@ function Key(props: { def: KeyDef }) {
         // Keep focus (and the caret) in the field being edited.
         e.preventDefault();
         if (e.button !== 0) return;
-        runAction(props.def.action);
-        if (props.def.repeat) {
-          const repeat = () => {
-            runAction(props.def.action);
-            timer = setTimeout(repeat, REPEAT_EVERY_MS);
-          };
-          timer = setTimeout(repeat, REPEAT_DELAY_MS);
-        }
+        pressed = true;
+        stop();
+        if (!runAction(props.def.action) || !props.def.repeat) return;
+        const repeat = () => {
+          if (runAction(props.def.action, true)) timer = setTimeout(repeat, REPEAT_EVERY_MS);
+          else stop();
+        };
+        timer = setTimeout(repeat, REPEAT_DELAY_MS);
       }}
       onPointerUp={stop}
       onPointerLeave={stop}
       onPointerCancel={stop}
-      onClick={(e) => {
+      onKeyDown={() => {
+        pressed = false;
+      }}
+      onClick={() => {
+        const handled = pressed;
+        pressed = false;
         if (props.def.action.type === 'native') useNativeKeyboard();
-        // Keyboard activation (Enter/Space on a focused key) produces a click without pointerdown.
-        else if (e.detail === 0) runAction(props.def.action);
+        // Keyboard or assistive-technology activation: a click without a pointer press. (Not
+        // `detail === 0`: Chromium also reports 0 for the click ending a long touch press.)
+        else if (!handled) runAction(props.def.action);
       }}
     >
       {props.def.label}

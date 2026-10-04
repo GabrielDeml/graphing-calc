@@ -11,5 +11,13 @@ export const ui = createRoot(() => {
   return { sidebarOpen, setSidebarOpen, panelSnap, setPanelSnap, panelDragPx, setPanelDragPx };
 });
 
+/**
+ * The stacked phone layout (graph over a snapping panel over the keypad). Short landscape phones
+ * use the sidebar layout instead; keep in sync with the media queries in global.css.
+ */
 export const mobileQuery =
-  typeof matchMedia === 'function' ? matchMedia('(max-width: 767px)') : null;
+  typeof matchMedia === 'function'
+    ? matchMedia(
+        '(max-width: 767px) and (min-height: 501px), (max-width: 767px) and (orientation: portrait)',
+      )
+    : null;

@@ -54,8 +54,9 @@ Syntax notes:
   - Tap the color dot to show or hide a curve.
 - **Math keypad:** on touch devices, tapping a row opens the built-in keypad, which has three pages:
   numbers, functions and letters. The ⌨ key on the letters page switches that row to the device
-  keyboard, and the ⌨ button in the header switches modes for good. On desktop the keypad is off
-  by default and can be turned on from the header.
+  keyboard, and the ⌨ button in the header switches modes for good. Tapping the graph or ⌄ hides
+  the keypad; on a phone held sideways, the list and keypad sit beside the graph. On desktop the
+  keypad is off by default and can be turned on from the header.
 
 ## Development
 

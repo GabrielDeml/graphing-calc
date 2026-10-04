@@ -37,6 +37,12 @@ export function GraphView() {
       if (anchor.mode === 'hover') {
         setTrace(c.trace(anchor.sx, anchor.sy, 20));
       } else {
+        // A pin on a row that was hidden or deleted goes away (it would block hover otherwise).
+        if (!c.hasRow(anchor.rowId)) {
+          anchor = null;
+          setTrace(null);
+          return;
+        }
         const sx = (anchor.x - c.view.cx) * c.view.ppuX + c.view.width / 2;
         const sy = c.view.height / 2 - (anchor.y - c.view.cy) * c.view.ppuY;
         const hit = c.trace(sx, sy, 32);
@@ -46,7 +52,7 @@ export function GraphView() {
     };
     c.onDraw = () => {
       retrace();
-      if (debugEl) debugEl.textContent = `${c.lastFrameMs.toFixed(1)} ms`;
+      if (debugEl) debugEl.textContent = `${c.lastFrameMs.toFixed(1)} ms ${c.currentQuality}`;
     };
 
     createEffect(() => {
@@ -79,17 +85,22 @@ export function GraphView() {
         }
       },
       tap(sx, sy, pointerType) {
-        const hit = c.trace(sx, sy, pointerType === 'touch' ? 32 : 20);
-        anchor = hit ? { mode: 'pinned', x: hit.x, y: hit.y, rowId: hit.rowId } : null;
-        setTrace(hit);
-      },
-      down(pointerType) {
-        // Tapping the graph on a phone dismisses the keypad and finishes editing.
+        // Tapping the graph on a phone dismisses the keypad and finishes editing. Only on a tap:
+        // hiding it when a drag starts would re-layout the graph under the finger.
         if (pointerType === 'touch' || isCoarsePointer) {
           keypad.setOpen(false);
           const active = document.activeElement;
           if (active instanceof HTMLInputElement) active.blur();
         }
+        if (pointerType === 'mouse') {
+          // A mouse traces by hovering; a click (or double-click zoom) must not pin it.
+          anchor = { mode: 'hover', sx, sy };
+          retrace();
+          return;
+        }
+        const hit = c.trace(sx, sy, pointerType === 'touch' ? 32 : 20);
+        anchor = hit ? { mode: 'pinned', x: hit.x, y: hit.y, rowId: hit.rowId } : null;
+        setTrace(hit);
       },
     });
 

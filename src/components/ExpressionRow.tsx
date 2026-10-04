@@ -10,8 +10,8 @@ import {
 } from 'solid-js';
 import { formatValue } from '../engine/format';
 import { analysis } from '../state/analysis';
-import { type Row, removeRow, setColor, toggleHidden, updateSource } from '../state/doc';
-import { registerRowInput, unregisterRowInput } from '../state/focus';
+import { doc, type Row, removeRow, setColor, toggleHidden, updateSource } from '../state/doc';
+import { focusRow, registerRowInput, unregisterRowInput } from '../state/focus';
 import {
   addSliders,
   deleteEmptyBackward,
@@ -31,6 +31,7 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
   const [errorVisible, setErrorVisible] = createSignal(false);
   const [pickerOpen, setPickerOpen] = createSignal(false);
   let input: HTMLInputElement | undefined;
+  let colorButton: HTMLButtonElement | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   // Errors show after a pause in typing (or on blur) and disappear as soon as they are fixed.
@@ -49,6 +50,19 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
   const error = () => (errorVisible() ? result()?.error : undefined);
   const color = () => props.palette[props.row.colorIndex] ?? props.palette[0];
   const plots = () => result()?.status === 'ok' && !!result()?.plot;
+  const rangeVariable = (): 't' | 'θ' | null => {
+    const kind = result()?.kind;
+    return kind === 'parametric' ? 't' : kind === 'polar' ? 'θ' : null;
+  };
+
+  /** × button: keyboard users keep their place in the list (pointer users are left alone). */
+  const remove = (e: MouseEvent) => {
+    const i = doc.rows.findIndex((r) => r.id === props.row.id);
+    removeRow(props.row.id);
+    if (e.detail !== 0) return;
+    const next = doc.rows[i] ?? doc.rows[i - 1];
+    if (next) focusRow(next.id, 'end');
+  };
 
   const onKeyDown = (e: KeyboardEvent & { currentTarget: HTMLInputElement }) => {
     const el = e.currentTarget;
@@ -59,11 +73,12 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
         e.preventDefault();
         enterFrom(props.row.id);
         break;
+      // Auto-repeat stops at an empty row: only a fresh press deletes it.
       case 'Backspace':
-        if (empty && deleteEmptyBackward(props.row.id)) e.preventDefault();
+        if (empty && (e.repeat || deleteEmptyBackward(props.row.id))) e.preventDefault();
         break;
       case 'Delete':
-        if (empty && deleteEmptyForward(props.row.id)) e.preventDefault();
+        if (empty && (e.repeat || deleteEmptyForward(props.row.id))) e.preventDefault();
         break;
       case 'ArrowUp':
         if (focusSibling(props.row.id, -1, caret)) e.preventDefault();
@@ -129,6 +144,12 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
           testId="expr-input"
         />
 
+        {/* Outside the error gate: a bad t/θ range is reported as a row error, and the fields
+            must stay mounted (and focused) so it can be fixed. */}
+        <Show when={rangeVariable()}>
+          {(v) => <RangeControl row={props.row} variable={v()} showInvalid={!!error()} />}
+        </Show>
+
         <Show when={error()}>
           {(err) => (
             <div class="expr-error" role="alert">
@@ -165,12 +186,6 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
               >
                 <output class="expr-value">= {formatValue(res().value as number)}</output>
               </Match>
-              <Match when={res().kind === 'parametric'}>
-                <RangeControl row={props.row} variable="t" />
-              </Match>
-              <Match when={res().kind === 'polar'}>
-                <RangeControl row={props.row} variable="θ" />
-              </Match>
             </Switch>
           )}
         </Show>
@@ -185,6 +200,7 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
             aria-haspopup="true"
             aria-expanded={pickerOpen()}
             style={{ '--swatch': color() }}
+            ref={colorButton}
             onClick={() => setPickerOpen((o) => !o)}
           >
             <span class="dot" />
@@ -194,7 +210,7 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
           type="button"
           class="icon-button expr-delete"
           aria-label={`Delete expression ${props.index + 1}`}
-          onClick={() => removeRow(props.row.id)}
+          onClick={remove}
         >
           ×
         </button>
@@ -202,6 +218,7 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
           <ColorPicker
             palette={props.palette}
             selected={props.row.colorIndex}
+            anchor={colorButton}
             onPick={(i) => setColor(props.row.id, i)}
             onClose={() => setPickerOpen(false)}
           />

@@ -137,3 +137,50 @@ export async function colorAt(page: Page, x: number, y: number): Promise<[number
     [sx, sy] as const,
   );
 }
+
+type TouchPoint = { x: number; y: number };
+
+/** Raw multi-touch input through CDP (Chromium only), for holds, drags and pinches. */
+export async function touchSession(page: Page) {
+  const cdp = await page.context().newCDPSession(page);
+  const send = (type: 'touchStart' | 'touchMove' | 'touchEnd', points: TouchPoint[]) =>
+    cdp.send('Input.dispatchTouchEvent', {
+      type,
+      touchPoints: points.map((p, id) => ({ x: p.x, y: p.y, id })),
+    });
+  return {
+    start: (...points: TouchPoint[]) => send('touchStart', points),
+    move: (...points: TouchPoint[]) => send('touchMove', points),
+    end: () => send('touchEnd', []),
+  };
+}
+
+/** Two-finger spread centred on (x, y). */
+export async function pinchOut(page: Page, x: number, y: number) {
+  const touch = await touchSession(page);
+  await touch.start({ x: x - 20, y }, { x: x + 20, y });
+  for (let d = 20; d <= 120; d += 10) {
+    await touch.move({ x: x - d, y }, { x: x + d, y });
+  }
+  await touch.end();
+}
+
+/** Centre of an element's box, in page coordinates. */
+export async function center(page: Page, selector: string) {
+  const box = await page.locator(selector).first().boundingBox();
+  if (!box) throw new Error(`no box for ${selector}`);
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+}
+
+/** Whether `inner` lies entirely inside `outer` (with 1px tolerance). */
+export function contains(
+  outer: { x: number; y: number; width: number; height: number },
+  inner: { x: number; y: number; width: number; height: number },
+) {
+  return (
+    inner.y >= outer.y - 1 &&
+    inner.y + inner.height <= outer.y + outer.height + 1 &&
+    inner.x >= outer.x - 1 &&
+    inner.x + inner.width <= outer.x + outer.width + 1
+  );
+}

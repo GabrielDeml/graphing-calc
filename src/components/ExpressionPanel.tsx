@@ -1,5 +1,6 @@
+import { onCleanup, onMount } from 'solid-js';
 import { doc } from '../state/doc';
-import { focusRow } from '../state/focus';
+import { focusRow, revealRow } from '../state/focus';
 import { keypad } from '../state/keypad';
 import { mobileQuery, type PanelSnap, ui } from '../state/ui';
 import { ExpressionList } from './ExpressionList';
@@ -13,6 +14,19 @@ function snapFraction(snap: PanelSnap): number {
 
 export function ExpressionPanel() {
   let panel!: HTMLElement;
+  let scroller!: HTMLDivElement;
+
+  // When the list area shrinks (the keypad opening, a snap change, rotation), keep the row being
+  // edited in view instead of leaving it below the fold.
+  onMount(() => {
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      const active = document.activeElement;
+      if (active && scroller.contains(active)) revealRow(active);
+    });
+    ro.observe(scroller);
+    onCleanup(() => ro.disconnect());
+  });
 
   // Mobile: drag the handle to resize, tap it to cycle snap states.
   const onHandleDown = (e: PointerEvent) => {
@@ -94,6 +108,8 @@ export function ExpressionPanel() {
             aria-label={keypad.enabled() ? 'Use device keyboard' : 'Use math keypad'}
             aria-pressed={keypad.enabled()}
             data-testid="keypad-toggle"
+            // Keep focus in the field, so the re-focus below can switch keyboards in place.
+            onPointerDown={(e) => e.preventDefault()}
             onClick={toggleKeypad}
           >
             ⌨
@@ -108,7 +124,7 @@ export function ExpressionPanel() {
           </button>
         </div>
       </header>
-      <div class="panel-scroll">
+      <div class="panel-scroll" ref={scroller}>
         <ExpressionList />
       </div>
     </section>

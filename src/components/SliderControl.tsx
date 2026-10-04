@@ -1,6 +1,6 @@
 import { createEffect, createMemo, untrack } from 'solid-js';
 import { formatSliderValue, formatValue } from '../engine/format';
-import { evalNumber } from '../state/analysis';
+import { analysis, evalNumber } from '../state/analysis';
 import { type Row, setSliderField, setSliderPlaying } from '../state/doc';
 import { setSliderValue } from '../state/rowActions';
 import { blurActive, MathField } from './MathField';
@@ -14,18 +14,36 @@ export function SliderControl(props: { row: Row; name: string; value: number }) 
   });
   const valid = () => Number.isFinite(min()) && Number.isFinite(max()) && max() > min();
 
-  // Typing a value outside the bounds widens them (only when the bound is a plain number).
+  // Typing a value outside the bounds widens them (only when the bound is a plain number). The
+  // new bound is the literal as typed, so rounding can't leave the value outside its range again.
+  const plain = (s: string) => /^\s*-?\d*\.?\d+\s*$/.test(s);
+  const typedLiteral = (v: number) => {
+    const span = analysis().byId.get(props.row.id)?.slider?.valueSpan;
+    const text = span ? props.row.source.slice(span.start, span.end) : '';
+    const literal = text.replace(/\s+/g, '').replace('−', '-').replace(/^\+/, '');
+    return plain(literal) && Number(literal) === v ? literal : formatSliderValue(v, 0, 0, 0);
+  };
   createEffect(() => {
     const v = props.value;
     if (!Number.isFinite(v)) return;
     untrack(() => {
-      const plain = (s: string) => /^\s*-?\d*\.?\d+\s*$/.test(s);
       if (Number.isFinite(max()) && v > max() && plain(props.row.slider.max)) {
-        setSliderField(props.row.id, 'max', formatSliderValue(v, step(), min(), v));
+        setSliderField(props.row.id, 'max', typedLiteral(v));
       } else if (Number.isFinite(min()) && v < min() && plain(props.row.slider.min)) {
-        setSliderField(props.row.id, 'min', formatSliderValue(v, step(), v, max()));
+        setSliderField(props.row.id, 'min', typedLiteral(v));
       }
     });
+  });
+
+  // One effect sets the bounds and then the value: the browser clamps `value` to the current
+  // min/max, so it has to be re-applied whenever they change, not only when the value does.
+  let range!: HTMLInputElement;
+  createEffect(() => {
+    const ok = valid();
+    range.min = String(ok ? min() : 0);
+    range.max = String(ok ? max() : 1);
+    range.step = step() ? String(step()) : 'any';
+    range.value = String(props.value);
   });
 
   return (
@@ -47,12 +65,9 @@ export function SliderControl(props: { row: Row; name: string; value: number }) 
         ariaLabel={`${props.name} slider minimum`}
       />
       <input
+        ref={range}
         class="slider-range"
         type="range"
-        min={valid() ? min() : 0}
-        max={valid() ? max() : 1}
-        step={step() || 'any'}
-        value={props.value}
         disabled={!valid()}
         aria-label={`${props.name} value`}
         aria-valuetext={formatValue(props.value)}

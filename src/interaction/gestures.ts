@@ -7,10 +7,8 @@ export interface GestureCallbacks {
   hover(sx: number, sy: number): void;
   /** Pointer left the graph or a drag started: hide a hover trace. */
   leave(): void;
-  /** A quick tap without movement (touch pins the trace there). */
+  /** A quick tap without movement (touch pins the trace there, and dismisses the keypad). */
   tap(sx: number, sy: number, pointerType: string): void;
-  /** Any pointer went down on the graph. */
-  down(pointerType: string): void;
 }
 
 const TAP_MOVE_PX = 6;
@@ -31,10 +29,14 @@ export function attachGestures(
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   };
 
+  /** Events on the overlaid buttons (zoom, home, show list) belong to those buttons. */
+  const onControl = (e: Event) => (e.target as HTMLElement).closest('button') !== null;
+
   const onPointerDown = (e: PointerEvent) => {
     if (e.button !== 0 && e.pointerType === 'mouse') return;
-    if ((e.target as HTMLElement).closest('button')) return;
-    cb.down(e.pointerType);
+    if (onControl(e)) return;
+    // Finish a running zoom animation first, so the gesture starts from where it ends.
+    controller.settle();
     el.setPointerCapture(e.pointerId);
     const p = local(e);
     pointers.set(e.pointerId, p);
@@ -97,6 +99,7 @@ export function attachGestures(
 
   const onWheel = (e: WheelEvent) => {
     e.preventDefault();
+    controller.settle();
     const p = local(e);
     const factor = wheelZoomFactor(e.deltaY, e.deltaMode, e.ctrlKey, el.clientHeight);
     const next = zoomAt(controller.view, p.x, p.y, factor);
@@ -105,6 +108,8 @@ export function attachGestures(
   };
 
   const onDblClick = (e: MouseEvent) => {
+    if (onControl(e)) return;
+    controller.settle();
     const p = local(e);
     controller.animateTo(zoomAt(controller.view, p.x, p.y, 2));
   };
@@ -112,7 +117,10 @@ export function attachGestures(
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.target !== el) return;
     const step = 40;
-    const v = controller.view;
+    const pan = (dx: number, dy: number) => {
+      controller.settle();
+      controller.setView(panBy(controller.view, dx, dy));
+    };
     switch (e.key) {
       case '+':
       case '=':
@@ -126,16 +134,16 @@ export function attachGestures(
         controller.home();
         break;
       case 'ArrowLeft':
-        controller.setView(panBy(v, step, 0));
+        pan(step, 0);
         break;
       case 'ArrowRight':
-        controller.setView(panBy(v, -step, 0));
+        pan(-step, 0);
         break;
       case 'ArrowUp':
-        controller.setView(panBy(v, 0, step));
+        pan(0, step);
         break;
       case 'ArrowDown':
-        controller.setView(panBy(v, 0, -step));
+        pan(0, -step);
         break;
       default:
         return;

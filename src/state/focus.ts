@@ -27,3 +27,9 @@ export function focusRow(id: string, caret: 'start' | 'end' | number = 'end'): v
   };
   if (!apply()) queueMicrotask(() => apply() || requestAnimationFrame(apply));
 }
+
+/** Scroll the expression row holding `el` (any of its fields) into view, if it isn't already. */
+export function revealRow(el: Element | null): void {
+  const row = el?.closest('.expr-row');
+  if (row) row.scrollIntoView({ block: 'nearest' });
+}

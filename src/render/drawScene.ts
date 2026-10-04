@@ -9,13 +9,12 @@ export interface DrawRow {
 const LIMIT = 1e4;
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
 
-/** Trace a NaN-separated world-space polyline (or polygon list) into the current path. */
-function tracePath(
-  ctx: CanvasRenderingContext2D,
-  data: Float64Array,
-  view: Viewport,
-  closeEach: boolean,
-): void {
+/**
+ * Trace a NaN-separated world-space polyline (or polygon list) into the current path. Polygons
+ * are left open: fill() closes every subpath itself, and an explicit closePath() per polygon
+ * makes building a region of thousands of marching-squares cells roughly quadratic in Chromium.
+ */
+function tracePath(ctx: CanvasRenderingContext2D, data: Float64Array, view: Viewport): void {
   const halfW = view.width / 2;
   const halfH = view.height / 2;
   let penDown = false;
@@ -23,7 +22,6 @@ function tracePath(
     const x = data[i];
     const y = data[i + 1];
     if (Number.isNaN(x) || Number.isNaN(y)) {
-      if (penDown && closeEach) ctx.closePath();
       penDown = false;
       continue;
     }
@@ -35,7 +33,6 @@ function tracePath(
       penDown = true;
     }
   }
-  if (penDown && closeEach) ctx.closePath();
 }
 
 export function drawScene(
@@ -51,7 +48,7 @@ export function drawScene(
     if (!row.geometry.fill || row.geometry.fill.length === 0) continue;
     ctx.fillStyle = row.color;
     ctx.beginPath();
-    tracePath(ctx, row.geometry.fill, view, true);
+    tracePath(ctx, row.geometry.fill, view);
     ctx.fill('nonzero');
   }
   ctx.globalAlpha = 1;
@@ -65,7 +62,7 @@ export function drawScene(
     ctx.strokeStyle = row.color;
     ctx.setLineDash(dashed ? [8, 6] : []);
     ctx.beginPath();
-    for (const curve of curves) tracePath(ctx, curve, view, false);
+    for (const curve of curves) tracePath(ctx, curve, view);
     ctx.stroke();
   }
   ctx.setLineDash([]);
