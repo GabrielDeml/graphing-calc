@@ -1,0 +1,20 @@
+{
+  "//": "Pure-TS layers (math engine, plot geometry, keypad editing). No DOM libs and no ambient types, so any accidental DOM or Solid use fails to type-check.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "types": [],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "skipLibCheck": true
+  },
+  "include": ["src/engine", "src/plot", "src/keypad"],
+  "exclude": ["src/**/*.test.ts"]
+}
