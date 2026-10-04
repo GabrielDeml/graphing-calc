@@ -1,21 +1,29 @@
 import { formatSliderValue } from '../engine/format';
 import { analysis, evalNumber } from './analysis';
-import { addRowAfter, doc, getRow, removeRow, updateSource } from './doc';
+import { addRowAfter, type ChangeOrigin, doc, getRow, removeRow, updateSource } from './doc';
 import { focusRow } from './focus';
 
 function position(id: string): number {
   return doc.rows.findIndex((r) => r.id === id);
 }
 
-/** Enter: move to the next row if it is empty, otherwise insert a new row below. */
-export function enterFrom(id: string): void {
+/**
+ * Enter: move to the next row if it is empty, otherwise insert a new row below. An empty row
+ * never adds another one: it moves on to the next row, and the empty row at the end (already the
+ * place for a new expression) stays put. Returns whether focus moved.
+ */
+export function enterFrom(id: string): boolean {
   const i = position(id);
+  if (i < 0) return false;
+  const empty = doc.rows[i].source.trim() === '';
   const next = doc.rows[i + 1];
-  if (next && next.source.trim() === '') {
+  if (next && (empty || next.source.trim() === '')) {
     focusRow(next.id, 'end');
-    return;
+    return true;
   }
+  if (empty) return false;
   focusRow(addRowAfter(id), 'end');
+  return true;
 }
 
 /** Backspace in an empty row deletes it and focuses the end of the previous row. */
@@ -57,17 +65,31 @@ export function sliderBounds(id: string): { min: number; max: number; step: numb
   };
 }
 
-/** Rewrite just the slider's numeric literal in the row's source. */
-export function setSliderValue(id: string, value: number): void {
+/**
+ * Rewrite just the slider's numeric literal in the row's source. A drag is one undo step (the
+ * range's change event ends it); animation frames are not undo steps.
+ */
+export function setSliderValue(
+  id: string,
+  value: number,
+  origin: Extract<ChangeOrigin, 'drag' | 'animation'>,
+): void {
   const row = getRow(id);
   const res = analysis().byId.get(id);
   if (!row || !res?.slider) return;
   const { min, max, step } = sliderBounds(id);
   let v = value;
-  if (step > 0 && Number.isFinite(min)) v = min + Math.round((v - min) / step) * step;
+  if (step > 0 && Number.isFinite(min)) {
+    // Snap to the step grid without leaving the bounds: when the step doesn't divide the range,
+    // the last grid point is below max (rounding past it would widen max, an undo step).
+    const last = Number.isFinite(max)
+      ? Math.floor((max - min) / step + 1e-9)
+      : Number.POSITIVE_INFINITY;
+    v = min + Math.max(0, Math.min(last, Math.round((v - min) / step))) * step;
+  }
   const text = formatSliderValue(v, step, min, max);
   const { start, end } = res.slider.valueSpan;
-  updateSource(id, row.source.slice(0, start) + text + row.source.slice(end));
+  updateSource(id, row.source.slice(0, start) + text + row.source.slice(end), origin);
 }
 
 /** Quick fix for unknown names: add `name = 1` slider rows below the row. */

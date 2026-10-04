@@ -267,6 +267,45 @@ button {
   gap: 2px;
 }
 
+.menu-anchor {
+  position: relative;
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--panel-bg);
+  box-shadow: var(--shadow);
+}
+
+.menu-item {
+  padding: 8px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 14px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.menu-item:hover,
+.menu-item:focus {
+  background: var(--button-hover);
+}
+
+.menu-item[aria-disabled="true"] {
+  color: var(--muted);
+  cursor: default;
+}
+
 .panel-scroll {
   flex: 1;
   min-height: 0;
@@ -836,13 +875,27 @@ button {
 
 /* ---------- Toast ---------- */
 
-.toast {
-  touch-action: pan-x pan-y;
+/* Where toasts appear; two at once (an undo and an update prompt) stack instead of overlapping. */
+.toasts {
   position: fixed;
   left: 50%;
   bottom: calc(16px + env(safe-area-inset-bottom));
   transform: translateX(-50%);
   z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.app.keypad-open .toasts {
+  bottom: calc(260px + env(safe-area-inset-bottom));
+}
+
+.toast {
+  touch-action: pan-x pan-y;
+  pointer-events: auto;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -851,11 +904,6 @@ button {
   background: var(--panel-bg);
   box-shadow: var(--shadow);
   font-size: 14px;
-}
-
-.app.keypad-open ~ .toast,
-.app.keypad-open .toast {
-  bottom: calc(260px + env(safe-area-inset-bottom));
 }
 
 .toast-action {
@@ -877,9 +925,8 @@ button {
 
 @media (max-width: 767px) {
   /* Stacked phone layout: the graph is on top, so show toasts there, clear of the list and keypad. */
-  .toast,
-  .app.keypad-open ~ .toast,
-  .app.keypad-open .toast {
+  .toasts,
+  .app.keypad-open .toasts {
     top: calc(12px + env(safe-area-inset-top));
     bottom: auto;
     max-width: calc(100% - 96px);
@@ -888,9 +935,8 @@ button {
 
 @media (max-width: 767px) and (max-height: 500px) and (orientation: landscape) {
   /* Short landscape layout: over the graph column, clear of the list and keypad. */
-  .toast,
-  .app.keypad-open ~ .toast,
-  .app.keypad-open .toast {
+  .toasts,
+  .app.keypad-open .toasts {
     top: auto;
     left: 75%;
     bottom: calc(16px + env(safe-area-inset-bottom));

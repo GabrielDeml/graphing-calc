@@ -3,6 +3,7 @@ import { nearestOnPolyline, nearestPoint, traceExplicit } from '../plot/nearest'
 import { SceneCache } from '../plot/scene';
 import type { Quality, RowGeometry, Viewport } from '../plot/types';
 import {
+  clampViewport,
   homeViewport,
   lerpViewport,
   resizeViewport,
@@ -36,6 +37,13 @@ export interface TraceHit {
 }
 
 const IDLE_MS = 150;
+/** Typing switches to interactive quality after a frame slower than this… */
+const HEAVY_FRAME_MS = 16;
+/** …and settles to final quality once it pauses this long. */
+const TYPING_IDLE_MS = 300;
+
+/** A view's center and scale, without a size (a restored view takes the container's). */
+export type ViewCenter = Pick<Viewport, 'cx' | 'cy' | 'ppuX' | 'ppuY'>;
 
 /**
  * Owns the canvas, the viewport and the render loop. Deliberately not reactive: pans and zooms at
@@ -64,17 +72,22 @@ export class GraphController {
   /** Where the running zoom/home animation ends, so repeated presses compose. */
   private animTarget: Viewport | null = null;
   private hasView = false;
+  /** The view is the home view, or animating to it (a restored or moved view is not). */
+  private isHome: boolean;
   private disposers: Array<() => void> = [];
 
   constructor(
     private container: HTMLElement,
     private canvas: HTMLCanvasElement,
+    /** Where to start instead of the home view (the last session's view). */
+    private initialView: ViewCenter | null = null,
   ) {
     const ctx = canvas.getContext('2d', { alpha: false });
     if (!ctx) throw new Error('Canvas 2D is not available');
     this.ctx = ctx;
     this.theme = readTheme();
-    this.view = homeViewport(container.clientWidth || 1, container.clientHeight || 1);
+    this.isHome = initialView === null;
+    this.view = this.startView(container.clientWidth || 1, container.clientHeight || 1);
 
     const ro = new ResizeObserver((entries) => this.onResize(entries[0]));
     try {
@@ -107,10 +120,28 @@ export class GraphController {
     return this.quality;
   }
 
-  setScene(rows: readonly SceneRow[], values: ReadonlyMap<string, number>): void {
-    // Same plots with new variable values (a slider playing or being dragged): sample the rows
-    // that depend on them at interactive quality, then settle to final once the values rest.
-    if (sameItems(rows, this.rows) && changedValues(values, this.values)) this.markInteractive();
+  /**
+   * Whether the view is the home view (or animating to it). Resizes keep a view's center and
+   * scale, so this is what a saved view should remember rather than the numbers: home follows
+   * the window it is restored into.
+   */
+  get atHome(): boolean {
+    return this.isHome;
+  }
+
+  /**
+   * `typing`: the change comes from editing a row, and every keystroke makes new plots. Once a
+   * frame is slow (a heavy implicit row), they are sampled at interactive quality while the
+   * typing goes on and at final quality when it pauses, instead of at final quality per key.
+   */
+  setScene(rows: readonly SceneRow[], values: ReadonlyMap<string, number>, typing = false): void {
+    if (sameItems(rows, this.rows)) {
+      // Same plots with new variable values (a slider playing or being dragged): sample the rows
+      // that depend on them at interactive quality, then settle to final once the values rest.
+      if (changedValues(values, this.values)) this.markInteractive();
+    } else if (typing && (this.quality === 'interactive' || this.lastFrameMs > HEAVY_FRAME_MS)) {
+      this.markInteractive(TYPING_IDLE_MS);
+    }
     this.rows = rows;
     this.values = values;
     this.invalidate();
@@ -119,12 +150,14 @@ export class GraphController {
   /** A view change from user input; it overrides any running zoom/home animation. */
   setView(v: Viewport, interactive = true): void {
     this.cancelAnimation();
+    this.isHome = false;
     this.applyView(v, interactive);
   }
 
   /** Animate to a target view (zoom buttons, home). */
   animateTo(target: Viewport, ms = 180): void {
     cancelAnimationFrame(this.animation);
+    this.isHome = false;
     const from = this.view;
     const start = performance.now();
     this.animTarget = target;
@@ -157,6 +190,7 @@ export class GraphController {
 
   home(): void {
     this.animateTo(homeViewport(this.view.width, this.view.height));
+    this.isHome = true;
   }
 
   /** Whether a row is in the current scene (a pinned trace drops its anchor when it isn't). */
@@ -217,6 +251,11 @@ export class GraphController {
     return best;
   }
 
+  private startView(width: number, height: number): Viewport {
+    const v = this.initialView;
+    return v ? clampViewport({ ...v, width, height }) : homeViewport(width, height);
+  }
+
   private applyView(v: Viewport, interactive = true): void {
     this.view = v;
     if (interactive) this.markInteractive();
@@ -230,13 +269,13 @@ export class GraphController {
     this.animTarget = null;
   }
 
-  private markInteractive(): void {
+  private markInteractive(idleMs = IDLE_MS): void {
     this.quality = 'interactive';
     clearTimeout(this.idleTimer);
     this.idleTimer = setTimeout(() => {
       this.quality = 'final';
       this.invalidate();
-    }, IDLE_MS);
+    }, idleMs);
   }
 
   private onResize(entry: ResizeObserverEntry | undefined): void {
@@ -259,7 +298,7 @@ export class GraphController {
     this.canvas.height = devH;
     this.view = this.hasView
       ? resizeViewport(this.view, width, height)
-      : homeViewport(width, height);
+      : this.startView(width, height);
     this.hasView = true;
     this.onViewChange?.(this.view);
     // Resizing clears the canvas; redraw synchronously to avoid a blank flash.

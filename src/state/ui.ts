@@ -1,14 +1,39 @@
-import { createRoot, createSignal } from 'solid-js';
+import { createEffect, createRoot, createSignal } from 'solid-js';
+import { doc } from './doc';
+import { savedState } from './persist';
 
 export type PanelSnap = 'collapsed' | 'half' | 'full';
 
-/** Layout state: desktop sidebar visibility and the mobile expression panel's snap height. */
+/**
+ * Layout state: desktop sidebar visibility and the mobile expression panel's snap height (both
+ * restored from the last session), plus the selected row.
+ */
 export const ui = createRoot(() => {
-  const [sidebarOpen, setSidebarOpen] = createSignal(true);
-  const [panelSnap, setPanelSnap] = createSignal<PanelSnap>('half');
+  const saved = savedState();
+  const [sidebarOpen, setSidebarOpen] = createSignal(saved?.sidebarOpen ?? true);
+  const [panelSnap, setPanelSnap] = createSignal<PanelSnap>(saved?.panelSnap ?? 'half');
   /** Explicit panel height while the mobile handle is being dragged. */
   const [panelDragPx, setPanelDragPx] = createSignal<number | null>(null);
-  return { sidebarOpen, setSidebarOpen, panelSnap, setPanelSnap, panelDragPx, setPanelDragPx };
+  /**
+   * The row the graph and tools are about. Set by focusing a row; unlike focus it survives
+   * clicking the graph. Cleared by Esc (that nothing else used), a tap on empty graph, or the
+   * row going away.
+   */
+  const [selectedRowId, setSelectedRowId] = createSignal<string | null>(null);
+  createEffect(() => {
+    const id = selectedRowId();
+    if (id !== null && !doc.rows.some((r) => r.id === id)) setSelectedRowId(null);
+  });
+  return {
+    sidebarOpen,
+    setSidebarOpen,
+    panelSnap,
+    setPanelSnap,
+    panelDragPx,
+    setPanelDragPx,
+    selectedRowId,
+    setSelectedRowId,
+  };
 });
 
 /**

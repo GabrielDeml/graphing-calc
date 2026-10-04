@@ -2,8 +2,10 @@ import { createEffect, createSignal, onCleanup, onMount, Show } from 'solid-js';
 import { attachGestures } from '../interaction/gestures';
 import { GraphController, type SceneRow, type TraceHit } from '../render/controller';
 import { analysis } from '../state/analysis';
+import { noteView } from '../state/autosave';
 import { doc } from '../state/doc';
 import { isCoarsePointer, keypad } from '../state/keypad';
+import { savedState } from '../state/persist';
 import { palette } from '../state/theme';
 import { ui } from '../state/ui';
 import { GraphControls } from './GraphControls';
@@ -23,8 +25,9 @@ export function GraphView() {
   const [trace, setTrace] = createSignal<TraceHit | null>(null);
 
   onMount(() => {
-    const c = new GraphController(container, canvas);
+    const c = new GraphController(container, canvas, savedState()?.view ?? null);
     setController(c);
+    c.onViewChange = (v) => noteView(c.atHome ? null : v);
     let anchor: TraceAnchor | null = null;
     let hoverFrame = 0;
 
@@ -64,7 +67,8 @@ export function GraphView() {
         rows.push({ id: row.id, plot: res.plot, deps: res.deps, colorIndex: row.colorIndex });
       }
       palette(); // repaint when the scheme changes
-      c.setScene(rows, a.values);
+      const active = document.activeElement;
+      c.setScene(rows, a.values, !!active?.classList.contains('math-input'));
     });
 
     const detach = attachGestures(container, c, {
@@ -92,13 +96,15 @@ export function GraphView() {
           const active = document.activeElement;
           if (active instanceof HTMLInputElement) active.blur();
         }
+        const hit = c.trace(sx, sy, pointerType === 'touch' ? 32 : 20);
+        // A tap away from every curve deselects the row.
+        if (!hit) ui.setSelectedRowId(null);
         if (pointerType === 'mouse') {
           // A mouse traces by hovering; a click (or double-click zoom) must not pin it.
           anchor = { mode: 'hover', sx, sy };
           retrace();
           return;
         }
-        const hit = c.trace(sx, sy, pointerType === 'touch' ? 32 : 20);
         anchor = hit ? { mode: 'pinned', x: hit.x, y: hit.y, rowId: hit.rowId } : null;
         setTrace(hit);
       },

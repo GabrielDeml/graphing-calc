@@ -1,4 +1,4 @@
-import { BLUE, countColorNear, expect, exprInput, GREEN, openApp, setExpr, test } from './helpers';
+import { countColorNear, expect, exprInput, openApp, RED, setExpr, test } from './helpers';
 
 test('a slider moves the curves that use it', async ({ page }) => {
   await openApp(page);
@@ -6,15 +6,16 @@ test('a slider moves the curves that use it', async ({ page }) => {
   await setExpr(page, 1, 'y = a');
   const slider = page.getByTestId('slider-a');
   await expect(slider).toBeVisible();
-  await expect.poll(() => countColorNear(page, 0.5, 1, BLUE)).toBeGreaterThan(5);
+  // The slider takes no color: the curve is the first one, so red.
+  await expect.poll(() => countColorNear(page, 0.5, 1, RED)).toBeGreaterThan(5);
 
   await slider.evaluate((el: HTMLInputElement) => {
     el.value = '5';
     el.dispatchEvent(new Event('input', { bubbles: true }));
   });
   await expect(exprInput(page, 0)).toHaveValue('a = 5');
-  await expect.poll(() => countColorNear(page, 0.5, 5, BLUE)).toBeGreaterThan(5);
-  await expect.poll(() => countColorNear(page, 0.5, 1, BLUE)).toBe(0);
+  await expect.poll(() => countColorNear(page, 0.5, 5, RED)).toBeGreaterThan(5);
+  await expect.poll(() => countColorNear(page, 0.5, 1, RED)).toBe(0);
 });
 
 test('user functions can be defined and called', async ({ page }) => {
@@ -22,9 +23,9 @@ test('user functions can be defined and called', async ({ page }) => {
   await setExpr(page, 0, 'f(x) = x^2');
   await setExpr(page, 1, 'g(u) = u + 3');
   await setExpr(page, 2, 'y = g(f(x - 1))');
-  // Vertex of (x-1)^2 + 3 is at (1, 3); the third row is green.
-  await expect.poll(() => countColorNear(page, 1, 3, GREEN)).toBeGreaterThan(5);
-  await expect.poll(() => countColorNear(page, 1, 0, GREEN)).toBe(0);
+  // Vertex of (x-1)^2 + 3 is at (1, 3); the definitions take no color, so the curve is red.
+  await expect.poll(() => countColorNear(page, 1, 3, RED)).toBeGreaterThan(5);
+  await expect.poll(() => countColorNear(page, 1, 0, RED)).toBe(0);
 });
 
 test('unknown names offer to add sliders', async ({ page }) => {

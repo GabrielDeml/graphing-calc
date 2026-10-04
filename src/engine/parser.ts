@@ -26,14 +26,15 @@ import type { MathError, Span } from './types';
 
 export type ParseResult = { ok: true; statement: Statement } | { ok: false; error: MathError };
 
-const BP_ADD = 10;
-const BP_MUL = 20;
+// Exported so the typeset editor can mirror the parser's extents exactly.
+export const BP_ADD = 10;
+export const BP_MUL = 20;
 /** Implicit products inside an unparenthesized builtin argument bind tighter: sin 2x = sin(2x). */
-const BP_IMPLICIT_ARG = 21;
-const BP_PREFIX = 25;
-const BP_POW = 30;
-const BP_POW_RIGHT = 29;
-const BP_POSTFIX = 40;
+export const BP_IMPLICIT_ARG = 21;
+export const BP_PREFIX = 25;
+export const BP_POW = 30;
+export const BP_POW_RIGHT = 29;
+export const BP_POSTFIX = 40;
 /** Nesting limit, so pathological input gets an error instead of a stack overflow. */
 const MAX_DEPTH = 256;
 

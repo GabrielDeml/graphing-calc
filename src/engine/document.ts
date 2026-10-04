@@ -384,6 +384,15 @@ export class DocumentEngine {
   }
 
   /**
+   * The names table from the last update() and its signature. The context object is kept while
+   * the signature is unchanged, so either one can key a cache of name-dependent work (the
+   * editor groups letter runs into names the same way the parser does).
+   */
+  names(): { ctx: NameContext; signature: string } {
+    return { ctx: this.ctx, signature: this.signature };
+  }
+
+  /**
    * Evaluate a constant expression (slider min/max/step fields, domain fields) against the
    * current variable values from the last update(). Plot variables are not allowed.
    */

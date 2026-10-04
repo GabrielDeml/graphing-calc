@@ -51,10 +51,25 @@ Syntax notes:
   zoom, `0` resets.
 - **Trace:** hover a curve to see coordinates. On touch, tap a curve to pin the trace.
 - **Rows:**
-  - `Enter` starts a new row.
+  - `Enter` starts a new row. On an empty row it moves on to the next one instead, and on the
+    empty row at the end it stays put (the keypad's ↵ puts the keypad away there).
   - `Backspace` on an empty row deletes it.
   - `↑` and `↓` move between rows.
   - Tap the color dot to show or hide a curve.
+  - A curve gets its color when it first draws: the least-used one, red first, so the first three
+    curves are red, blue and green wherever they sit in the list. Sliders, definitions and empty
+    rows don't take a color.
+- **Undo:** `Ctrl+Z` (`⌘Z` on a Mac) undoes and `Ctrl+Shift+Z` (`⌘⇧Z`) or `Ctrl+Y` redoes, from
+  anywhere in the app. Typing undoes in bursts, a slider drag is one step, and a playing slider
+  adds none (undoing something else leaves it where it is). Undo puts the caret back where the
+  change was, or else scrolls to the row it changed. Phones have no undo key yet: **New graph**
+  shows an Undo button for a few seconds instead.
+- **Saved automatically:** the expression list, the view and the panel layout are kept in the
+  browser and come back on the next visit (sliders come back paused), and so is the keypad mode
+  once you pick one with ⌨. Nothing is stored until you change something. **New graph** in the
+  header's ⋯ menu starts over. With the app open in two windows, each one picks up the list the
+  other saves (each keeps its own view). Data saved by a newer version of the app is never
+  overwritten by an older one.
 - **Math keypad:** on touch devices, tapping a row opens the built-in keypad, which has three pages:
   numbers, functions and letters. The ⌨ key on the letters page switches that row to the device
   keyboard, and the ⌨ button in the header switches modes for good. Tapping the graph or ⌄ hides
@@ -86,7 +101,7 @@ src/plot/         geometry: viewport, ticks, adaptive samplers, marching squares
 src/keypad/       on-screen keypad layouts and text-editing logic (pure TS)
 src/render/       canvas drawing and the render loop
 src/interaction/  pan / zoom / pinch gestures
-src/state/        Solid stores and signals
+src/state/        Solid stores and signals; the undo history core and autosave format are plain TS
 src/components/   UI
 tests/e2e/        Playwright specs
 ```

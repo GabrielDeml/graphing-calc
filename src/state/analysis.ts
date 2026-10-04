@@ -1,7 +1,8 @@
-import { createMemo, createRoot } from 'solid-js';
+import { createEffect, createMemo, createRoot, untrack } from 'solid-js';
 import { DocumentEngine } from '../engine/document';
 import type { DocAnalysis } from '../engine/types';
-import { doc } from './doc';
+import { pickColor } from './colors';
+import { assignColor, doc } from './doc';
 
 export const engine = new DocumentEngine();
 
@@ -20,6 +21,34 @@ export const analysis = createRoot(() =>
     ),
   ),
 );
+
+// A row gets its color when it first plots: the least-used one among the rows holding a color.
+// Rows that don't plot (empty rows, sliders, definitions) don't take one or count against the
+// others, while a curve that is only broken for now (mid-edit) keeps its color reserved. Runs in
+// the same tick as the edit that made the row plot, so it is part of that undo step.
+createRoot(() => {
+  createEffect(() => {
+    const a = analysis();
+    untrack(() => {
+      const used: number[] = [];
+      const waiting: string[] = [];
+      for (const row of doc.rows) {
+        const res = a.byId.get(row.id);
+        const plots = res?.status === 'ok' && !!res.plot;
+        if (row.colorIndex < 0) {
+          if (plots) waiting.push(row.id);
+        } else if (plots || res?.status === 'error') {
+          used.push(row.colorIndex);
+        }
+      }
+      for (const id of waiting) {
+        const color = pickColor(used);
+        assignColor(id, color);
+        used.push(color);
+      }
+    });
+  });
+});
 
 /** Evaluate a constant expression (slider bounds, domains); NaN when invalid. */
 export function evalNumber(source: string): number {

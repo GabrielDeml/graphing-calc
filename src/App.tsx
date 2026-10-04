@@ -1,13 +1,27 @@
-import { Show } from 'solid-js';
+import { onCleanup, onMount, Show } from 'solid-js';
 import { ExpressionPanel } from './components/ExpressionPanel';
 import { GraphView } from './components/GraphView';
 import { MathKeypad } from './components/MathKeypad';
+import { Toast } from './components/Toast';
 import { UpdatePrompt } from './components/UpdatePrompt';
+import './state/autosave';
+import { attachHistoryKeys } from './state/historyUi';
 import { keypad } from './state/keypad';
 import './state/sliderAnimation';
 import { ui } from './state/ui';
 
 export default function App() {
+  onMount(() => {
+    onCleanup(attachHistoryKeys(document));
+    // Esc deselects the row, from a field, the graph or anywhere, unless something else used it
+    // (the menu and the color picker close). On window, so it runs after their listeners.
+    const deselect = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.defaultPrevented && !e.isComposing) ui.setSelectedRowId(null);
+    };
+    window.addEventListener('keydown', deselect);
+    onCleanup(() => window.removeEventListener('keydown', deselect));
+  });
+
   const keypadVisible = () => keypad.enabled() && keypad.open();
   const panelRows = () => {
     const drag = ui.panelDragPx();
@@ -34,7 +48,10 @@ export default function App() {
       <Show when={keypadVisible()}>
         <MathKeypad />
       </Show>
-      <UpdatePrompt />
+      <div class="toasts">
+        <Toast />
+        <UpdatePrompt />
+      </div>
     </div>
   );
 }

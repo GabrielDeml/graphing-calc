@@ -19,8 +19,9 @@ import {
   enterFrom,
   focusSibling,
 } from '../state/rowActions';
+import { ui } from '../state/ui';
 import { ColorPicker } from './ColorPicker';
-import { MathField } from './MathField';
+import { blurActive, MathField } from './MathField';
 import { RangeControl } from './RangeControl';
 import { SliderControl } from './SliderControl';
 
@@ -95,9 +96,14 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
   return (
     <li
       class="expr-row"
-      classList={{ 'has-error': !!error(), hidden: props.row.hidden }}
+      classList={{
+        'has-error': !!error(),
+        hidden: props.row.hidden,
+        selected: ui.selectedRowId() === props.row.id,
+      }}
       data-row-id={props.row.id}
       data-kind={result()?.kind ?? ''}
+      onFocusIn={() => ui.setSelectedRowId(props.row.id)}
     >
       <div class="expr-gutter">
         <span class="expr-index">{props.index + 1}</span>
@@ -125,7 +131,9 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
         <MathField
           value={props.row.source}
           onChange={(text) => updateSource(props.row.id, text)}
-          onEnter={() => enterFrom(props.row.id)}
+          // Keypad ↵ (the hardware key goes through onKeyDown): on the empty last row, where
+          // Enter has nowhere to go, it means "done" and puts the keypad away.
+          onEnter={() => enterFrom(props.row.id) || blurActive()}
           onDeleteEmpty={() => deleteEmptyBackward(props.row.id)}
           onKeyDown={onKeyDown}
           onBlur={() => {

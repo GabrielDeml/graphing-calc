@@ -247,6 +247,22 @@ describe('definitions', () => {
     expect(ok(a, 'r2').value).toBe(3);
     expect(curve(a, 'r3')(0)).toBe(101);
   });
+
+  it('exposes the names table, keeping the context while the signature holds', () => {
+    const engine = new DocumentEngine();
+    expect(engine.names().signature).toBe('');
+    engine.update(rows('a = 1', 'f(x, y) = x y', 'y = a x'));
+    const first = engine.names();
+    expect([...first.ctx.vars]).toEqual(['a']);
+    expect(first.ctx.fns.get('f')).toBe(2);
+    expect(first.signature).toBe('a:var,f:fn:2');
+    // A slider move keeps the context object; a new definition replaces it.
+    engine.update(rows('a = 2', 'f(x, y) = x y', 'y = a x'));
+    expect(engine.names().ctx).toBe(first.ctx);
+    engine.update(rows('a = 2', 'f(x, y) = x y', 'b = 3'));
+    expect(engine.names().ctx).not.toBe(first.ctx);
+    expect(engine.names().signature).toBe('a:var,b:var,f:fn:2');
+  });
 });
 
 describe('plot items', () => {

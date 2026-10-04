@@ -4,6 +4,7 @@ import { focusRow, revealRow } from '../state/focus';
 import { keypad } from '../state/keypad';
 import { mobileQuery, type PanelSnap, ui } from '../state/ui';
 import { ExpressionList } from './ExpressionList';
+import { GraphMenu } from './GraphMenu';
 
 const SNAPS: readonly PanelSnap[] = ['collapsed', 'half', 'full'];
 
@@ -31,7 +32,7 @@ export function ExpressionPanel() {
   // Mobile: drag the handle to resize, tap it to cycle snap states.
   const onHandleDown = (e: PointerEvent) => {
     if (!mobileQuery?.matches) return;
-    if ((e.target as HTMLElement).closest('button')) return;
+    if ((e.target as HTMLElement).closest('button, [role="menu"]')) return;
     const handle = e.currentTarget as HTMLElement;
     handle.setPointerCapture(e.pointerId);
     const startY = e.clientY;
@@ -114,6 +115,7 @@ export function ExpressionPanel() {
           >
             ⌨
           </button>
+          <GraphMenu />
           <button
             type="button"
             class="icon-button desktop-only"

@@ -12,7 +12,18 @@ export {
 } from './builtinNames';
 export { DocumentEngine } from './document';
 export { formatCoordinate, formatSliderValue, formatValue } from './format';
-export { type ParseResult, parse } from './parser';
+export type { NameContext } from './names';
+export {
+  BP_ADD,
+  BP_IMPLICIT_ARG,
+  BP_MUL,
+  BP_POSTFIX,
+  BP_POW,
+  BP_POW_RIGHT,
+  BP_PREFIX,
+  type ParseResult,
+  parse,
+} from './parser';
 export { printNode, printStatement } from './print';
 export type {
   DocAnalysis,

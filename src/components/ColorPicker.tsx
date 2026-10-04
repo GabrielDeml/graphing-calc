@@ -20,7 +20,12 @@ export function ColorPicker(props: {
       const target = e.target as Node;
       if (!el.contains(target) && !props.anchor?.contains(target)) props.onClose();
     };
-    const esc = (e: KeyboardEvent) => e.key === 'Escape' && close();
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      // Handled: the Esc that closes the picker doesn't also deselect the row (App).
+      e.preventDefault();
+      close();
+    };
     document.addEventListener('pointerdown', away, true);
     document.addEventListener('keydown', esc);
     onCleanup(() => {

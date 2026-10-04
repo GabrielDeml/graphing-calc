@@ -13,6 +13,15 @@ export function rowInput(id: string): HTMLInputElement | undefined {
   return inputs.get(id);
 }
 
+/** The row whose expression input has focus, and its caret (undo returns there). */
+export function focusedRow(): { id: string; caret: number } | null {
+  const el = typeof document === 'undefined' ? null : document.activeElement;
+  for (const [id, input] of inputs) {
+    if (input === el) return { id, caret: input.selectionStart ?? input.value.length };
+  }
+  return null;
+}
+
 /** Focus a row's input once it exists (it may have just been inserted). */
 export function focusRow(id: string, caret: 'start' | 'end' | number = 'end'): void {
   const apply = () => {

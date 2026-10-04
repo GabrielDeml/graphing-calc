@@ -1,7 +1,7 @@
 import { createEffect, createMemo, untrack } from 'solid-js';
 import { formatSliderValue, formatValue } from '../engine/format';
 import { analysis, evalNumber } from '../state/analysis';
-import { type Row, setSliderField, setSliderPlaying } from '../state/doc';
+import { endUndoStep, type Row, setSliderField, setSliderPlaying } from '../state/doc';
 import { setSliderValue } from '../state/rowActions';
 import { blurActive, MathField } from './MathField';
 
@@ -72,7 +72,9 @@ export function SliderControl(props: { row: Row; name: string; value: number }) 
         aria-label={`${props.name} value`}
         aria-valuetext={formatValue(props.value)}
         data-testid={`slider-${props.name}`}
-        onInput={(e) => setSliderValue(props.row.id, e.currentTarget.valueAsNumber)}
+        onInput={(e) => setSliderValue(props.row.id, e.currentTarget.valueAsNumber, 'drag')}
+        // Fires when the drag (or a key press) ends: the next move is a new undo step.
+        onChange={endUndoStep}
       />
       <MathField
         class="slider-bound"

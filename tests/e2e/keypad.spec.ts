@@ -74,6 +74,11 @@ test.describe('math keypad on touch devices', () => {
     await expect(exprInput(page, 0)).toHaveValue('sin(x)');
     await page.getByTestId('key-enter').first().tap();
     await expect(exprInput(page, 1)).toBeFocused();
+    // ↵ on the empty last row has nowhere to go: it means done, and the keypad goes away.
+    await page.getByTestId('key-enter').first().tap();
+    await expect(page.getByTestId('keypad')).toHaveCount(0);
+    await expect(exprInput(page, 1)).not.toBeFocused();
+    await expect(page.getByTestId('expr-input')).toHaveCount(2);
   });
 
   test('hiding the keypad gives the graph more room', async ({ page }) => {

@@ -1,4 +1,4 @@
-import { expect, exprInput, openApp, setExpr, test } from './helpers';
+import { expect, exprInput, openApp, setExpr, test, worldToScreen } from './helpers';
 
 test.describe('editing rows', () => {
   test.skip(({ isMobile }) => isMobile, 'hardware keyboard and mouse');
@@ -102,7 +102,7 @@ test.describe('editing rows', () => {
   }) => {
     await openApp(page);
     await setExpr(page, 0, 'y = x');
-    const toggle = page.getByRole('button', { name: 'Change color' });
+    const toggle = page.getByRole('button', { name: 'Change color', exact: true });
     await toggle.click();
     await expect(page.locator('.color-picker')).toBeVisible();
     await expect(toggle).toHaveAttribute('aria-expanded', 'true');
@@ -111,13 +111,13 @@ test.describe('editing rows', () => {
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
 
     await toggle.press('Enter');
-    await expect(page.getByRole('button', { name: 'Red' })).toBeFocused();
+    await expect(page.getByRole('button', { name: 'Red', exact: true })).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(page.locator('.color-picker')).toHaveCount(0);
     await expect(toggle).toBeFocused();
 
     await toggle.press('Enter');
-    await page.getByRole('button', { name: 'Purple' }).press('Enter');
+    await page.getByRole('button', { name: 'Purple', exact: true }).press('Enter');
     await expect(page.locator('.color-picker')).toHaveCount(0);
     await expect(toggle).toBeFocused();
   });
@@ -148,6 +148,63 @@ test.describe('editing rows', () => {
     if (!picker) throw new Error('no picker box');
     expect(picker.y + picker.height).toBeLessThanOrEqual(area.y + area.height + 1);
     expect(picker.y).toBeGreaterThanOrEqual(area.y - 1);
+  });
+
+  test('a focused row stays selected until Esc, a click on empty graph, or its deletion', async ({
+    page,
+  }) => {
+    await openApp(page);
+    await setExpr(page, 0, 'y = x');
+    const row = page.locator('.expr-row').first();
+    await expect(row).toHaveClass(/\bselected\b/);
+    // Clicking the curve moves focus to the graph, but the row stays selected; Esc there clears it.
+    const { sx, sy } = await worldToScreen(page, 1, 1);
+    await page.getByTestId('graph').click({ position: { x: sx, y: sy } });
+    await expect(exprInput(page, 0)).not.toBeFocused();
+    await expect(row).toHaveClass(/\bselected\b/);
+    await page.keyboard.press('Escape');
+    await expect(row).not.toHaveClass(/\bselected\b/);
+
+    await exprInput(page, 0).click();
+    await page.getByTestId('graph').click({ position: { x: 5, y: 5 } });
+    await expect(row).not.toHaveClass(/\bselected\b/);
+
+    await exprInput(page, 0).click();
+    await expect(row).toHaveClass(/\bselected\b/);
+    await exprInput(page, 0).press('Escape');
+    await expect(row).not.toHaveClass(/\bselected\b/);
+
+    // Esc that closes the color picker only closes the picker.
+    await exprInput(page, 0).click();
+    await row.getByRole('button', { name: 'Change color', exact: true }).click();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.color-picker')).toHaveCount(0);
+    await expect(row).toHaveClass(/\bselected\b/);
+
+    await page.getByRole('button', { name: 'Delete expression 1' }).click();
+    await expect(exprInput(page, 0)).toHaveValue('');
+    await expect(page.locator('.expr-row.selected')).toHaveCount(0);
+  });
+
+  test('Enter on an empty row moves on instead of adding more rows', async ({ page }) => {
+    await openApp(page);
+    await setExpr(page, 0, 'y = x');
+    await exprInput(page, 0).press('Enter');
+    await expect(exprInput(page, 1)).toBeFocused();
+    await exprInput(page, 1).press('Enter');
+    await exprInput(page, 1).press('Enter');
+    await expect(page.getByTestId('expr-input')).toHaveCount(2);
+    await expect(exprInput(page, 1)).toBeFocused();
+
+    // In the middle of the list, an empty row goes on to the next one.
+    await setExpr(page, 1, 'y = 2');
+    await exprInput(page, 0).press('Enter');
+    await expect(exprInput(page, 1)).toBeFocused();
+    await expect(exprInput(page, 1)).toHaveValue('');
+    await exprInput(page, 1).press('Enter');
+    await expect(exprInput(page, 2)).toBeFocused();
+    await expect(exprInput(page, 2)).toHaveValue('y = 2');
+    await expect(page.getByTestId('expr-input')).toHaveCount(4);
   });
 
   test('deleting a row from the keyboard keeps focus in the list', async ({ page }) => {
