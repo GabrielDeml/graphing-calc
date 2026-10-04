@@ -1,0 +1,139 @@
+import { test as base, expect, type Page } from '@playwright/test';
+
+/** Every test fails on console errors (including CSP violations) or uncaught exceptions. */
+export const test = base.extend<{ consoleErrors: string[] }>({
+  consoleErrors: [
+    async ({ page }, use) => {
+      const errors: string[] = [];
+      page.on('console', (m) => {
+        if (m.type() === 'error') errors.push(m.text());
+      });
+      page.on('pageerror', (e) => errors.push(String(e)));
+      await use(errors);
+      expect(errors, 'console errors').toEqual([]);
+    },
+    { auto: true },
+  ],
+});
+
+export { expect };
+
+export const RED = '#c74440';
+export const BLUE = '#2d70b3';
+export const GREEN = '#388c46';
+
+export function exprInput(page: Page, index: number) {
+  return page.getByTestId('expr-input').nth(index);
+}
+
+/** Put text into the nth expression row (rows are created automatically as you type). */
+export async function setExpr(page: Page, index: number, text: string) {
+  const input = exprInput(page, index);
+  await input.click();
+  await input.fill(text);
+}
+
+export async function openApp(page: Page) {
+  await page.goto('/');
+  await expect(exprInput(page, 0)).toBeVisible();
+  await expect(page.getByTestId('graph')).toHaveAttribute('data-view', /,/);
+}
+
+function parseHex(hex: string): [number, number, number] {
+  return [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16)) as [number, number, number];
+}
+
+/** Number of canvas pixels within `tol` (per channel) of a color. */
+export async function countColor(page: Page, hex: string, tol = 40): Promise<number> {
+  const rgb = parseHex(hex);
+  return page.evaluate(
+    ([r, g, b, t]) => {
+      const c = document.querySelector('canvas.graph-canvas') as HTMLCanvasElement;
+      const ctx = c.getContext('2d') as CanvasRenderingContext2D;
+      const { data } = ctx.getImageData(0, 0, c.width, c.height);
+      let n = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if (
+          Math.abs(data[i] - r) <= t &&
+          Math.abs(data[i + 1] - g) <= t &&
+          Math.abs(data[i + 2] - b) <= t
+        ) {
+          n++;
+        }
+      }
+      return n;
+    },
+    [...rgb, tol] as const,
+  );
+}
+
+/** Screen (CSS px, relative to the graph element) of a world point, from the graph's data-view. */
+export async function worldToScreen(page: Page, x: number, y: number) {
+  return page.getByTestId('graph').evaluate(
+    (el, [wx, wy]) => {
+      const [xmin, xmax, ymin, ymax] = (el.getAttribute('data-view') ?? '').split(',').map(Number);
+      return {
+        sx: ((wx - xmin) / (xmax - xmin)) * el.clientWidth,
+        sy: ((ymax - wy) / (ymax - ymin)) * el.clientHeight,
+      };
+    },
+    [x, y] as const,
+  );
+}
+
+/** Count pixels of a color in a small square around a world point. */
+export async function countColorNear(
+  page: Page,
+  x: number,
+  y: number,
+  hex: string,
+  radiusPx = 6,
+  tol = 50,
+): Promise<number> {
+  const { sx, sy } = await worldToScreen(page, x, y);
+  const rgb = parseHex(hex);
+  return page.evaluate(
+    ([px, py, rad, r, g, b, t]) => {
+      const c = document.querySelector('canvas.graph-canvas') as HTMLCanvasElement;
+      const dpr = c.width / c.clientWidth;
+      const ctx = c.getContext('2d') as CanvasRenderingContext2D;
+      const x0 = Math.max(0, Math.round((px - rad) * dpr));
+      const y0 = Math.max(0, Math.round((py - rad) * dpr));
+      const size = Math.max(1, Math.round(2 * rad * dpr));
+      const { data } = ctx.getImageData(x0, y0, size, size);
+      let n = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if (
+          Math.abs(data[i] - r) <= t &&
+          Math.abs(data[i + 1] - g) <= t &&
+          Math.abs(data[i + 2] - b) <= t
+        ) {
+          n++;
+        }
+      }
+      return n;
+    },
+    [sx, sy, radiusPx, ...rgb, tol] as const,
+  );
+}
+
+/** Average color in a small square around a world point. */
+export async function colorAt(page: Page, x: number, y: number): Promise<[number, number, number]> {
+  const { sx, sy } = await worldToScreen(page, x, y);
+  return page.evaluate(
+    ([px, py]) => {
+      const c = document.querySelector('canvas.graph-canvas') as HTMLCanvasElement;
+      const dpr = c.width / c.clientWidth;
+      const ctx = c.getContext('2d') as CanvasRenderingContext2D;
+      const { data } = ctx.getImageData(Math.round(px * dpr) - 1, Math.round(py * dpr) - 1, 3, 3);
+      const sum = [0, 0, 0];
+      for (let i = 0; i < data.length; i += 4) {
+        sum[0] += data[i];
+        sum[1] += data[i + 1];
+        sum[2] += data[i + 2];
+      }
+      return sum.map((s) => Math.round(s / 9)) as [number, number, number];
+    },
+    [sx, sy] as const,
+  );
+}
