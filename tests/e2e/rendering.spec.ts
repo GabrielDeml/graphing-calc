@@ -1,7 +1,7 @@
 import { BLUE, countColor, expect, exprInput, setExpr, test } from './helpers';
 
 async function openDebug(page: import('@playwright/test').Page) {
-  await page.goto('/?debug');
+  await page.goto('./?debug');
   await expect(exprInput(page, 0)).toBeVisible();
   await expect(page.getByTestId('graph')).toHaveAttribute('data-view', /,/);
 }
@@ -40,7 +40,7 @@ test.describe('rendering', () => {
 });
 
 test('the canvas renders at the device pixel ratio, edge to edge', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('./');
   await expect(page.getByTestId('graph')).toHaveAttribute('data-view', /,/);
   const info = await page.locator('canvas.graph-canvas').evaluate((c: HTMLCanvasElement) => {
     const r = c.getBoundingClientRect();

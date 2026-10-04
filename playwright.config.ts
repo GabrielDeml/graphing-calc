@@ -1,5 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
 
+// Same base path as the build (vite.config.ts), so CI tests exactly what gets deployed.
+const base = `/${(process.env.BASE_PATH ?? '').replace(/^\/+|\/+$/g, '')}/`.replace(/^\/\/$/, '/');
+const url = `http://127.0.0.1:4173${base}`;
+
 // @playwright/test is pinned to 1.56.1 to match the preinstalled Chromium build.
 export default defineConfig({
   testDir: 'tests/e2e',
@@ -8,7 +12,7 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: {
-    baseURL: 'http://127.0.0.1:4173',
+    baseURL: url,
     trace: 'retain-on-failure',
   },
   projects: [
@@ -17,7 +21,7 @@ export default defineConfig({
   ],
   webServer: {
     command: 'pnpm build && pnpm preview',
-    url: 'http://127.0.0.1:4173',
+    url,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
   },

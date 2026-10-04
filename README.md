@@ -3,6 +3,9 @@
 A fast graphing calculator that runs entirely in the browser and installs as an app (PWA). It works
 offline, and on phones it shows its own math keypad instead of the device keyboard.
 
+**Live app: <https://gabrieldeml.github.io/graphing-calc/>.** To install it, open the link on your
+phone and use "Add to Home Screen" (iOS Safari) or "Install app" (Android/desktop Chrome).
+
 Built with Vite, TypeScript and SolidJS. The math engine (tokenizer, Pratt parser and a compiler
 to closures) and the plotting code (adaptive samplers and marching squares) are written from
 scratch in plain TypeScript.
@@ -90,3 +93,17 @@ tests/e2e/        Playwright specs
 
 The pure-TS layers have no DOM or framework dependencies; `tsconfig.engine.json` checks this.
 That keeps them unit-testable and ready to move into a Web Worker later.
+
+## Deployment
+
+[`.github/workflows/pages.yml`](.github/workflows/pages.yml) runs lint, typecheck, unit tests and
+the Playwright suite on every pull request and every push to `main`. It runs the tests against the
+same `/<repo>/` sub-path build that Pages serves. On `main` it then builds the site and deploys it
+to GitHub Pages.
+
+One-time setup: in the repository's **Settings → Pages**, set **Source** to **GitHub Actions**.
+
+The build reads the URL path it is served from out of `BASE_PATH`. It defaults to `/`, so
+`pnpm dev` and `pnpm preview` serve at the root. To try the Pages layout locally, run
+`BASE_PATH=/graphing-calc/ pnpm build && BASE_PATH=/graphing-calc/ pnpm preview`, then open
+<http://127.0.0.1:4173/graphing-calc/>.

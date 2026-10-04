@@ -34,7 +34,7 @@ export async function setExpr(page: Page, index: number, text: string) {
 }
 
 export async function openApp(page: Page) {
-  await page.goto('/');
+  await page.goto('./');
   await expect(exprInput(page, 0)).toBeVisible();
   await expect(page.getByTestId('graph')).toHaveAttribute('data-view', /,/);
 }

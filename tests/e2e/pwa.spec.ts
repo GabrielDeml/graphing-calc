@@ -4,10 +4,11 @@ test.describe('PWA', () => {
   test.skip(({ isMobile }) => isMobile, 'service worker behaviour is the same on mobile');
 
   test('manifest is valid and installable', async ({ page, request }) => {
-    await page.goto('/');
+    await page.goto('./');
     const href = await page.locator('link[rel="manifest"]').getAttribute('href');
     expect(href).toBeTruthy();
-    const res = await request.get(`/${href?.replace(/^\//, '')}`);
+    const manifestUrl = new URL(href ?? '', page.url()).href;
+    const res = await request.get(manifestUrl);
     expect(res.ok()).toBe(true);
     const manifest = await res.json();
     expect(manifest.name).toBe('Graphing Calculator');
@@ -16,7 +17,7 @@ test.describe('PWA', () => {
     expect(sizes).toEqual(expect.arrayContaining(['192x192', '512x512']));
     expect(manifest.icons.some((i: { purpose?: string }) => i.purpose === 'maskable')).toBe(true);
     for (const icon of manifest.icons) {
-      expect((await request.get(`/${icon.src}`)).ok()).toBe(true);
+      expect((await request.get(new URL(icon.src, manifestUrl).href)).ok()).toBe(true);
     }
   });
 
@@ -44,7 +45,7 @@ test.describe('PWA', () => {
   });
 
   test('production build ships a strict CSP', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('./');
     const csp = await page
       .locator('meta[http-equiv="Content-Security-Policy"]')
       .getAttribute('content');

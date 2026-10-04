@@ -30,7 +30,17 @@ function cspPlugin(): Plugin {
   };
 }
 
+/** URL path the app is served from, always with a trailing slash. */
+function basePath(): string {
+  const raw = process.env.BASE_PATH?.trim() || '/';
+  return `/${raw.replace(/^\/+|\/+$/g, '')}/`.replace(/^\/\/$/, '/');
+}
+
+// GitHub Pages serves the app from /<repo>/; the Pages workflow sets BASE_PATH. Locally it is '/'.
+const base = basePath();
+
 export default defineConfig({
+  base,
   plugins: [
     solid(),
     cspPlugin(),
@@ -39,7 +49,7 @@ export default defineConfig({
       injectRegister: false,
       includeAssets: ['favicon.ico', 'favicon.svg', 'apple-touch-icon-180x180.png'],
       manifest: {
-        id: '/',
+        id: base,
         name: 'Graphing Calculator',
         short_name: 'Graph',
         description: 'Fast, offline graphing calculator',
