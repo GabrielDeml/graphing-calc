@@ -194,4 +194,15 @@ test.describe('New graph on a phone', () => {
     await expect(exprInput(page, 0)).toHaveValue('y=x');
     await expect(page.getByTestId('toast')).toHaveCount(0);
   });
+
+  test('one tap opens the menu from a collapsed panel, which stays collapsed', async ({ page }) => {
+    await openApp(page);
+    const title = page.locator('.panel-title');
+    await title.tap(); // half → full
+    await title.tap(); // full → collapsed
+    await expect(page.locator('.app')).toHaveAttribute('data-panel', 'collapsed');
+    await page.getByRole('button', { name: 'More options' }).tap();
+    await expect(page.getByRole('menuitem', { name: 'New graph' })).toBeInViewport({ ratio: 1 });
+    await expect(page.locator('.app')).toHaveAttribute('data-panel', 'collapsed');
+  });
 });

@@ -57,8 +57,8 @@ Syntax notes:
   - `↑` and `↓` move between rows.
   - Tap the color dot to show or hide a curve.
   - A curve gets its color when it first draws: the least-used one, red first, so the first three
-    curves are red, blue and green wherever they sit in the list. Sliders, definitions and empty
-    rows don't take a color.
+    curves are red, blue and green wherever they sit in the list. Rows that draw nothing (sliders,
+    values such as `k = 2a + 1`, empty rows) don't take a color.
 - **Undo:** `Ctrl+Z` (`⌘Z` on a Mac) undoes and `Ctrl+Shift+Z` (`⌘⇧Z`) or `Ctrl+Y` redoes, from
   anywhere in the app. Typing undoes in bursts, a slider drag is one step, and a playing slider
   adds none (undoing something else leaves it where it is). Undo puts the caret back where the

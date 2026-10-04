@@ -15,6 +15,9 @@ export interface Viewport {
   height: number;
 }
 
+/** A view's center and scale, without a size (a saved view takes the size of its window). */
+export type ViewCenter = Pick<Viewport, 'cx' | 'cy' | 'ppuX' | 'ppuY'>;
+
 export interface Bounds {
   xmin: number;
   xmax: number;

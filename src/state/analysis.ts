@@ -23,7 +23,7 @@ export const analysis = createRoot(() =>
 );
 
 // A row gets its color when it first plots: the least-used one among the rows holding a color.
-// Rows that don't plot (empty rows, sliders, definitions) don't take one or count against the
+// Rows that draw nothing (empty rows, sliders, values) don't take one or count against the
 // others, while a curve that is only broken for now (mid-edit) keeps its color reserved. Runs in
 // the same tick as the edit that made the row plot, so it is part of that undo step.
 createRoot(() => {

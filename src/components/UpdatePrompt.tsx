@@ -1,5 +1,6 @@
 import { useRegisterSW } from 'virtual:pwa-register/solid';
 import { createEffect, onCleanup, Show } from 'solid-js';
+import { ToastCard } from './Toast';
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -29,17 +30,13 @@ export function UpdatePrompt() {
 
   return (
     <Show when={offlineReady() || needRefresh()}>
-      <div class="toast" role="status" data-testid="sw-toast">
-        <span>{needRefresh() ? 'A new version is available.' : 'Ready to work offline.'}</span>
-        <Show when={needRefresh()}>
-          <button type="button" class="toast-action" onClick={() => updateServiceWorker(true)}>
-            Reload
-          </button>
-        </Show>
-        <button type="button" class="toast-close" aria-label="Dismiss" onClick={close}>
-          ×
-        </button>
-      </div>
+      <ToastCard
+        message={needRefresh() ? 'A new version is available.' : 'Ready to work offline.'}
+        actionLabel={needRefresh() ? 'Reload' : undefined}
+        onAction={() => updateServiceWorker(true)}
+        onDismiss={close}
+        testId="sw-toast"
+      />
     </Show>
   );
 }

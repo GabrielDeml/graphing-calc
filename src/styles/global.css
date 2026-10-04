@@ -886,6 +886,9 @@ button {
   flex-direction: column;
   align-items: center;
   gap: 8px;
+  /* Left at 50% would otherwise cap the width at half the window and wrap short messages. */
+  width: max-content;
+  max-width: calc(100% - 32px);
   pointer-events: none;
 }
 

@@ -1,7 +1,7 @@
 import type { PlotItem } from '../engine/types';
 import { nearestOnPolyline, nearestPoint, traceExplicit } from '../plot/nearest';
 import { SceneCache } from '../plot/scene';
-import type { Quality, RowGeometry, Viewport } from '../plot/types';
+import type { Quality, RowGeometry, ViewCenter, Viewport } from '../plot/types';
 import {
   clampViewport,
   homeViewport,
@@ -41,9 +41,6 @@ const IDLE_MS = 150;
 const HEAVY_FRAME_MS = 16;
 /** …and settles to final quality once it pauses this long. */
 const TYPING_IDLE_MS = 300;
-
-/** A view's center and scale, without a size (a restored view takes the container's). */
-export type ViewCenter = Pick<Viewport, 'cx' | 'cy' | 'ppuX' | 'ppuY'>;
 
 /**
  * Owns the canvas, the viewport and the render loop. Deliberately not reactive: pans and zooms at

@@ -3,6 +3,7 @@ import {
   decode,
   encode,
   isNewerVersion,
+  type Migrations,
   migrate,
   SAVE_VERSION,
   type SavedRow,
@@ -137,6 +138,32 @@ describe('migrate', () => {
     expect(migrate([])).toBeNull();
     expect(migrate('{"version":1}')).toBeNull();
     expect(migrate(null)).toBeNull();
+  });
+
+  // Steps for two made-up older formats: v-1 kept bare sources, v0 called the list `exprs`.
+  const migrations: Migrations = {
+    [-1]: (d) => ({ version: 0, exprs: (d.sources as string[]).map((source) => ({ source })) }),
+    0: (d) => ({ version: SAVE_VERSION, rows: d.exprs }),
+  };
+
+  it('upgrades old data one step at a time', () => {
+    const upgraded = migrate({ version: -1, sources: ['y = x', 'a = 2'] }, migrations);
+    expect(upgraded).toEqual({
+      version: SAVE_VERSION,
+      rows: [{ source: 'y = x' }, { source: 'a = 2' }],
+    });
+    expect(validate(upgraded)?.rows.map((r) => r.source)).toEqual(['y = x', 'a = 2']);
+  });
+
+  it('gives up on a step that fails, or one that does not raise the version', () => {
+    // Bad old data: the step throws.
+    expect(migrate({ version: -1, sources: 'y = x' }, migrations)).toBeNull();
+    // A step going nowhere (or backwards) would never end.
+    expect(migrate({ version: 0 }, { 0: (d) => d })).toBeNull();
+    const back: Migrations = { 0: () => ({ version: -1 }), [-1]: () => ({ version: 0 }) };
+    expect(migrate({ version: 0 }, back)).toBeNull();
+    // A step returning something other than an object.
+    expect(migrate({ version: 0 }, { 0: () => 'v1' })).toBeNull();
   });
 });
 

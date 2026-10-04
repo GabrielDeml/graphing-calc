@@ -1,9 +1,12 @@
 // Autosave format: the expression list, the view and a few layout choices, as JSON in
-// localStorage. Decoding is pure and never throws: anything unreadable comes back as null (an
-// empty graph) and malformed fields fall back to their defaults. Data from a newer version of the
-// app is unreadable too, but it is not written over (see isNewerVersion). Nothing here writes to
-// the console, since the e2e suite fails on any console error.
+// localStorage, and reading it back. The stores hydrate from savedState() before they are
+// created; autosave.ts does the saving (it imports the stores, so it can't be what they import).
+// Decoding is pure and never throws: anything unreadable comes back as null (an empty graph) and
+// malformed fields fall back to their defaults. Data from a newer version of the app is
+// unreadable too, but it is not written over (see isNewerVersion). Nothing here writes to the
+// console, since the e2e suite fails on any console error.
 
+import type { ViewCenter } from '../plot/types';
 import { PALETTE_SIZE } from './colors';
 import type { PanelSnap } from './ui';
 
@@ -24,18 +27,10 @@ export interface SavedRow {
   domain: { min: string; max: string };
 }
 
-/** A view's center and scale; the size comes from the window it is restored into. */
-export interface SavedView {
-  cx: number;
-  cy: number;
-  ppuX: number;
-  ppuY: number;
-}
-
 export interface SavedState {
   rows: SavedRow[];
   /** null while the view is the home view, which then follows the window size. */
-  view: SavedView | null;
+  view: ViewCenter | null;
   /** Keypad mode; absent means the device default. */
   keypad?: boolean;
   sidebarOpen?: boolean;
@@ -60,19 +55,28 @@ function finite(v: unknown): v is number {
   return typeof v === 'number' && Number.isFinite(v);
 }
 
-/**
- * Upgrades from older versions, keyed by the version they upgrade from. Each returns data of a
- * higher version, so a chain of them always ends.
- */
-const MIGRATIONS: Readonly<Record<number, (data: Json) => Json>> = {};
+/** Upgrades from older versions, keyed by the version they upgrade from. */
+export type Migrations = Readonly<Record<number, (data: Json) => unknown>>;
 
-/** Bring saved data up to the current version; null when it is not a version this app knows. */
-export function migrate(raw: unknown): Json | null {
+const MIGRATIONS: Migrations = {};
+
+/**
+ * Bring saved data up to the current version; null when it is not a version this app knows. Each
+ * step must raise the version (so a chain always ends), and one that fails loses only the data.
+ */
+export function migrate(raw: unknown, migrations: Migrations = MIGRATIONS): Json | null {
   let data = raw;
   while (isObject(data) && data.version !== SAVE_VERSION) {
-    const step = typeof data.version === 'number' ? MIGRATIONS[data.version] : undefined;
+    const from = data.version;
+    if (typeof from !== 'number') return null;
+    const step = migrations[from];
     if (!step) return null;
-    data = step(data);
+    try {
+      data = step(data);
+    } catch {
+      return null;
+    }
+    if (isObject(data) && !(typeof data.version === 'number' && data.version > from)) return null;
   }
   return isObject(data) ? data : null;
 }
@@ -101,7 +105,7 @@ function validateRow(raw: unknown): SavedRow | null {
   };
 }
 
-function validateView(raw: unknown): SavedView | null {
+function validateView(raw: unknown): ViewCenter | null {
   if (!isObject(raw)) return null;
   const { cx, cy, ppuX, ppuY } = raw;
   if (!finite(cx) || !finite(cy) || !finite(ppuX) || !finite(ppuY)) return null;

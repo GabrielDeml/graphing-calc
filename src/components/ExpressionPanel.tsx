@@ -91,7 +91,10 @@ export function ExpressionPanel() {
       class="panel"
       aria-label="Expression list"
       ref={panel}
-      onFocusIn={() => {
+      onFocusIn={(e) => {
+        // A field getting focus brings the list up. The header's buttons leave the panel be: one
+        // moving under a tap sends the tap's click to whatever slid beneath the finger.
+        if ((e.target as HTMLElement).closest('.panel-header')) return;
         if (mobileQuery?.matches && ui.panelSnap() === 'collapsed') ui.setPanelSnap('half');
       }}
     >

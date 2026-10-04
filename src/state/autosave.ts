@@ -1,4 +1,8 @@
+// Autosave: keeps localStorage in step with the document, the graph's view and the layout, in
+// the format of persist.ts. Saves follow a pause in changes, and leaving the page saves at once.
+
 import { createEffect, createRoot, untrack } from 'solid-js';
+import type { ViewCenter } from '../plot/types';
 import { adoptRows, doc, revision } from './doc';
 import { keypad } from './keypad';
 import {
@@ -6,7 +10,6 @@ import {
   encode,
   isNewerVersion,
   type SavedState,
-  type SavedView,
   STORAGE_KEY,
   savedByNewerVersion,
   savedState,
@@ -20,10 +23,10 @@ const SAVE_DELAY_MS = 400;
  * The graph's view. Not a signal: it changes on every frame of a pan or pinch, which must not
  * re-run the effect below (and re-read every row) each time.
  */
-let view: SavedView | null = savedState()?.view ?? null;
+let view: ViewCenter | null = savedState()?.view ?? null;
 
 /** The graph's view after a change; null while it is (or is animating to) the home view. */
-export function noteView(v: SavedView | null): void {
+export function noteView(v: ViewCenter | null): void {
   const next = v && { cx: v.cx, cy: v.cy, ppuX: v.ppuX, ppuY: v.ppuY };
   if (
     next === view ||
