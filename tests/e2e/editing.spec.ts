@@ -206,7 +206,8 @@ test.describe('editing rows', () => {
   test('the color picker of a low row is scrolled into view', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 480 });
     await openApp(page);
-    for (let i = 0; i < 12; i++) await setExpr(page, i, `y = ${i}`);
+    // (All in view: a new curve out of it would move the graph to frame it.)
+    for (let i = 0; i < 12; i++) await setExpr(page, i, `y = ${i / 2}`);
     const scroller = page.locator('.panel-scroll');
     await scroller.evaluate((el) => {
       el.scrollTop = 0;

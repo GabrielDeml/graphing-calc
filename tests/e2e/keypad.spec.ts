@@ -185,7 +185,8 @@ test.describe('math keypad on touch devices: editing details', () => {
 
   test('the tapped row stays in view when the keypad opens', async ({ page }) => {
     await openApp(page);
-    for (let i = 0; i < 10; i++) await setExpr(page, i, `y=${i}`);
+    // (All in view over the keypad: a new curve out of it would move the graph to frame it.)
+    for (let i = 0; i < 10; i++) await setExpr(page, i, `y=${i / 2}`);
     await page.getByTestId('keypad-hide').tap();
     await expect(page.getByTestId('keypad')).toHaveCount(0);
     const scroller = page.locator('.panel-scroll');

@@ -2,9 +2,12 @@
 // appears out of sight. Found from samples of the row's functions, not from the drawn polylines:
 // a fit has to see what is off screen too.
 //
-//   - y = f(x) (and x = f(y)): f over the x the view shows (or, where f is nowhere defined there,
-//     over wider and wider ranges around it), its values kept robust: the tail a pole leaves
-//     (1/x near 0) is no part of the box, or a fit would fly off to it;
+//   - y = f(x) (and x = f(y)): what is worth seeing of it over the x the view shows (or, where f
+//     is nowhere defined there, over wider and wider ranges around it): where it crosses the x
+//     axis, turns, meets the y axis and ends. A curve with no end has no box of its own, and the
+//     whole of x³ over the view would make a fit fly out a thousandfold to show its height. One
+//     with none of these (1/x) is boxed by its values, kept robust: the tail a pole leaves (1/x
+//     near 0) is no part of the box, or a fit would fly off to it, as it would to a pole's peak;
 //   - parametric and polar curves: their whole parameter range, as drawn, just as robust;
 //   - points: their coordinates;
 //   - an implicit curve F = 0: where F changes sign on grids from the view outwards (and then
@@ -113,7 +116,47 @@ export function unionBounds(a: Bounds | null, b: Bounds | null): Bounds | null {
   };
 }
 
-/** v = f(u) over the u the view shows, or the nearest wider range where f is defined at all. */
+/**
+ * What is worth seeing of v = f(u) on samples (us, vs), as points (u, v): where it crosses v = 0
+ * (refined; a pole's change of sign is none), turns, meets u = 0, and ends (next to a sample where
+ * it is undefined). All but the crossings must lie in the robust range of the values, so a pole's
+ * peak (1/x² near 0) is none either.
+ */
+function features(f: Fn1, us: Float64Array, vs: Float64Array): { u: number; v: number }[] {
+  const out: { u: number; v: number }[] = [];
+  const finite: number[] = [];
+  for (const v of vs) if (Number.isFinite(v)) finite.push(v);
+  const range = robustRange(finite);
+  if (!range) return out;
+  const keep = (u: number, v: number) => {
+    if (v >= range[0] && v <= range[1]) out.push({ u, v });
+  };
+  const n = us.length;
+  if (us[0] <= 0 && us[n - 1] >= 0) {
+    const v0 = f(0);
+    if (Number.isFinite(v0)) keep(0, v0);
+  }
+  for (let i = 0; i < n; i++) {
+    const v = vs[i];
+    if (!Number.isFinite(v)) continue;
+    if (v === 0) out.push({ u: us[i], v: 0 });
+    const prev = vs[i - 1];
+    const next = vs[i + 1];
+    if ((i > 0 && !Number.isFinite(prev)) || (i < n - 1 && !Number.isFinite(next))) keep(us[i], v);
+    // (Between finite values: next to a sample on a pole (1/x at 0) is no crossing.)
+    if (Number.isFinite(next) && ((v < 0 && next > 0) || (v > 0 && next < 0))) {
+      const u = edgeRoot(f, us[i], v, us[i + 1], next);
+      if (u !== null) out.push({ u, v: 0 });
+    }
+    if (i > 0 && i < n - 1 && (v - prev) * (next - v) < 0) keep(us[i], v);
+  }
+  return out;
+}
+
+/**
+ * v = f(u) over the u the view shows, or the nearest wider range where f is defined at all: the
+ * box of its features there, else of its values.
+ */
 function explicitBounds(f: Fn1, axis: 'x' | 'y', view: Bounds): Bounds | null {
   const [lo, hi] = axis === 'x' ? [view.xmin, view.xmax] : [view.ymin, view.ymax];
   const mid = (lo + hi) / 2;
@@ -121,7 +164,11 @@ function explicitBounds(f: Fn1, axis: 'x' | 'y', view: Bounds): Bounds | null {
   for (let k = 0; k <= MAX_WIDEN; k++) {
     const us = samples(mid - half * 4 ** k, mid + half * 4 ** k);
     const vs = us.map(f);
-    const box = axis === 'x' ? robustBox(us, vs) : robustBox(vs, us);
+    let box: Bounds | null = null;
+    for (const { u, v } of features(f, us, vs)) {
+      box = axis === 'x' ? extend(box, u, v) : extend(box, v, u);
+    }
+    box ??= axis === 'x' ? robustBox(us, vs) : robustBox(vs, us);
     if (box) return box;
   }
   return null;
@@ -297,19 +344,60 @@ export function fitViewport(box: Bounds, view: Viewport): Viewport {
   return clampViewport({ cx, cy, ppuX: ppu, ppuY: ppu, width: view.width, height: view.height });
 }
 
+/** Whether the segment (x0, y0)–(x1, y1) meets the box (Liang–Barsky clipping). */
+function segmentMeets(box: Bounds, x0: number, y0: number, x1: number, y1: number): boolean {
+  let t0 = 0;
+  let t1 = 1;
+  /** Clip to one side, p·t ≤ q; false when nothing is left. */
+  const clip = (p: number, q: number) => {
+    if (p === 0) return q >= 0;
+    const r = q / p;
+    if (p < 0) {
+      if (r > t1) return false;
+      t0 = Math.max(t0, r);
+    } else {
+      if (r < t0) return false;
+      t1 = Math.min(t1, r);
+    }
+    return true;
+  };
+  const [dx, dy] = [x1 - x0, y1 - y0];
+  return (
+    clip(-dx, x0 - box.xmin) &&
+    clip(dx, box.xmax - x0) &&
+    clip(-dy, y0 - box.ymin) &&
+    clip(dy, box.ymax - y0)
+  );
+}
+
 /**
- * Whether drawn geometry shows anywhere in `box`: a curve's point, a point marker, or a shaded
- * region (which may cover the view without a vertex in it).
+ * Whether drawn geometry shows anywhere in `box`: a curve's segment (a straight line is sampled
+ * as a few vertices far out, none of them in view), a point marker, or a shaded region (which
+ * may cover the view without a vertex in it).
  */
 export function drawsIn(geometry: RowGeometry, box: Bounds): boolean {
-  const inside = (a: Float64Array) => {
+  const inside = (x: number, y: number) =>
+    x >= box.xmin && x <= box.xmax && y >= box.ymin && y <= box.ymax;
+  const crosses = (a: Float64Array) => {
     for (let i = 0; i + 1 < a.length; i += 2) {
       const [x, y] = [a[i], a[i + 1]];
-      if (x >= box.xmin && x <= box.xmax && y >= box.ymin && y <= box.ymax) return true;
+      if (inside(x, y)) return true;
+      const [px, py] = [a[i - 2], a[i - 1]];
+      if (
+        i >= 2 &&
+        Number.isFinite(px + py + x + y) &&
+        segmentMeets(box, px as number, py as number, x, y)
+      ) {
+        return true;
+      }
     }
     return false;
   };
   if (geometry.fill && geometry.fill.length > 0) return true;
-  if (geometry.points && inside(geometry.points)) return true;
-  return geometry.curves.some(inside);
+  const points = geometry.points;
+  if (points) {
+    for (let i = 0; i + 1 < points.length; i += 2)
+      if (inside(points[i], points[i + 1])) return true;
+  }
+  return geometry.curves.some(crosses);
 }

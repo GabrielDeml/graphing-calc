@@ -145,15 +145,30 @@ export function InsightLine(props: {
     }
   };
 
+  /**
+   * The row came with its math already settled (a reload, an undo, a slider made for it): its
+   * line is there at once, as the row is, rather than opening under it a moment later and
+   * pushing the list down.
+   */
+  const [instant, setInstant] = createSignal(false);
+  let mounting = true;
   createEffect(
     on(reading, (r) => {
+      const atMount = mounting;
+      mounting = false;
       clearTimeout(timer);
       if (r === 'closed') {
         lastIdent = undefined;
         batch(() => {
           setDim(false);
+          setInstant(false);
           setInsight(null);
         });
+        return;
+      }
+      if (atMount && r !== 'pending') {
+        setInstant(true);
+        read(r, false);
         return;
       }
       if (r === 'pending') {
@@ -182,7 +197,7 @@ export function InsightLine(props: {
       {(s) => (
         <div
           class="expr-insight"
-          classList={{ closing: closing(), dim: dim() }}
+          classList={{ closing: closing(), dim: dim(), instant: instant() }}
           aria-hidden={closing() || undefined}
           inert={closing() || undefined}
         >
@@ -193,8 +208,9 @@ export function InsightLine(props: {
               {(fact, i) => (
                 <>
                   <Show when={i > 0 || s().title}>
+                    {/* The dot ends a line rather than starts one. */}
                     <span class="insight-sep" aria-hidden="true">
-                      {' · '}
+                      {'\u00a0· '}
                     </span>
                   </Show>
                   <Fact
@@ -225,29 +241,33 @@ function Fact(props: {
     const l = props.fact.label;
     return props.first ? l.charAt(0).toUpperCase() + l.slice(1) : l;
   };
-  /** Before the n-th thing named after the label: a space, then commas. */
-  const gap = (n: number, before: boolean) => (n > 0 ? ', ' : before ? ' ' : '');
-  const values = () => props.fact.values ?? [];
+  /** The values, then the rows, it names. */
+  const items = (): { value?: InsightValue; row?: string }[] => [
+    ...(props.fact.values ?? []).map((value) => ({ value })),
+    ...(props.fact.rows ?? []).map((row) => ({ row })),
+  ];
+  // Lines break only between items, each kept with its comma, and the label with the first one
+  // (a chip is a box, which lines break around even at a no-break space).
   return (
     <span class="insight-fact">
-      {label()}
-      <Index each={values()}>
-        {(value, j) => (
+      <Show when={items().length === 0}>{label()}</Show>
+      <Index each={items()}>
+        {(item, j) => (
           <>
-            {gap(j, label() !== '')}
-            <Value value={value()} rowId={props.rowId} onMouseDown={props.onMouseDown} />
+            {j > 0 ? ' ' : ''}
+            <span class="insight-keep">
+              {j === 0 && label() !== '' ? `${label()}\u00a0` : ''}
+              <Show when={item().value} fallback={<RowRef id={item().row ?? ''} />}>
+                {(value) => (
+                  <Value value={value()} rowId={props.rowId} onMouseDown={props.onMouseDown} />
+                )}
+              </Show>
+              {j < items().length - 1 ? ',' : ''}
+            </span>
           </>
         )}
       </Index>
-      <Index each={props.fact.rows ?? []}>
-        {(id, j) => (
-          <>
-            {gap(j, label() !== '' || values().length > 0)}
-            <RowRef id={id()} />
-          </>
-        )}
-      </Index>
-      <Show when={props.fact.tail}>{(tail) => ` ${tail()}`}</Show>
+      <Show when={props.fact.tail}>{(tail) => `\u00a0${tail()}`}</Show>
     </span>
   );
 }

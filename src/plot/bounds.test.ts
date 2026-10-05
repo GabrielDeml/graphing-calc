@@ -57,41 +57,62 @@ describe('robustRange', () => {
 describe('plotBounds', () => {
   const b = viewBounds(home);
 
-  it('y = f(x): its values over the x in view', () => {
+  it('y = f(x): where it crosses the axes and turns', () => {
+    // Roots ±1, turning points at ±0.5774 (y ∓0.3849), to the samples' spacing.
+    expectBox(
+      plotBounds(
+        fx((x) => x ** 3 - x),
+        home,
+      ),
+      { xmin: -1, xmax: 1, ymin: -0.3849, ymax: 0.3849 },
+      2,
+    );
+    expectBox(
+      plotBounds(
+        fx((x) => x * x - 2),
+        home,
+      ),
+      { xmin: -Math.SQRT2, xmax: Math.SQRT2, ymin: -2, ymax: 0 },
+      3,
+    );
+    // sin x: its roots and extrema all over the view.
+    const wave = plotBounds(fx(Math.sin), home);
+    expect(wave?.xmin).toBeLessThan(b.xmin + 2 * Math.PI);
+    expect(wave?.xmax).toBeGreaterThan(b.xmax - 2 * Math.PI);
+    expect(wave?.ymin).toBeCloseTo(-1, 2);
+    expect(wave?.ymax).toBeCloseTo(1, 2);
+  });
+
+  it('y = f(x) with no root or turn in view: where it meets the y axis', () => {
     expectBox(
       plotBounds(
         fx((x) => x + 100),
         home,
       ),
-      {
-        xmin: b.xmin,
-        xmax: b.xmax,
-        ymin: b.xmin + 100,
-        ymax: b.xmax + 100,
-      },
+      { xmin: 0, xmax: 0, ymin: 100, ymax: 100 },
     );
-    // A constant: no height.
     expectBox(
       plotBounds(
         fx(() => 3),
         home,
       ),
-      { xmin: b.xmin, xmax: b.xmax, ymin: 3, ymax: 3 },
+      { xmin: 0, xmax: 0, ymin: 3, ymax: 3 },
     );
   });
 
-  it('x = f(y): its values over the y in view', () => {
+  it('x = f(y): the same, along y', () => {
+    // x = y² - 1: crossing x = 0 at y = ±1, turning at (-1, 0).
     expectBox(
       plotBounds(
-        fy((y) => y * y),
+        fy((y) => y * y - 1),
         home,
       ),
-      { xmin: 0, xmax: 100, ymin: -10, ymax: 10 },
+      { xmin: -1, xmax: 0, ymin: -1, ymax: 1 },
       3,
     );
   });
 
-  it('only where f is defined', () => {
+  it('where it ends', () => {
     const box = plotBounds(
       fx((x) => Math.sqrt(4 - x * x)),
       home,
@@ -103,24 +124,42 @@ describe('plotBounds', () => {
     expect(box?.ymax).toBeCloseTo(2, 3);
   });
 
-  it('leaves out the poles of 1/x and tan x', () => {
-    for (const f of [(x: number) => 1 / x, Math.tan]) {
+  it('leaves out the poles of 1/x, 1/x² and tan x', () => {
+    // None of them crosses the axis or turns there: their values, robust, stand for them.
+    for (const f of [(x: number) => 1 / x, (x: number) => 1 / (x * x)]) {
       const box = plotBounds(fx(f), home);
       expect(box).not.toBeNull();
       expect(box?.ymax).toBeLessThan(40);
       expect(box?.ymin).toBeGreaterThan(-40);
-      expect(box?.ymax).toBeGreaterThan(1);
+      expect(box?.ymax).toBeGreaterThan(0.5);
     }
+    // tan x: its roots, not its poles.
+    const tan = plotBounds(fx(Math.tan), home);
+    expect(tan?.xmin).toBeCloseTo(-4 * Math.PI, 6);
+    expect(tan?.xmax).toBeCloseTo(4 * Math.PI, 6);
+    expect(tan?.ymin).toBe(0);
+    expect(tan?.ymax).toBe(0);
+  });
+
+  it('a fit shows what x³ - x does, not how high it goes in view', () => {
+    const box = plotBounds(
+      fx((x) => x ** 3 - x),
+      home,
+    );
+    if (!box) throw new Error('no box');
+    // Zoomed in on its roots and turning points.
+    expect(fitViewport(box, home).ppuX).toBeGreaterThan(5 * home.ppuX);
   });
 
   it('looks farther out for y = f(x) defined nowhere in view', () => {
+    // sqrt(x - 1000): where it starts.
     const box = plotBounds(
       fx((x) => Math.sqrt(x - 1000)),
       home,
     );
     expect(box).not.toBeNull();
     expect(box?.xmin).toBeGreaterThanOrEqual(1000);
-    expect(box?.xmax).toBeGreaterThan(1500);
+    expect(box?.xmax).toBeLessThan(1010);
     expect(
       plotBounds(
         fx(() => Number.NaN),
@@ -279,6 +318,26 @@ describe('drawsIn', () => {
       'final',
     );
     expect(drawsIn(circle, b)).toBe(true);
+  });
+
+  it('a line sampled as two far points crosses the view', () => {
+    const line = (pts: number[]) => ({
+      curves: [new Float64Array(pts)],
+      dashed: false,
+      fill: null,
+      points: null,
+    });
+    expect(drawsIn(line([-1000, -1000, 1000, 1000]), b)).toBe(true);
+    // Beside the view, and pen up between the two halves of one that would cross it.
+    expect(drawsIn(line([-1000, 100, 1000, 120]), b)).toBe(false);
+    expect(drawsIn(line([-1000, -1000, Number.NaN, Number.NaN, 1000, 1000]), b)).toBe(false);
+    // y = 3 as the explicit sampler draws it.
+    const flat = buildRowGeometry(
+      fx(() => 3),
+      home,
+      'final',
+    );
+    expect(drawsIn(flat, b)).toBe(true);
   });
 
   it('counts points and shaded regions', () => {

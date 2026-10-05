@@ -836,6 +836,11 @@ button {
   margin-right: 0.22em;
 }
 
+/* A function's name after a letter or a number: `a sin(x)`. */
+.inline-math :is(.qm-var, .qm-num) + .qm-fn {
+  margin-left: 0.17em;
+}
+
 .inline-math .qm-sup,
 .inline-math .qm-sub {
   margin: 0;
@@ -903,6 +908,10 @@ button {
   transition: opacity var(--dur-2) var(--ease-out);
 }
 
+.expr-insight.instant {
+  animation: none;
+}
+
 .expr-insight.closing {
   animation: conceal var(--dur-2) var(--ease-out) forwards;
 }
@@ -934,6 +943,10 @@ button {
   color: var(--text-4);
 }
 
+.insight-keep {
+  white-space: nowrap;
+}
+
 /* Numbers in the math's face, with tabular figures: a value a slider moves doesn't jiggle. */
 .insight-value {
   font-family: var(--math);
@@ -947,8 +960,8 @@ button {
 .insight-chip {
   position: relative;
   display: inline-block;
-  margin: 0 -1px;
-  padding: 0 5px;
+  margin: 0 -2px;
+  padding: 0 4px;
   border: none;
   border-radius: 6px;
   background: var(--hover);
