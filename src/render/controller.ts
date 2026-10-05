@@ -1,5 +1,5 @@
 import type { PlotItem } from '../engine/types';
-import { nearestOnPolyline, nearestPoint, traceExplicit } from '../plot/nearest';
+import { type NearestHit, nearestOnPolyline, nearestPoint, traceExplicit } from '../plot/nearest';
 import { findPois, type Poi, type PoiCurve } from '../plot/poi';
 import { SceneCache } from '../plot/scene';
 import type { Quality, RowGeometry, ViewCenter, Viewport } from '../plot/types';
@@ -48,7 +48,10 @@ export interface TraceHit {
 export interface TraceOptions {
   /** Trace only this row (scrubbing along one curve). */
   rowId?: string;
-  /** Snap to a point of interest of the traced curve within this many px of (sx, sy). */
+  /**
+   * Snap to a point of interest of the traced curve within this many px of (sx, sy). Without
+   * `rowId`, a shown point this close is traced first, on its own curve, whatever else is near.
+   */
   snapPx?: number;
 }
 
@@ -56,6 +59,8 @@ const reducedMotion =
   typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
 
 const IDLE_MS = 150;
+/** Curves this much farther from the pointer than the nearest one still count as under it. */
+const TIE_PX = 2;
 /** Points of interest of a row being typed into wait until the typing pauses this long. */
 const POI_SETTLE_MS = 250;
 /** Typing switches to interactive quality after a frame slower than this… */
@@ -74,10 +79,13 @@ export class GraphController {
   onDraw: (() => void) | null = null;
   /**
    * Called when the points of interest change: found for the emphasised row (in `view`, at
-   * final quality), or gone because what they were found on changed. They are world points, so
-   * they stay valid while the view moves.
+   * final quality; called for every search, even one that finds nothing), gone because what
+   * they were found on changed, or `stale`: kept, faded, while their row is being typed in.
+   * They are world points, so they stay valid while the view moves.
    */
-  onPois: ((pois: readonly Poi[], view: Viewport, rowId: string | null) => void) | null = null;
+  onPois:
+    | ((pois: readonly Poi[], view: Viewport, rowId: string | null, stale: boolean) => void)
+    | null = null;
   /** Milliseconds spent drawing the last frame (debug overlay). */
   lastFrameMs = 0;
 
@@ -108,6 +116,8 @@ export class GraphController {
   private pois: readonly Poi[] = [];
   /** What the current points of interest were found on (null: none were). */
   private poiInputs: { view: string; plots: PlotItem[]; values: string; id: string } | null = null;
+  /** The points are from before an edit still in progress: shown faded, never snapped to. */
+  private poiStale = false;
   /** Until when the points of interest wait for typing to pause. */
   private poiSettle = 0;
   private poiTimer: ReturnType<typeof setTimeout> | undefined;
@@ -207,6 +217,11 @@ export class GraphController {
     if (this.drawnView === this.view) this.updatePois();
   }
 
+  /** Whether the points of interest shown are this row's, found on what it draws now. */
+  poisReady(rowId: string): boolean {
+    return this.poiInputs?.id === rowId && !this.poiStale;
+  }
+
   /** A view change from user input; it overrides any running zoom/home animation. */
   setView(v: Viewport, interactive = true): void {
     this.cancelAnimation();
@@ -275,55 +290,90 @@ export class GraphController {
 
   /**
    * Nearest curve point to a screen position, for tracing, snapped to a point of interest of
-   * that curve near the position (see TraceOptions).
+   * that curve near the position (see TraceOptions). Where curves meet, the emphasised one wins.
    */
   trace(sx: number, sy: number, maxDistPx: number, opts: TraceOptions = {}): TraceHit | null {
-    let best: TraceHit | null = null;
+    // A shown point of interest under the pointer: its ring is what the pointer is on.
+    if (opts.snapPx && opts.rowId === undefined) {
+      const ring = this.poiNear(sx, sy, opts.snapPx);
+      if (ring) {
+        const rowId = this.poiInputs?.id;
+        const hit = this.trace(ring.sx, ring.sy, Math.max(maxDistPx, 8), { rowId, snapPx: 1 });
+        if (hit?.poi) return hit;
+      }
+    }
+    let best: { row: SceneRow; hit: NearestHit } | null = null;
     let bestDist = maxDistPx;
     for (const row of this.rows) {
       if (row.ghost || (opts.rowId !== undefined && row.id !== opts.rowId)) continue;
-      const geom = this.geometries.get(row.id);
-      if (!geom) continue;
-      const plot = row.plot;
-      let hit = null;
-      if ((plot.kind === 'explicitY' || plot.kind === 'explicitX') && !plot.ineq) {
-        hit = traceExplicit(
-          plot.f,
-          this.view,
-          plot.kind === 'explicitY' ? 'x' : 'y',
-          sx,
-          sy,
-          bestDist,
-        );
-      }
-      for (const curve of geom.curves) {
-        const h = nearestOnPolyline(curve, this.view, sx, sy, bestDist);
-        if (h && (!hit || h.distPx < hit.distPx)) hit = h;
-      }
-      if (geom.points) {
-        const h = nearestPoint(geom.points, this.view, sx, sy, Math.max(bestDist, 16));
-        if (h && (!hit || h.distPx < hit.distPx)) hit = h;
-      }
+      const hit = this.nearest(row, sx, sy, bestDist);
       if (hit && hit.distPx <= bestDist) {
         bestDist = hit.distPx;
-        best = {
-          rowId: row.id,
-          x: hit.x,
-          y: hit.y,
-          sx: toScreenX(this.view, hit.x),
-          sy: toScreenY(this.view, hit.y),
-          color: this.theme.palette[row.colorIndex] ?? this.theme.palette[0],
-          ppu: this.view.ppuX,
-          viewWidth: this.view.width,
-          viewHeight: this.view.height,
-        };
+        best = { row, hit };
       }
     }
-    return best && opts.snapPx ? this.snap(best, sx, sy, opts.snapPx) : best;
+    // At an intersection, or curves running together: the emphasised one, whose points show.
+    if (best && opts.rowId === undefined && best.row.id !== this.emphasis) {
+      const row = this.rows.find((r) => r.id === this.emphasis && !r.ghost);
+      const hit = row && this.nearest(row, sx, sy, best.hit.distPx + TIE_PX);
+      if (row && hit) best = { row, hit };
+    }
+    if (!best) return null;
+    const { row, hit } = best;
+    const traced: TraceHit = {
+      rowId: row.id,
+      x: hit.x,
+      y: hit.y,
+      sx: toScreenX(this.view, hit.x),
+      sy: toScreenY(this.view, hit.y),
+      color: this.theme.palette[row.colorIndex] ?? this.theme.palette[0],
+      ppu: this.view.ppuX,
+      viewWidth: this.view.width,
+      viewHeight: this.view.height,
+    };
+    return opts.snapPx ? this.snap(traced, sx, sy, opts.snapPx) : traced;
+  }
+
+  /** The point of a row's curve nearest (sx, sy), within maxDistPx. */
+  private nearest(row: SceneRow, sx: number, sy: number, maxDistPx: number): NearestHit | null {
+    const geom = this.geometries.get(row.id);
+    if (!geom) return null;
+    const plot = row.plot;
+    let hit: NearestHit | null = null;
+    if ((plot.kind === 'explicitY' || plot.kind === 'explicitX') && !plot.ineq) {
+      const along = plot.kind === 'explicitY' ? 'x' : 'y';
+      hit = traceExplicit(plot.f, this.view, along, sx, sy, maxDistPx);
+    }
+    for (const curve of geom.curves) {
+      const h = nearestOnPolyline(curve, this.view, sx, sy, maxDistPx);
+      if (h && (!hit || h.distPx < hit.distPx)) hit = h;
+    }
+    if (geom.points) {
+      const h = nearestPoint(geom.points, this.view, sx, sy, Math.max(maxDistPx, 16));
+      if (h && (!hit || h.distPx < hit.distPx)) hit = h;
+    }
+    return hit && hit.distPx <= maxDistPx ? hit : null;
+  }
+
+  /** The shown point of interest nearest (sx, sy) within px, on screen. */
+  private poiNear(sx: number, sy: number, px: number): { sx: number; sy: number } | null {
+    if (this.poiStale || !this.poiInputs) return null;
+    let best: { sx: number; sy: number } | null = null;
+    let bestDist = px;
+    for (const poi of this.pois) {
+      const p = { sx: toScreenX(this.view, poi.x), sy: toScreenY(this.view, poi.y) };
+      const d = Math.hypot(p.sx - sx, p.sy - sy);
+      if (d <= bestDist) {
+        bestDist = d;
+        best = p;
+      }
+    }
+    return best;
   }
 
   /** The hit moved onto the nearest point of interest on its curve within snapPx of (sx, sy). */
   private snap(hit: TraceHit, sx: number, sy: number, snapPx: number): TraceHit {
+    if (this.poiStale) return hit;
     const own = this.poiInputs?.id === hit.rowId;
     let best: Poi | null = null;
     let bestDist = snapPx;
@@ -428,12 +478,12 @@ export class GraphController {
         geometry,
         color: this.theme.palette[row.colorIndex] ?? this.theme.palette[0],
         ghost: row.ghost,
-        emphasis: !row.ghost && row.id === this.emphasis,
+        emphasis: row.id === this.emphasis,
       });
     }
     this.geometries = geometries;
     this.drawnView = view;
-    drawScene(ctx, view, drawRows, this.theme.background);
+    drawScene(ctx, view, drawRows, this.theme);
 
     const b = viewBounds(view);
     this.container.dataset.view = [b.xmin, b.xmax, b.ymin, b.ymax]
@@ -447,13 +497,21 @@ export class GraphController {
   /**
    * Find the emphasised row's points of interest when what they depend on changed: at final
    * quality only, and not while typing goes on. Old points stay while only the view moves (they
-   * are world points) and go as soon as the plots or values they were found on change.
+   * are world points). They go as soon as the plots or values they were found on change, except
+   * while their row is being typed in: then they stay, faded, until the new ones are found, so
+   * a keystroke that leaves them where they were does not make them blink and bloom again.
    */
   private updatePois(): void {
-    const row = this.rows.find((r) => r.id === this.emphasis && !r.ghost);
-    const geometry = row && this.geometries.get(row.id);
+    const row = this.rows.find((r) => r.id === this.emphasis);
+    const geometry = row && !row.ghost ? this.geometries.get(row.id) : undefined;
+    const last = this.poiInputs;
+    const typing = performance.now() < this.poiSettle;
+    const fade = () => {
+      if (row && last?.id === row.id && (row.ghost || typing)) this.setPois(this.pois, last, true);
+      else this.setPois([], null);
+    };
     if (!row || !geometry) {
-      this.setPois([], null);
+      fade();
       return;
     }
     const others = this.rows.filter((r) => !r.ghost && r !== row && this.geometries.has(r.id));
@@ -463,17 +521,20 @@ export class GraphController {
       for (const dep of r.deps) values += `|${this.values.get(dep)}`;
     }
     const view = viewKey(this.view);
-    const last = this.poiInputs;
     const same =
       last !== null &&
       last.id === row.id &&
       last.values === values &&
       last.plots.length === plots.length &&
       last.plots.every((p, i) => p === plots[i]);
-    if (same && last.view === view) return;
-    const ready = this.quality === 'final' && performance.now() >= this.poiSettle;
+    const ready = this.quality === 'final' && !typing;
+    if (same && (last.view === view || !ready)) {
+      // Typed back to what they were found on.
+      if (this.poiStale && ready) this.setPois(this.pois, last);
+      return;
+    }
     if (!ready) {
-      if (!same) this.setPois([], null);
+      fade();
       return;
     }
     const curve = (r: SceneRow): PoiCurve => ({
@@ -490,11 +551,15 @@ export class GraphController {
     this.setPois(pois, { view, plots, values, id: row.id });
   }
 
-  private setPois(pois: readonly Poi[], inputs: GraphController['poiInputs']): void {
-    this.poiInputs = inputs;
-    if (pois.length === 0 && this.pois.length === 0) return;
+  private setPois(pois: readonly Poi[], inputs: GraphController['poiInputs'], stale = false): void {
+    const found = inputs !== null && !stale;
+    const unchanged =
+      (pois === this.pois && stale === this.poiStale) ||
+      (pois.length === 0 && this.pois.length === 0);
     this.pois = pois;
-    this.onPois?.(pois, this.view, inputs?.id ?? null);
+    this.poiInputs = inputs;
+    this.poiStale = stale;
+    if (found || !unchanged) this.onPois?.(pois, this.view, inputs?.id ?? null, stale);
   }
 }
 

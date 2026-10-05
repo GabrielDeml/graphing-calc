@@ -14,7 +14,10 @@ function session() {
     step(sources: string[], editing: string | null, generation?: number): Steady {
       const rows = sources.map((source, i) => ({ id: `r${i}`, source }));
       const a = engine.update(rows);
-      const next = steady(state, rows, a.byId, editing, generation ?? engine.globalsGeneration);
+      const next = steady(state, rows, a.byId, editing, {
+        generation: generation ?? engine.globalsGeneration,
+        slots: engine.variableSlots,
+      });
       state = next.state;
       return next;
     },
@@ -87,7 +90,8 @@ describe('steady', () => {
         { id: 'r0', source: k },
         { id: 'r1', source: '(cos t, sin t)', domain: { min: '0', max: 'k' } },
       ];
-      const next = steady(state, rows, engine.update(rows).byId, editing, 0);
+      const globals = { generation: 0, slots: engine.variableSlots };
+      const next = steady(state, rows, engine.update(rows).byId, editing, globals);
       state = next.state;
       return next;
     };
@@ -119,6 +123,30 @@ describe('steady', () => {
     s.step(['y = x^2'], 'r0', 0);
     const broken = s.step(['y = x^'], 'r0', 1);
     expect(broken.held.size).toBe(0);
+  });
+
+  it('keeps a held curve reading the value it was drawn with while a name is retyped', () => {
+    const s = session();
+    s.step(['a = 1', 'y = a x'], 'r0');
+    for (const text of ['k', 'k =', 'k = 1', 'k = 10', 'k = 100']) {
+      const held = s.step([text, 'y = a x'], 'r0').held.get('r1')?.plot;
+      if (held?.kind !== 'explicitY') throw new Error(`not held at ${text}`);
+      expect(held.f(1)).toBe(1);
+    }
+  });
+
+  it("lets go of a held curve once its variable's slot goes to another name", () => {
+    const s = session();
+    // Every slot of the storage taken, so a new name has to take a freed one.
+    const others = Array.from({ length: 15 }, (_, i) => `v_${i} = ${i}`);
+    s.step(['a = 1', 'y = a x', ...others], 'r0');
+    expect(s.step(['k', 'y = a x', ...others], 'r0').held.has('r1')).toBe(true);
+    const generation = s.engine.globalsGeneration;
+    const taken = s.step(['k = 100', 'y = a x', ...others], 'r0');
+    // `a`'s slot now holds k = 100: the kept closure would draw y = 100x.
+    expect(s.engine.globalsGeneration).toBe(generation);
+    expect(taken.held.has('r1')).toBe(false);
+    expect(taken.quiet.has('r1')).toBe(true);
   });
 
   it('does not hold an emptied row', () => {

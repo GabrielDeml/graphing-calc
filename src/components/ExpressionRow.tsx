@@ -95,6 +95,19 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
   const error = () => (errorVisible() ? result()?.error : undefined);
   const color = () => props.palette[props.row.colorIndex] ?? props.palette[0];
   const plots = () => shown()?.status === 'ok' && !!shown()?.plot;
+  /** Its curve is on the graph: only then does pointing at the row make it stand out. */
+  const drawn = () => plots() && !props.row.hidden;
+  createEffect(() => {
+    if (!drawn() && untrack(ui.hoveredRowId) === props.row.id) ui.setHoveredRowId(null);
+  });
+  /**
+   * While the row is held mid-edit, pressing its color mark or color button keeps the focus in
+   * its field: where a button takes no focus (Safari), the edit would end on the press and
+   * take the held mark, and the button under the pointer, away before the click.
+   */
+  const keepEditing = (e: MouseEvent) => {
+    if (held()) e.preventDefault();
+  };
 
   // The error line keeps showing a fixed error while it closes (no longer an alert by then).
   const [shownError, setShownError] = createSignal<MathError | undefined>();
@@ -182,17 +195,18 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
         if (e.target.classList.contains('math-input')) ui.setEditingRowId(props.row.id);
       }}
       onFocusOut={(e) => {
+        // The edit goes on while the focus stays in the row (its color mark, its picker).
         const next = e.relatedTarget;
-        const stays = next instanceof HTMLElement && next.classList.contains('math-input');
-        if (ui.editingRowId() === props.row.id && !(stays && li.contains(next))) {
+        if (ui.editingRowId() === props.row.id && !(next instanceof Node && li.contains(next))) {
           ui.setEditingRowId(null);
         }
       }}
       onPointerMove={(e) => {
         if (e.pointerType !== 'mouse' || hoverTimer || ui.hoveredRowId() === props.row.id) return;
+        if (!drawn()) return;
         hoverTimer = setTimeout(() => {
           hoverTimer = undefined;
-          ui.setHoveredRowId(props.row.id);
+          if (drawn()) ui.setHoveredRowId(props.row.id);
         }, HOVER_INTENT_MS);
       }}
       onPointerLeave={() => {
@@ -209,6 +223,7 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
             classList={{ off: props.row.hidden }}
             aria-label={props.row.hidden ? 'Show curve' : 'Hide curve'}
             aria-pressed={!props.row.hidden}
+            onMouseDown={keepEditing}
             onClick={() => toggleHidden(props.row.id)}
           />
         </Show>
@@ -317,6 +332,7 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
             aria-haspopup="true"
             aria-expanded={pickerOpen()}
             ref={colorButton}
+            onMouseDown={keepEditing}
             onClick={() => setPickerOpen((o) => !o)}
           >
             <Icon name="palette" size={16} />

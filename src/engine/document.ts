@@ -405,6 +405,15 @@ export class DocumentEngine {
   }
 
   /**
+   * Which slot of the shared storage holds each defined variable. A slot stays with its name
+   * while the name is defined; once freed it can go to another name, so a kept closure reads its
+   * variables right only while each still owns its slot, or nobody does.
+   */
+  get variableSlots(): ReadonlyMap<string, number> {
+    return this.slotOf;
+  }
+
+  /**
    * Evaluate a constant expression (slider min/max/step fields, domain fields) against the
    * current variable values from the last update(). Plot variables are not allowed.
    */
@@ -470,7 +479,11 @@ export class DocumentEngine {
       }
     }
     for (const name of names) {
-      if (!this.slotOf.has(name)) this.slotOf.set(name, this.freeSlots.pop() ?? this.slotCount++);
+      if (this.slotOf.has(name)) continue;
+      // A fresh slot while the storage has room: a freed one goes to another name as late as
+      // possible (the longest freed first), since a kept closure may still read it.
+      const fresh = this.slotCount < this.globals.length || this.freeSlots.length === 0;
+      this.slotOf.set(name, fresh ? this.slotCount++ : (this.freeSlots.shift() as number));
     }
     if (this.slotCount > this.globals.length) {
       const grown = new Float64Array(Math.max(this.slotCount, this.globals.length * 2));

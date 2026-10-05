@@ -51,19 +51,25 @@ Syntax notes:
   pan, `+` and `-` zoom, `0` resets.
 - **Trace:** hover a curve to see its coordinates, in a pill with the curve's color; its row in the
   list lights up faintly. On touch, tap a curve to pin the trace. Near a point of interest the
-  trace snaps to it and names it ("Root", "Minimum", "Intersection with ● y = x/3"). To scrub
-  along a curve on touch, drag the pinned trace's dot, or press and hold on a curve for a moment
-  and then drag; any other drag pans.
+  trace snaps to it and names it ("Root", "Minimum", "Intersection with ● y = x/3"), and its ring
+  grows. Where curves cross, the trace stays on the selected one. To scrub along a curve on
+  touch, drag the pinned trace's dot, or press and hold on a curve for a moment (the dot grows)
+  and then drag; any other drag pans, and a tap next to the pinned dot is still a tap. `Esc`
+  lets go of a pinned trace along with the selection.
 - **The selected curve:** the selected row's curve is drawn on top, a little bolder, with a soft
   halo. Clicking or tapping a curve selects its row (it scrolls into view and pulses briefly)
-  without opening it for editing, so no keypad pops up. Pointing at a row in the list brings its
-  curve forward the same way while the pointer rests there.
-- **Points of interest:** the selected curve shows its roots, local maxima and minima, where it
-  crosses the axes and where it meets the other curves, as grey rings that bloom in once found.
-  Hover or click one (or tap it) to see what it is; clicking pins the trace there. From the
-  graph, `Tab` reaches them and the arrow keys walk from one to the next. Only what is in view is
-  shown, and a kind of point too dense to read (the extrema of `sin(x)` far zoomed out) is left
-  out until you zoom in.
+  without opening it for editing, so no keypad pops up; a click a little away from every curve
+  deselects. Pointing at a row in the list brings its curve forward the same way while the
+  pointer rests there.
+- **Points of interest:** the selected curve shows its roots (including where it ends on the
+  axis, as `sqrt(4 - x^2)` does at ±2), local maxima and minima, where it crosses the axes and
+  where it meets the other curves, as grey rings that bloom in once found. Hover or click one (or
+  tap it) to see what it is; clicking a ring pins the trace there, while clicking elsewhere on a
+  curve only selects it. From the graph, `Tab` reaches them and the arrow keys walk from one to
+  the next. Only what is in view is shown, and only while it stays readable: kinds of points
+  that would crowd the graph are left out whole, extrema first and then crossings of the axes
+  (zoomed out on `sin(x)`, its extrema go, then its roots), until you zoom in. While you type in
+  the selected row, its rings stay, faded, until the new ones are found.
 - **Rows:**
   - `Enter` starts a new row. On an empty row it moves on to the next one instead, and on the
     empty row at the end it stays put (the keypad's ↵ puts the keypad away there).

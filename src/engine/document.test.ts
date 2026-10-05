@@ -607,6 +607,26 @@ describe('identity across rebuilds', () => {
   });
 });
 
+describe('variable slots', () => {
+  it('hand a freed slot to another name only once the storage has no fresh one', () => {
+    const engine = new DocumentEngine();
+    engine.update(rows('a = 1', 'y = a x'));
+    const slotA = engine.variableSlots.get('a');
+    engine.update(rows('k = 100', 'y = a x'));
+    expect(engine.variableSlots.has('a')).toBe(false);
+    expect(engine.variableSlots.get('k')).not.toBe(slotA);
+    // Full: the last name in takes the freed slot rather than growing the storage.
+    const many = Array.from({ length: 15 }, (_, i) => `v_${i} = ${i}`);
+    const generation = engine.globalsGeneration;
+    engine.update(rows('k = 100', ...many));
+    expect(engine.variableSlots.get('v_14')).toBe(slotA);
+    expect(engine.globalsGeneration).toBe(generation);
+    const slotK = engine.variableSlots.get('k');
+    engine.update(rows('m = 1', ...many));
+    expect(engine.variableSlots.get('m')).toBe(slotK);
+  });
+});
+
 describe('dependency errors', () => {
   it('name the definition they come from', () => {
     const engine = new DocumentEngine();

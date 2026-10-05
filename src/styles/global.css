@@ -1260,13 +1260,20 @@ button {
   animation-delay: calc(var(--i) * var(--poi-stagger));
   transition:
     transform var(--dur-1) var(--ease-out),
-    border-color var(--dur-1) var(--ease-out);
+    border-color var(--dur-1) var(--ease-out),
+    opacity var(--dur-2) var(--ease-out);
 }
 
-.poi:hover::before,
+/* The ring the trace sits on (not the one under the pointer: the trace's label names it). */
+.poi.current::before,
 .poi:focus-visible::before {
   transform: scale(1.3);
   border-color: var(--text-2);
+}
+
+/* Found before an edit still being typed: faded until the new ones are in. */
+.poi-layer.stale .poi::before {
+  opacity: 0.35;
 }
 
 .poi:focus-visible {
@@ -1312,9 +1319,18 @@ button {
   box-shadow:
     0 0 0 2px var(--graph-bg),
     0 1px 4px 2px rgba(15, 23, 42, 0.14);
+  transition: transform var(--dur-1) var(--ease-out);
 }
 
-/* Color dot, what the point is (when it is something), then "(x, y)". */
+/* Picked up by a finger to drag along the curve. */
+.trace.scrubbing .trace-dot {
+  transform: scale(1.4);
+}
+
+/*
+ * Color dot, what the point is (when it is something), then "(x, y)". TraceMarker sets its left
+ * (beside the point, kept inside the graph) and its max-width.
+ */
 .trace-pill {
   position: absolute;
   bottom: var(--space-3);
@@ -1332,20 +1348,27 @@ button {
 }
 
 .trace-swatch {
+  flex: none;
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: var(--trace-color);
 }
 
-/* What the point is ("Root"), beside its coordinates. */
+/* What the point is ("Root"), beside its coordinates; what gives when the pill is too wide. */
 .trace-kind {
   display: flex;
   align-items: center;
   gap: 5px;
+  min-width: 0;
+  overflow: hidden;
   color: var(--text-2);
   font-size: 13px;
   line-height: 1;
+}
+
+.trace-kind > span {
+  flex: none;
 }
 
 .trace-kind-name + .trace-kind-name::before,
@@ -1356,6 +1379,10 @@ button {
 }
 
 /* The other curve of an intersection: its color and its math. */
+.trace-kind > .trace-meet {
+  flex: 0 1 auto;
+}
+
 .trace-meet {
   display: inline-flex;
   align-items: center;
@@ -1367,6 +1394,7 @@ button {
 }
 
 .trace-meet-text {
+  min-width: 0;
   max-width: 140px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1382,15 +1410,11 @@ button {
 }
 
 .trace-label {
+  flex: none;
   font-family: var(--math);
   font-size: 15px;
   line-height: 1;
   font-variant-numeric: tabular-nums;
-}
-
-.trace.flip-x .trace-pill {
-  left: auto;
-  right: var(--space-3);
 }
 
 .trace.flip-y .trace-pill {

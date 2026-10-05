@@ -15,15 +15,19 @@ export interface TraceKind {
 
 /**
  * DOM overlay for the traced point, so hovering never repaints the canvas. `kind` names what the
- * point is beside its coordinates; a plain curve point has none.
+ * point is beside its coordinates; a plain curve point has none. `scrubbing`: a finger is
+ * dragging the point along its curve (the dot grows under it).
  */
-export function TraceMarker(props: { hit: TraceHit | null; kind?: TraceKind | null }) {
+export function TraceMarker(props: {
+  hit: TraceHit | null;
+  kind?: TraceKind | null;
+  scrubbing?: boolean;
+}) {
   return (
     <Show when={props.hit}>
       {(hit) => {
         const label = () =>
           `(${formatCoordinate(hit().x, hit().ppu)}, ${formatCoordinate(hit().y, hit().ppu)})`;
-        // The pill goes to the point's left where it would run off the graph: as wide as its text.
         const [pillWidth, setPillWidth] = createSignal(156);
         const measure = (el: HTMLElement) => {
           if (typeof ResizeObserver === 'undefined') return;
@@ -31,13 +35,20 @@ export function TraceMarker(props: { hit: TraceHit | null; kind?: TraceKind | nu
           ro.observe(el);
           onCleanup(() => ro.disconnect());
         };
+        // No wider than the graph (a long kind is cut short on a phone)…
+        const maxWidth = () => Math.max(0, hit().viewWidth - 2 * PILL_INSET_PX);
+        // …to the point's right, or its left where it would run off the graph there, and moved
+        // in from the edge where it runs off on both sides.
+        const pillLeft = () => {
+          const { sx, viewWidth } = hit();
+          const w = Math.min(pillWidth(), maxWidth());
+          const want = sx + 2 * PILL_INSET_PX + w <= viewWidth ? PILL_INSET_PX : -PILL_INSET_PX - w;
+          return Math.max(PILL_INSET_PX - sx, Math.min(want, viewWidth - PILL_INSET_PX - w - sx));
+        };
         return (
           <div
             class="trace"
-            classList={{
-              'flip-x': hit().sx + pillWidth() + 2 * PILL_INSET_PX > hit().viewWidth,
-              'flip-y': hit().sy < 48,
-            }}
+            classList={{ 'flip-y': hit().sy < 48, scrubbing: !!props.scrubbing }}
             style={{
               transform: `translate(${hit().sx}px, ${hit().sy}px)`,
               '--trace-color': hit().color,
@@ -45,7 +56,11 @@ export function TraceMarker(props: { hit: TraceHit | null; kind?: TraceKind | nu
             data-testid="trace"
           >
             <span class="trace-dot" />
-            <span class="trace-pill" ref={measure}>
+            <span
+              class="trace-pill"
+              ref={measure}
+              style={{ left: `${pillLeft()}px`, 'max-width': `${maxWidth()}px` }}
+            >
               <span class="trace-swatch" />
               <Show when={props.kind}>
                 {(kind) => (

@@ -13,11 +13,11 @@ function curve(id: string, plot: PlotItem, v: Viewport = view): PoiCurve {
 const fx = (f: Fn1, isConstant = false): PlotItem => ({ kind: 'explicitY', f, isConstant });
 const fy = (f: Fn1): PlotItem => ({ kind: 'explicitX', f, isConstant: false });
 const implicit = (F: Fn2): PlotItem => ({ kind: 'implicit', F });
-const parametric = (x: Fn1, y: Fn1, tMax = 2 * Math.PI): PlotItem => ({
+const parametric = (x: Fn1, y: Fn1, tMax = 2 * Math.PI, tMin = 0): PlotItem => ({
   kind: 'parametric',
   fx: x,
   fy: y,
-  tMin: () => 0,
+  tMin: () => tMin,
   tMax: () => tMax,
 });
 const polar = (r: Fn1): PlotItem => ({
@@ -172,6 +172,20 @@ describe('findPois: trig, poles and jumps', () => {
     expect(ofKind(list, 'root')).toHaveLength(0);
   });
 
+  it('takes no drop of a sawtooth for an extremum', () => {
+    // x - floor(x) climbs toward 1 and drops to 0 at each integer, never reaching 1.
+    const saw = pois(fx((x) => x - Math.floor(x)));
+    expect(ofKind(saw, 'max')).toHaveLength(0);
+    expect(ofKind(saw, 'min')).toHaveLength(0);
+    // mod(x, 2) - 1: its roots at the odd integers, and no extrema at its drops.
+    const mod = pois(fx((x) => (((x % 2) + 2) % 2) - 1));
+    expect(ofKind(mod, 'max')).toHaveLength(0);
+    expect(ofKind(mod, 'min')).toHaveLength(0);
+    expect(xs(ofKind(mod, 'root'))).toEqual(
+      [-9, -7, -5, -3, -1, 1, 3, 5, 7, 9].map((x) => expect.closeTo(x, 9)),
+    );
+  });
+
   it('finds the corner of |x| as a root and a minimum', () => {
     const list = pois(fx(Math.abs));
     expect(list).toHaveLength(1);
@@ -199,23 +213,117 @@ describe('findPois: trig, poles and jumps', () => {
     const list = findPois(target, [], view, { maxEvals: 20000 });
     expect(evals).toBeLessThanOrEqual(20000 + 400);
     // The pile of roots and extrema near 0 is too dense to show.
-    expect(list.length).toBeLessThanOrEqual(50);
+    expect(list.length).toBeLessThanOrEqual(20);
+  });
+});
+
+describe('findPois: roots where a curve ends', () => {
+  it('finds the roots at the ends of a semicircle', () => {
+    const list = pois(fx((x) => Math.sqrt(4 - x * x)));
+    expectPoints(ofKind(list, 'root'), [
+      [-2, 0],
+      [2, 0],
+    ]);
+    expect(ofKind(list, 'max')[0].kinds).toEqual(['max', 'yIntercept']);
+    expect(list).toHaveLength(3);
+  });
+
+  it('finds where a square root starts', () => {
+    expectPoints(pois(fx((x) => Math.sqrt(x - 2))), [[2, 0]]);
+    expect(pois(fx(Math.sqrt))).toEqual([{ x: 0, y: 0, kinds: ['root', 'yIntercept'], with: [] }]);
+    // Ending off the axis, or running off to infinity, is no root.
+    expect(ofKind(pois(fx((x) => Math.sqrt(x - 2) + 1)), 'root')).toHaveLength(0);
+    expect(ofKind(pois(fx(Math.log)), 'root')).toEqual([
+      expect.objectContaining({ x: expect.closeTo(1, 9) }),
+    ]);
+  });
+
+  it('finds an edge root at an irrational end of the domain', () => {
+    const list = ofKind(pois(fx((x) => Math.sqrt(2 - x * x))), 'root');
+    expectPoints(
+      list,
+      [
+        [-Math.SQRT2, 0],
+        [Math.SQRT2, 0],
+      ],
+      12,
+    );
+  });
+
+  it('meets a curve where its domain ends', () => {
+    const meets = ofKind(
+      pois(
+        fx((x) => Math.sqrt(4 - x * x)),
+        [fx(() => 0, true)],
+      ),
+      'intersection',
+    );
+    expectPoints(meets, [
+      [-2, 0],
+      [2, 0],
+    ]);
+  });
+
+  it('finds an axis crossing at the end of a parameter range', () => {
+    const list = pois(parametric(Math.cos, Math.sin, Math.PI, -Math.PI));
+    expectPoints(
+      list,
+      [
+        [-1, 0],
+        [0, -1],
+        [0, 1],
+        [1, 0],
+      ],
+      12,
+    );
   });
 });
 
 describe('findPois: density', () => {
   it('drops the extrema of sin x first when zoomed out, then the roots', () => {
-    const wide: Viewport = { ...view, ppuX: 5, ppuY: 5 };
-    const list = pois(fx(Math.sin), [], wide);
-    // x in [-80, 80]: 51 roots alone, more than 50 with the extrema.
+    // Zoomed out twice: roots and extrema together would be 25, 31 px apart.
+    const out2: Viewport = { ...view, ppuX: 20, ppuY: 20 };
+    const list = pois(fx(Math.sin), [fx((x) => x / 3)], out2);
     expect(ofKind(list, 'max')).toHaveLength(0);
     expect(ofKind(list, 'min')).toHaveLength(0);
-    expect(list.length).toBeLessThanOrEqual(50);
+    // x in [-20, 20]: 13 roots, one of them on the line too, and its other two crossings.
+    expect(ofKind(list, 'root')).toHaveLength(13);
+    expect(ofKind(list, 'intersection')).toHaveLength(3);
+    expect(list).toHaveLength(15);
+    // Four times: the roots alone are 31 px apart and 25 of them; only the intersections stay.
+    const out4: Viewport = { ...view, ppuX: 10, ppuY: 10 };
+    expect(pois(fx(Math.sin), [fx((x) => x / 3)], out4).map((p) => p.kinds[0])).toEqual([
+      'intersection',
+      'intersection',
+      'intersection',
+    ]);
     const wider: Viewport = { ...view, ppuX: 1, ppuY: 1 };
     // Roots π px apart: too close to read; only the intercept stays.
     expect(pois(fx(Math.sin), [], wider)).toEqual([
       { x: 0, y: 0, kinds: ['yIntercept'], with: [] },
     ]);
+  });
+
+  it('keeps points apart from a pair of close crossings', () => {
+    // x² - 3 meets sin x and x/3 twice each, in pairs 12 and 20 px apart.
+    const list = pois(
+      fx((x) => x * x - 3),
+      [fx(Math.sin), fx((x) => x / 3)],
+    );
+    expect(ofKind(list, 'intersection')).toHaveLength(4);
+    expectPoints(ofKind(list, 'root'), [
+      [-Math.sqrt(3), 0],
+      [Math.sqrt(3), 0],
+    ]);
+    expect(ofKind(list, 'min')[0].kinds).toEqual(['min', 'yIntercept']);
+  });
+
+  it('keeps a few points that are close but readable', () => {
+    // x³ - x: three roots and two extrema, under 30 px apart at this scale.
+    const list = pois(fx((x) => x * x * x - x));
+    expect(ofKind(list, 'root')).toHaveLength(3);
+    expect(ofKind(list, 'max')).toHaveLength(1);
+    expect(ofKind(list, 'min')).toHaveLength(1);
   });
 
   it('caps the number of points', () => {
@@ -424,6 +532,44 @@ describe('findPois: implicit, parametric and polar curves', () => {
     }
   });
 
+  it('counts a point a curve passes through more than once as one', () => {
+    // A circle traced twice.
+    expectPoints(
+      pois(parametric(Math.cos, Math.sin, 4 * Math.PI)),
+      [
+        [-1, 0],
+        [0, -1],
+        [0, 1],
+        [1, 0],
+      ],
+      12,
+    );
+    // r = 2 sin θ goes round its circle twice over [0, 2π].
+    const circle = polar((t) => 2 * Math.sin(t));
+    expectPoints(ofKind(pois(circle), 'yIntercept'), [
+      [0, 0],
+      [0, 2],
+    ]);
+    expectPoints(ofKind(pois(circle, [fx(() => 1, true)]), 'intersection'), [
+      [-1, 1],
+      [1, 1],
+    ]);
+    // Every petal of a rose passes through the origin.
+    const rose = pois(polar((t) => Math.cos(2 * t)));
+    expectPoints(
+      rose,
+      [
+        [-1, 0],
+        [0, -1],
+        [0, 0],
+        [0, 1],
+        [1, 0],
+      ],
+      6,
+    );
+    expect(rose.find((p) => p.x === 0 && p.y === 0)?.kinds).toEqual(['xIntercept', 'yIntercept']);
+  });
+
   it('finds the axis crossings of a cardioid', () => {
     const list = pois(polar((t) => 1 + Math.cos(t)));
     expectPoints(ofKind(list, 'yIntercept'), [
@@ -481,7 +627,7 @@ describe('findPois: robustness', () => {
       };
       for (const f of fns) {
         const list = pois(fx(f), [fx((x) => x), fy(f), circleAt(v)], v);
-        expect(list.length).toBeLessThanOrEqual(50);
+        expect(list.length).toBeLessThanOrEqual(20);
         for (const p of list) {
           expect(p.x).toBeGreaterThanOrEqual(b.xmin);
           expect(p.x).toBeLessThanOrEqual(b.xmax);

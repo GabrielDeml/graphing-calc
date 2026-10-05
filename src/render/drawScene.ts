@@ -1,23 +1,32 @@
 import type { RowGeometry, Viewport } from '../plot/types';
+import type { Theme } from './theme';
 
 export interface DrawRow {
   geometry: RowGeometry;
   color: string;
   /** The row being edited is broken for now: its last good plot, drawn faintly underneath. */
   ghost?: boolean;
-  /** The selected (or pointed at) row: drawn last, thicker, over a soft halo of its color. */
+  /**
+   * The selected (or pointed at) row: drawn last, thicker, over a soft halo of its color. As a
+   * ghost (the selected row is usually the one being typed in), thick but without the halo.
+   */
   emphasis?: boolean;
 }
 
 const LINE_PX = 2.5;
 const EMPHASIS_LINE_PX = 3.5;
 /**
- * The emphasised curve's halo. Faint enough that none of its pixels comes near a curve color
- * (the e2e tests count those), so it reads as light around the curve rather than as more curve.
+ * The emphasised curve's halo: two faint strokes, a wide one under a narrower one, so it fades
+ * out like a glow rather than ending in an edge. Faint enough that none of its pixels comes near
+ * a curve color (the e2e tests count those), so it reads as light around the curve rather than
+ * as more curve; a little stronger over the dark background, where faint color reads as dull.
  */
-const HALO_PX = 10;
-const HALO_ALPHA = 0.14;
+const HALO_PX = [12, 7];
+const HALO_ALPHA = 0.08;
+const HALO_ALPHA_DARK = 0.13;
+/** Ghosts are faint; the emphasised one less so, so typing doesn't flicker the selected curve. */
 const GHOST_ALPHA = 0.3;
+const EMPHASIS_GHOST_ALPHA = 0.5;
 const FILL_ALPHA = 0.25;
 
 // Canvas backends misbehave with huge coordinates; clamp far off-screen points.
@@ -70,6 +79,7 @@ function drawPoints(
   view: Viewport,
   row: DrawRow,
   background: string,
+  haloAlpha: number,
 ): void {
   const pts = row.geometry.points;
   if (!pts) return;
@@ -82,11 +92,13 @@ function drawPoints(
     const sy = view.height / 2 - (y - view.cy) * view.ppuY;
     if (sx < -10 || sx > view.width + 10 || sy < -10 || sy > view.height + 10) continue;
     if (row.emphasis) {
-      ctx.globalAlpha = HALO_ALPHA;
-      ctx.beginPath();
-      ctx.arc(sx, sy, radius + HALO_PX / 2, 0, Math.PI * 2);
+      ctx.globalAlpha = haloAlpha;
       ctx.fillStyle = row.color;
-      ctx.fill();
+      for (const px of HALO_PX) {
+        ctx.beginPath();
+        ctx.arc(sx, sy, radius + px / 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
       ctx.globalAlpha = 1;
     }
     ctx.beginPath();
@@ -107,8 +119,10 @@ export function drawScene(
   ctx: CanvasRenderingContext2D,
   view: Viewport,
   rows: readonly DrawRow[],
-  background: string,
+  theme: Pick<Theme, 'background' | 'dark'>,
 ): void {
+  const { background } = theme;
+  const haloAlpha = theme.dark ? HALO_ALPHA_DARK : HALO_ALPHA;
   // Shading first so every curve sits on top of every region. Each row's polygons are filled as
   // one path, so abutting cells blend without seams or double alpha.
   for (const row of rows) {
@@ -122,9 +136,11 @@ export function drawScene(
 
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
-  ctx.globalAlpha = GHOST_ALPHA;
   for (const row of rows) {
-    if (row.ghost) strokeCurves(ctx, view, row, LINE_PX, row.geometry.dashed);
+    if (!row.ghost) continue;
+    ctx.globalAlpha = row.emphasis ? EMPHASIS_GHOST_ALPHA : GHOST_ALPHA;
+    const width = row.emphasis ? EMPHASIS_LINE_PX : LINE_PX;
+    strokeCurves(ctx, view, row, width, row.geometry.dashed);
   }
   ctx.globalAlpha = 1;
   for (const row of rows) {
@@ -132,8 +148,8 @@ export function drawScene(
   }
   for (const row of rows) {
     if (row.ghost || !row.emphasis) continue;
-    ctx.globalAlpha = HALO_ALPHA;
-    strokeCurves(ctx, view, row, HALO_PX, false);
+    ctx.globalAlpha = haloAlpha;
+    for (const px of HALO_PX) strokeCurves(ctx, view, row, px, false);
     ctx.globalAlpha = 1;
     strokeCurves(ctx, view, row, EMPHASIS_LINE_PX, row.geometry.dashed);
   }
@@ -141,9 +157,11 @@ export function drawScene(
 
   for (const row of rows) {
     if (row.emphasis && !row.ghost) continue;
-    ctx.globalAlpha = row.ghost ? GHOST_ALPHA : 1;
-    drawPoints(ctx, view, { ...row, emphasis: false }, background);
+    ctx.globalAlpha = row.ghost ? (row.emphasis ? EMPHASIS_GHOST_ALPHA : GHOST_ALPHA) : 1;
+    drawPoints(ctx, view, { ...row, emphasis: false }, background, haloAlpha);
   }
   ctx.globalAlpha = 1;
-  for (const row of rows) if (row.emphasis && !row.ghost) drawPoints(ctx, view, row, background);
+  for (const row of rows) {
+    if (row.emphasis && !row.ghost) drawPoints(ctx, view, row, background, haloAlpha);
+  }
 }

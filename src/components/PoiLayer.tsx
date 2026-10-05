@@ -9,6 +9,8 @@ export interface PoiSet {
   rowId: string;
   pois: readonly Poi[];
   view: Viewport;
+  /** From before an edit in progress: shown faded until the new ones are found. */
+  stale?: boolean;
 }
 
 export interface PoiLayerHandle {
@@ -57,10 +59,12 @@ function sameKinds(a: Poi, b: Poi): boolean {
  * The points of interest of the emphasised curve: grey rings over the graph that bloom in when
  * found. Each is a button (outside the canvas's img role) labelled with what and where it is;
  * keyboard focus or Enter pins the trace on it (`onPin`), and the arrow keys move between them.
- * Pointers go through to the graph, whose trace snaps to a point near the pointer.
+ * Pointers go through to the graph, whose trace snaps to a point near the pointer; the ring it
+ * snapped to (`current`) stands out, so the ring and the trace's label always agree.
  */
 export function PoiLayer(props: {
   set: PoiSet | null;
+  current: Poi | null;
   /** Names of the curves an intersection is with ("y = x/3"). */
   meets: (poi: Poi) => string[];
   onPin: (poi: Poi, rowId: string) => void;
@@ -150,18 +154,29 @@ export function PoiLayer(props: {
 
   return (
     // biome-ignore lint/a11y/useSemanticElements: an overlay of point buttons, not a form fieldset.
-    <div class="poi-layer" ref={layer} role="group" aria-label="Points of interest">
+    <div
+      class="poi-layer"
+      classList={{ stale: !!props.set?.stale }}
+      ref={layer}
+      role="group"
+      aria-label="Points of interest"
+    >
       <For each={list()}>
         {(item) => {
           const pin = () => {
             const set = props.set;
             if (set) props.onPin(item.poi(), set.rowId);
           };
+          const current = () => {
+            const c = props.current;
+            return c !== null && c.x === item.poi().x && c.y === item.poi().y;
+          };
           return (
             <button
               type="button"
               class="poi"
-              tabindex={item === (active() ?? list()[0]) ? 0 : -1}
+              classList={{ current: current() }}
+              tabindex={!props.set?.stale && item === (active() ?? list()[0]) ? 0 : -1}
               aria-label={poiLabel(item.poi(), ref()?.ppuX ?? 1, props.meets(item.poi()))}
               style={{
                 '--sx0': String(toScreenX(ref() ?? props.set?.view ?? ZERO, item.poi().x)),

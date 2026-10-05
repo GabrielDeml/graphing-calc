@@ -19,7 +19,13 @@ const debug = typeof location !== 'undefined' && new URLSearchParams(location.se
 const SNAP_PX = 10;
 /** The same for a finger, which hides what it is on. */
 const SNAP_TOUCH_PX = 16;
-/** A press this close to the pinned trace's dot picks it up to scrub. */
+/** Hovering traces a curve this close to the pointer. */
+const HOVER_PX = 20;
+/** A click this close to a curve selects it; farther out it deselects (a mouse is precise). */
+const PICK_PX = 8;
+/** A tap this close to a curve selects it. */
+const PICK_TOUCH_PX = 32;
+/** A drag from this close to the pinned trace's dot scrubs along its curve. */
 const GRAB_PX = 24;
 
 const KIND_PILL_NAMES: Record<Exclude<PoiKind, 'intersection'>, string> = {
@@ -39,7 +45,8 @@ type TraceAnchor =
       rowId: string;
       /**
        * Where the finger was, in world coordinates, when a tap picked a curve whose points of
-       * interest were not found yet: once they are, the pin snaps to one near it.
+       * interest were not found yet: when they are (the next search), the pin snaps to one near
+       * it.
        */
       seek?: { x: number; y: number };
     };
@@ -54,6 +61,8 @@ export function GraphView() {
   const [controller, setController] = createSignal<GraphController | null>(null);
   const [trace, setTrace] = createSignal<TraceHit | null>(null);
   const [poiSet, setPoiSet] = createSignal<PoiSet | null>(null);
+  /** A finger is scrubbing along the traced curve. */
+  const [scrubbing, setScrubbing] = createSignal(false);
 
   /** A row's math as shown in labels ("y = x/3"). */
   const rowText = (id: string) => doc.rows.find((r) => r.id === id)?.source.trim() ?? '';
@@ -90,7 +99,7 @@ export function GraphView() {
     };
     const pin = (hit: TraceHit, seek?: { sx: number; sy: number }) => {
       anchor = { mode: 'pinned', x: hit.x, y: hit.y, rowId: hit.rowId };
-      if (seek && !hit.poi) {
+      if (seek) {
         anchor.seek = {
           x: c.view.cx + (seek.sx - c.view.width / 2) / c.view.ppuX,
           y: c.view.cy + (c.view.height / 2 - seek.sy) / c.view.ppuY,
@@ -98,6 +107,9 @@ export function GraphView() {
       }
       showTrace(hit);
     };
+    /** Pin where a finger picked a curve, and look for a point there once its points are in. */
+    const pinPick = (hit: TraceHit, sx: number, sy: number) =>
+      pin(hit, hit.poi || c.poisReady(hit.rowId) ? undefined : { sx, sy });
 
     // Re-run the trace after every redraw so it follows pans, zooms and animating sliders.
     const retrace = () => {
@@ -106,7 +118,7 @@ export function GraphView() {
         return;
       }
       if (anchor.mode === 'hover') {
-        showTrace(c.trace(anchor.sx, anchor.sy, 20, { snapPx: SNAP_PX }));
+        showTrace(c.trace(anchor.sx, anchor.sy, HOVER_PX, { snapPx: SNAP_PX }));
       } else {
         // A pin on a row that was hidden or deleted goes away (it would block hover otherwise).
         if (!c.hasRow(anchor.rowId)) {
@@ -117,7 +129,7 @@ export function GraphView() {
         const sx = (anchor.x - c.view.cx) * c.view.ppuX + c.view.width / 2;
         const sy = c.view.height / 2 - (anchor.y - c.view.cy) * c.view.ppuY;
         // Pinned on a point of interest, it keeps naming it.
-        const hit = c.trace(sx, sy, 32, { rowId: anchor.rowId, snapPx: 1 });
+        const hit = c.trace(sx, sy, PICK_TOUCH_PX, { rowId: anchor.rowId, snapPx: 1 });
         showTrace(hit);
         if (hit) {
           anchor = { mode: 'pinned', x: hit.x, y: hit.y, rowId: hit.rowId, seek: anchor.seek };
@@ -132,20 +144,22 @@ export function GraphView() {
     pinPoi = (poi, rowId) => {
       const sx = (poi.x - c.view.cx) * c.view.ppuX + c.view.width / 2;
       const sy = c.view.height / 2 - (poi.y - c.view.cy) * c.view.ppuY;
-      const hit = c.trace(sx, sy, 32, { rowId, snapPx: 1 });
+      const hit = c.trace(sx, sy, PICK_TOUCH_PX, { rowId, snapPx: 1 });
       if (hit) pin(hit);
     };
-    c.onPois = (pois, view, rowId) => {
-      setPoiSet(pois.length > 0 && rowId !== null ? { rowId, pois, view } : null);
-      // The points of the curve a tap just picked: snap the pin to one near the tap, if any.
-      if (anchor?.mode === 'pinned' && anchor.seek && anchor.rowId === rowId) {
-        const { seek } = anchor;
-        anchor.seek = undefined;
-        const sx = (seek.x - c.view.cx) * c.view.ppuX + c.view.width / 2;
-        const sy = c.view.height / 2 - (seek.y - c.view.cy) * c.view.ppuY;
-        const hit = c.trace(sx, sy, 32, { rowId, snapPx: SNAP_TOUCH_PX });
-        if (hit?.poi) pin(hit);
-      }
+    c.onPois = (pois, view, rowId, stale) => {
+      setPoiSet(pois.length > 0 && rowId !== null ? { rowId, pois, view, stale } : null);
+      if (stale || anchor?.mode !== 'pinned' || !anchor.seek) return;
+      // The first search since a tap picked a curve: snap the pin to a point near the tap, if
+      // it found one on that curve. Either way the tap stops looking (a later zoom or slider
+      // must not move the pin).
+      const { seek } = anchor;
+      anchor.seek = undefined;
+      if (anchor.rowId !== rowId) return;
+      const sx = (seek.x - c.view.cx) * c.view.ppuX + c.view.width / 2;
+      const sy = c.view.height / 2 - (seek.y - c.view.cy) * c.view.ppuY;
+      const hit = c.trace(sx, sy, PICK_TOUCH_PX, { rowId, snapPx: SNAP_TOUCH_PX });
+      if (hit?.poi) pin(hit);
     };
 
     createEffect(on(ui.homeRequests, () => c.home(), { defer: true }));
@@ -180,17 +194,40 @@ export function GraphView() {
 
     createEffect(() => c.setEmphasis(ui.emphasizedRowId()));
 
+    // Deselecting (Esc, or the selected row going away) lets go of a pinned trace too, as a tap
+    // on empty graph does.
+    createEffect(
+      on(
+        ui.selectedRowId,
+        (id) => {
+          if (id !== null || anchor?.mode !== 'pinned') return;
+          anchor = null;
+          showTrace(null);
+        },
+        { defer: true },
+      ),
+    );
+
+    /** On a phone, a tap or a hold on the graph puts the keypad away and finishes editing. */
+    const leaveEditing = () => {
+      keypad.setOpen(false);
+      const active = document.activeElement;
+      if (active instanceof HTMLInputElement) active.blur();
+    };
+
     /**
      * The curve under a press or click (a finger gets more room), which becomes the selected
-     * row; snapped to one of its points of interest, found for it right away.
+     * row. A finger also snaps to one of its points of interest, found for it right away, so a
+     * tap meant for a root lands on it; a mouse snaps only to the rings it can see.
      */
     const pickAt = (sx: number, sy: number, touch: boolean) => {
-      const opts = { snapPx: touch ? SNAP_TOUCH_PX : SNAP_PX };
-      const hit = c.trace(sx, sy, touch ? 32 : 20, opts);
+      const snapPx = touch ? SNAP_TOUCH_PX : SNAP_PX;
+      const hit = c.trace(sx, sy, touch ? PICK_TOUCH_PX : PICK_PX, { snapPx });
       if (!hit) return null;
       ui.pickRow(hit.rowId);
+      if (!touch || hit.poi) return hit;
       c.refreshPois();
-      return c.trace(sx, sy, touch ? 32 : 20, { ...opts, rowId: hit.rowId }) ?? hit;
+      return c.trace(sx, sy, PICK_TOUCH_PX, { snapPx, rowId: hit.rowId }) ?? hit;
     };
 
     const detach = attachGestures(container, c, {
@@ -214,23 +251,19 @@ export function GraphView() {
         // Tapping the graph on a phone dismisses the keypad and finishes editing. Only on a tap:
         // hiding it when a drag starts would re-layout the graph under the finger.
         const touch = pointerType === 'touch';
-        if (touch || isCoarsePointer) {
-          keypad.setOpen(false);
-          const active = document.activeElement;
-          if (active instanceof HTMLInputElement) active.blur();
-        }
+        if (touch || isCoarsePointer) leaveEditing();
         // A tap on a curve selects its row (without editing it); away from every curve it
         // deselects.
         const hit = pickAt(sx, sy, touch);
         if (!hit) ui.setSelectedRowId(null);
         if (pointerType === 'mouse' && !hit?.poi) {
           // A mouse traces by hovering; a click (or double-click zoom) must not pin it, except
-          // on a point of interest.
+          // on a point of interest it can see.
           anchor = { mode: 'hover', sx, sy };
           retrace();
           return;
         }
-        if (hit) pin(hit, { sx, sy });
+        if (hit) pinPick(hit, sx, sy);
         else {
           anchor = null;
           showTrace(null);
@@ -246,18 +279,26 @@ export function GraphView() {
       hold(sx, sy) {
         const hit = pickAt(sx, sy, true);
         if (!hit) return false;
+        // What the tap this press is no longer would have done.
+        leaveEditing();
         scrubRow = hit.rowId;
-        pin(hit, { sx, sy });
+        setScrubbing(true);
+        pinPick(hit, sx, sy);
         return true;
       },
       scrub(sx, sy) {
         if (scrubRow === null) return;
+        setScrubbing(true);
         // Along the one curve, however far the finger strays from it.
         const hit = c.trace(sx, sy, Number.POSITIVE_INFINITY, {
           rowId: scrubRow,
           snapPx: SNAP_TOUCH_PX,
         });
         if (hit) pin(hit);
+      },
+      scrubEnd() {
+        scrubRow = null;
+        setScrubbing(false);
       },
     });
 
@@ -284,6 +325,7 @@ export function GraphView() {
       <canvas ref={canvas} class="graph-canvas" role="img" aria-label="Graph of the expressions" />
       <PoiLayer
         set={poiSet()}
+        current={trace()?.poi ?? null}
         meets={(poi: Poi) =>
           poi.kinds.includes('intersection') ? poi.with.map((id) => rowText(id)) : []
         }
@@ -292,7 +334,7 @@ export function GraphView() {
           poiLayer = h;
         }}
       />
-      <TraceMarker hit={trace()} kind={traceKind()} />
+      <TraceMarker hit={trace()} kind={traceKind()} scrubbing={scrubbing()} />
       <Show when={controller()}>{(c) => <GraphControls controller={c()} />}</Show>
       <Show when={debug}>
         <div class="debug-overlay" ref={debugEl} />

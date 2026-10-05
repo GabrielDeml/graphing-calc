@@ -50,13 +50,10 @@ createRoot(() => {
 export const steadyRows = createRoot(() => {
   let state = EMPTY_STEADY;
   return createMemo<Steady>(() => {
-    const next = steady(
-      state,
-      doc.rows,
-      analysis().byId,
-      ui.editingRowId(),
-      engine.globalsGeneration,
-    );
+    const next = steady(state, doc.rows, analysis().byId, ui.editingRowId(), {
+      generation: engine.globalsGeneration,
+      slots: engine.variableSlots,
+    });
     state = next.state;
     return next;
   });

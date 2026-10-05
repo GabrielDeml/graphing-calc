@@ -8,9 +8,25 @@
 import { detectDefinition } from '../engine/definition';
 import type { RowResult } from '../engine/types';
 
+/**
+ * Where the engine keeps variable values (DocumentEngine.globalsGeneration and variableSlots):
+ * compiled closures read them there.
+ */
+export interface Globals {
+  readonly generation: number;
+  readonly slots: ReadonlyMap<string, number>;
+}
+
+/** A row's last good result, and where the variables its closures read were kept then. */
+interface Good {
+  readonly result: RowResult;
+  readonly generation: number;
+  readonly slots: ReadonlyMap<string, number>;
+}
+
 export interface SteadyState {
-  /** Each row's last good result, and the generation of the engine's globals it was made in. */
-  readonly good: ReadonlyMap<string, { readonly result: RowResult; readonly generation: number }>;
+  /** Each row's last good result. */
+  readonly good: ReadonlyMap<string, Good>;
   /** The row being edited, and every name it has defined since it was focused. */
   readonly editing: string | null;
   readonly names: ReadonlySet<string>;
@@ -44,15 +60,15 @@ function headName(source: string): string | null {
 
 /**
  * The next steady view, from the previous state, the rows (in order), their current results,
- * the row being edited (null when none is) and the engine's current globals generation. Once
- * nothing is being edited, nothing is held: a broken row shows as broken.
+ * the row being edited (null when none is) and the engine's current globals. Once nothing is
+ * being edited, nothing is held: a broken row shows as broken.
  */
 export function steady(
   prev: SteadyState,
   rows: readonly { readonly id: string; readonly source: string }[],
   results: ReadonlyMap<string, RowResult>,
   editing: string | null,
-  generation: number,
+  globals: Globals,
 ): Steady {
   const editRow = editing === null ? undefined : rows.find((r) => r.id === editing);
   const names = new Set(editRow && editing === prev.editing ? prev.names : []);
@@ -94,20 +110,47 @@ export function steady(
     return yes;
   };
 
-  const good = new Map<string, { result: RowResult; generation: number }>();
+  // Which variable owns each slot now (made when first needed).
+  let owners: Map<number, string> | null = null;
+  const ownerOf = (slot: number) => {
+    owners ??= new Map([...globals.slots].map(([name, s]) => [s, name]));
+    return owners.get(slot);
+  };
+  /**
+   * Whether a kept result's closures still read what they read when it was good: not after a
+   * reallocation of the globals (they would read storage that no longer changes), nor once a
+   * slot of theirs has gone to another name (they would read its value).
+   */
+  const intact = (last: Good) =>
+    last.generation === globals.generation &&
+    [...last.slots].every(([name, slot]) => {
+      const owner = ownerOf(slot);
+      return owner === undefined || owner === name;
+    });
+
+  const good = new Map<string, Good>();
   const held = new Map<string, RowResult>();
   const quiet = new Set<string>();
   for (const row of rows) {
     const result = results.get(row.id);
     if (result?.status === 'ok') {
-      good.set(row.id, { result, generation });
+      const last = prev.good.get(row.id);
+      if (last?.result === result && last.generation === globals.generation) {
+        good.set(row.id, last);
+        continue;
+      }
+      const slots = new Map<string, number>();
+      for (const name of result.deps) {
+        const slot = globals.slots.get(name);
+        if (slot !== undefined) slots.set(name, slot);
+      }
+      good.set(row.id, { result, generation: globals.generation, slots });
       continue;
     }
     if (!editRow || result?.status !== 'error' || !blamed(row.id)) continue;
     if (row.id !== editRow.id) quiet.add(row.id);
     const last = prev.good.get(row.id);
-    // Closures from before a reallocation of the globals would draw stale values.
-    if (last && last.generation === generation) {
+    if (last && intact(last)) {
       good.set(row.id, last);
       held.set(row.id, last.result);
     }

@@ -10,24 +10,33 @@ export interface GestureCallbacks {
   /** A quick tap without movement (touch pins the trace there, and dismisses the keypad). */
   tap(sx: number, sy: number, pointerType: string): void;
   /**
-   * A touch or pen press: whether it starts a scrub along a curve instead of a pan (it is on the
-   * pinned trace's dot).
+   * A touch or pen press: whether a drag from it scrubs along a curve instead of panning (it is
+   * on the pinned trace's dot). Released without moving, it is still a tap.
    */
   scrubStart?(sx: number, sy: number): boolean;
-  /** A touch or pen press held still for HOLD_MS: whether it starts a scrub (it is on a curve). */
+  /**
+   * A touch or pen press held still for HOLD_MS: whether it starts a scrub (it is on a curve).
+   * The press is no tap after that, so this does what a tap would have.
+   */
   hold?(sx: number, sy: number): boolean;
   /** The scrubbing finger moved. */
   scrub?(sx: number, sy: number): void;
+  /** The scrubbing finger lifted (or a second one came down). */
+  scrubEnd?(): void;
 }
 
 const TAP_MOVE_PX = 6;
 const TAP_MS = 300;
-/** A press held this long without moving picks up the curve under it to scrub along. */
-const HOLD_MS = 250;
+/**
+ * A press held this long without moving picks up the curve under it to scrub along. Longer
+ * than a tap, so a slow tap is never taken for a hold.
+ */
+const HOLD_MS = 350;
 
 /**
  * Pan with one pointer, pinch-zoom with two, wheel/trackpad zoom, double-click zoom, keys. On
- * touch, a press on the pinned trace (or held on a curve) scrubs along the curve instead.
+ * touch, a drag from the pinned trace's dot (or a press held on a curve) scrubs along the curve
+ * instead.
  */
 export function attachGestures(
   el: HTMLElement,
@@ -39,6 +48,8 @@ export function attachGestures(
   let moved = false;
   /** The pointer scrubbing along a curve, if one is. */
   let scrubbing: number | null = null;
+  /** The pointer pressed on the pinned trace's dot: it scrubs once it moves. */
+  let grab: number | null = null;
   let holdTimer: ReturnType<typeof setTimeout> | undefined;
 
   const local = (e: { clientX: number; clientY: number }): Pt => {
@@ -59,6 +70,13 @@ export function attachGestures(
     holdTimer = undefined;
   };
 
+  const stopScrub = () => {
+    grab = null;
+    if (scrubbing === null) return;
+    scrubbing = null;
+    cb.scrubEnd?.();
+  };
+
   const onPointerDown = (e: PointerEvent) => {
     if (e.button !== 0 && e.pointerType === 'mouse') return;
     if (onControl(e)) return;
@@ -73,8 +91,7 @@ export function attachGestures(
       moved = false;
       if (e.pointerType !== 'mouse') {
         if (cb.scrubStart?.(p.x, p.y)) {
-          scrubbing = e.pointerId;
-          tapStart = null;
+          grab = e.pointerId;
         } else if (cb.hold) {
           const hold = cb.hold;
           holdTimer = setTimeout(() => {
@@ -90,7 +107,7 @@ export function attachGestures(
     } else {
       // A second finger: a pinch, never a scrub.
       tapStart = null;
-      scrubbing = null;
+      stopScrub();
     }
   };
 
@@ -113,6 +130,13 @@ export function attachGestures(
       moved = true;
       tapStart = null;
       stopHold();
+      if (grab === e.pointerId) {
+        grab = null;
+        scrubbing = e.pointerId;
+        pointers.set(e.pointerId, p);
+        cb.scrub?.(p.x, p.y);
+        return;
+      }
       cb.leave();
     }
     if (!moved && pointers.size === 1) return;
@@ -133,7 +157,7 @@ export function attachGestures(
     if (!pointers.has(e.pointerId)) return;
     pointers.delete(e.pointerId);
     stopHold();
-    if (scrubbing === e.pointerId) scrubbing = null;
+    if (scrubbing === e.pointerId || grab === e.pointerId) stopScrub();
     if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
     if (
       e.type === 'pointerup' &&

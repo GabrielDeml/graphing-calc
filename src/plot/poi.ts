@@ -15,11 +15,15 @@
 //     (implicit pairs refined by Newton's method).
 // A sign change is a root only once Brent gets |f| well below the bracket's values: poles
 // (tan x, 1/x) and jumps (floor x) never do. Where the samples dip toward zero without crossing
-// (x², a tangent line) the dip is minimised, and touching counts as a root (a double root).
+// (x², a tangent line) the dip is minimised, and touching counts as a root (a double root). A
+// turn of the samples is an extremum only where f is continuous: a sawtooth's drop is not a
+// maximum. A piece of the curve that ends at the edge of f's domain (sqrt(4 - x²) at ±2), or at
+// the end of a parameter range, ends with a root when f goes to zero there.
 //
-// The result is capped and kept calm: a kind of point too dense to read on screen (the extrema
-// of sin x zoomed far out) is dropped as a whole rather than thinned at random, and evaluations
-// are budgeted (sin(1/x) cannot hang).
+// The result is capped and kept calm: kinds of points are shown or left out as a whole, most
+// notable first (intersections, then crossings of the axes, then extrema), while they stay few
+// and far enough apart to read; so zooming out on sin x drops its extrema, then its roots,
+// rather than thinning them at random. Evaluations are budgeted (sin(1/x) cannot hang).
 
 import type { Fn1, Fn2, PlotItem } from '../engine/types';
 import type { RowGeometry, Viewport } from './types';
@@ -44,13 +48,13 @@ export interface PoiCurve {
 }
 
 export interface PoiOptions {
-  /** Most points returned (default 50). */
+  /** Most points returned (default 20). */
   maxPois?: number;
   /** Evaluation budget for the whole search (default 60000). */
   maxEvals?: number;
 }
 
-const DEFAULT_MAX_POIS = 50;
+const DEFAULT_MAX_POIS = 20;
 const DEFAULT_MAX_EVALS = 60000;
 /** Kinds in label order: the most notable first. */
 const KIND_ORDER: readonly PoiKind[] = [
@@ -65,8 +69,11 @@ const KIND_ORDER: readonly PoiKind[] = [
 const SCAN_PX = 2;
 /** Points closer than this on screen are one point (with the kinds of both). */
 const MERGE_PX = 1.5;
-/** A kind of point whose neighbours are typically closer than this is too dense to show. */
-const MIN_GAP_PX = 12;
+/**
+ * Points whose neighbours are typically closer than this are too crowded to read (a ring is
+ * 10 px across, its hit area 22 px).
+ */
+const MIN_GAP_PX = 20;
 /** A Brent root is real once |f| is below this fraction of the bracket's end values. */
 const ROOT_RATIO = 1e-3;
 /** A dip whose minimum |f| is below this fraction of its neighbours' touches zero. */
@@ -259,10 +266,65 @@ interface Solved {
 }
 
 /**
+ * Whether f jumps at x (a sawtooth's drop) rather than turning there: the values either side
+ * of a turning point close in on f(x) as they come nearer, a jump's stay a jump apart.
+ * `width` is the bracket x was found in.
+ */
+function jumpsAt(f: Fn1, x: number, fx: number, width: number): boolean {
+  // Well past the minimiser's tolerance, and far enough out to rise above rounding.
+  const near = Math.max(1e-4 * width, 16e-10 * (Math.abs(x) + width));
+  const spread = (d: number) => Math.max(Math.abs(f(x - d) - fx), Math.abs(f(x + d) - fx));
+  const far = spread(10 * near);
+  const close = spread(near);
+  if (!Number.isFinite(far) || !Number.isFinite(close)) return true;
+  // Too flat to tell apart from rounding: take it as a turn.
+  if (far <= 1e-13 * Math.max(1, Math.abs(fx))) return false;
+  return close > 0.5 * far;
+}
+
+/**
+ * The root where a piece of samples ends at u (value v, `inner` the next sample in), if the
+ * piece ends at the edge of f's domain and f goes to zero there, compared with `scale` (the
+ * size of f near the end). `outside` is a known input past u where f is not finite, or NaN to
+ * look for one close to u. NaN when there is none.
+ */
+function edgeRoot(f: Fn1, u: number, v: number, inner: number, scale: number, outside: number) {
+  let bad = outside;
+  if (Number.isNaN(bad)) {
+    // The piece may also end at a pole or a jump, or where the samples stop (the view's edge).
+    const step = u - inner;
+    for (let k = 1; k <= 4096; k *= 16) {
+      const probe = u + step / k;
+      if (!Number.isFinite(f(probe))) {
+        bad = probe;
+        break;
+      }
+    }
+    if (Number.isNaN(bad)) return Number.NaN;
+  }
+  let ok = u;
+  let fok = v;
+  for (let k = 0; k < 64; k++) {
+    const m = 0.5 * (ok + bad);
+    if (m === ok || m === bad) break;
+    const fm = f(m);
+    if (Number.isFinite(fm)) {
+      ok = m;
+      fok = fm;
+    } else {
+      bad = m;
+    }
+  }
+  return Math.abs(fok) <= TOUCH_RATIO * scale ? ok : Number.NaN;
+}
+
+/**
  * Roots (and with `extrema`, local maxima and minima) of f from samples vs[i] = f(us[i]) at
- * increasing us. A non-finite value breaks the samples into pieces that are never bridged.
- * Throws TooMany past `maxCandidates` brackets, or when f is zero all along (a curve on the
- * axis, two equal curves).
+ * increasing us. A non-finite value breaks the samples into pieces that are never bridged; an
+ * NaN input separates pieces whose gap was not sampled (a polyline's pen-up). `rangeEnds`: the
+ * first and last samples are where f's range ends (a parameter range), rather than where the
+ * sampling happens to stop. Throws TooMany past `maxCandidates` brackets, or when f is zero all
+ * along (a curve on the axis, two equal curves).
  */
 function solveSamples(
   f: Fn1,
@@ -271,20 +333,23 @@ function solveSamples(
   extrema: boolean,
   maxCandidates: number,
   budget: Budget,
+  rangeEnds = false,
 ): Solved {
   const out: Solved = { roots: [], maxima: [], minima: [] };
   const n = Math.min(us.length, vs.length);
-  const usable = (i: number) => Number.isFinite(vs[i]);
-  // First pass: count the brackets, so a dense curve costs no refinement at all.
+  const usable = (i: number) => i >= 0 && i < n && Number.isFinite(vs[i]);
+  // First pass: count the brackets and the ends of pieces, so a dense curve costs no refinement.
   let candidates = 0;
   let zeros = 0;
-  for (let i = 0; i + 1 < n; i++) {
-    if (!usable(i) || !usable(i + 1)) continue;
+  for (let i = 0; i < n; i++) {
+    if (!usable(i)) continue;
+    if (!usable(i - 1) || !usable(i + 1)) candidates++;
+    if (!usable(i + 1)) continue;
     const a = vs[i];
     const b = vs[i + 1];
     if (a * b < 0) candidates++;
     if (a === 0 && b === 0 && ++zeros > 2) throw new TooMany();
-    if (i > 0 && usable(i - 1)) {
+    if (usable(i - 1)) {
       const d1 = a - vs[i - 1];
       const d2 = b - a;
       if (d1 * d2 < 0) candidates++;
@@ -300,11 +365,30 @@ function solveSamples(
       out.roots.push(us[i]);
       continue;
     }
-    if (i + 1 < n && usable(i + 1) && v * vs[i + 1] < 0) {
+    // The end of a piece: where the domain or the parameter range ends.
+    for (const dir of [-1, 1]) {
+      const j = i + dir;
+      const k = i - dir;
+      if (usable(j) || !usable(k)) continue;
+      // The size of f near the end, past the points the sampler crowds at a domain's edge.
+      let scale = 0;
+      for (let q = i, m = 0; m < 4 && usable(q); q -= dir, m++) {
+        scale = Math.max(scale, Math.abs(vs[q]));
+      }
+      const atEnd = j < 0 || j >= n;
+      const r =
+        atEnd && rangeEnds
+          ? Math.abs(v) <= TOUCH_RATIO * scale
+            ? us[i]
+            : Number.NaN
+          : edgeRoot(f, us[i], v, us[k], scale, atEnd ? Number.NaN : us[j]);
+      if (!Number.isNaN(r)) out.roots.push(r);
+    }
+    if (usable(i + 1) && v * vs[i + 1] < 0) {
       const r = brentRoot(f, us[i], v, us[i + 1], vs[i + 1]);
       if (!Number.isNaN(r)) out.roots.push(r);
     }
-    if (i === 0 || i + 1 >= n || !usable(i - 1) || !usable(i + 1)) continue;
+    if (!usable(i - 1) || !usable(i + 1)) continue;
     const l = vs[i - 1];
     const r = vs[i + 1];
     const isMax = v > l && v > r;
@@ -317,7 +401,10 @@ function solveSamples(
     const x = brentMin((u) => sign * f(u), us[i - 1], us[i + 1], us[i], sign * v);
     const fx = f(x);
     if (!Number.isFinite(fx) || sign * fx > sign * v) continue;
-    if (extrema) (isMax ? out.maxima : out.minima).push(x);
+    if (extrema && !jumpsAt(f, x, fx, us[i + 1] - us[i - 1])) {
+      (isMax ? out.maxima : out.minima).push(x);
+    }
+    // At a jump too: x - floor(x) does reach 0 at each integer.
     if (dip && Math.abs(fx) <= TOUCH_RATIO * Math.max(Math.abs(l), Math.abs(r))) {
       out.roots.push(x);
     }
@@ -498,12 +585,13 @@ function explicitPoints(curve: PoiCurve & { plot: Explicit }, ctx: Ctx, add: Add
 
 /** Where a parametric or polar curve crosses the axes. */
 function paramIntercepts(p: ParamCurve, ctx: Ctx, add: AddFn): void {
+  const { maxCandidates, budget } = ctx;
   add('xIntercept', null, () => {
-    const s = solveSamples(p.y, p.ts, sampleAll(p.y, p.ts), false, ctx.maxCandidates, ctx.budget);
+    const s = solveSamples(p.y, p.ts, sampleAll(p.y, p.ts), false, maxCandidates, budget, true);
     return s.roots.map((t) => [p.x(t), 0]);
   });
   add('yIntercept', null, () => {
-    const s = solveSamples(p.x, p.ts, sampleAll(p.x, p.ts), false, ctx.maxCandidates, ctx.budget);
+    const s = solveSamples(p.x, p.ts, sampleAll(p.x, p.ts), false, maxCandidates, budget, true);
     return s.roots.map((t) => [0, p.y(t)]);
   });
 }
@@ -573,7 +661,7 @@ function intersections(a: PoiCurve, b: PoiCurve, ctx: Ctx): [number, number][] {
     const pc = paramCurve(p, budget);
     if (pc !== null) {
       const g = (t: number) => R(pc.x(t), pc.y(t));
-      const s = solveSamples(g, pc.ts, sampleAll(g, pc.ts), false, ctx.maxCandidates, budget);
+      const s = solveSamples(g, pc.ts, sampleAll(g, pc.ts), false, ctx.maxCandidates, budget, true);
       return s.roots.map((t) => [pc.x(t), pc.y(t)]);
     }
   }
@@ -720,7 +808,8 @@ type AddFn = (kind: PoiKind, other: string | null, find: () => [number, number][
 /**
  * Points of interest of `target` in `view`: its roots, local extrema and intercepts with the
  * axes, and where it meets each of `others`. Merged where they coincide (the vertex of x² is a
- * minimum, a root and the y-intercept), limited to the view and to `maxPois`.
+ * minimum, a root and the y-intercept), limited to the view and to `maxPois`, and left out by
+ * kind where they would crowd (see the top of this file).
  */
 export function findPois(
   target: PoiCurve,
@@ -740,7 +829,7 @@ export function findPois(
   const inView = (x: number, y: number) => x >= b.xmin && x <= b.xmax && y >= b.ymin && y <= b.ymax;
 
   // Each class (a kind, or the intersections with one curve) is found whole or not at all.
-  const classes: { kind: PoiKind; points: Candidate[] }[] = [];
+  const classes: { kind: PoiKind; other: string | null; points: Candidate[] }[] = [];
   const add: AddFn = (kind, other, find) => {
     if (ctx.budget.left <= 0) return;
     let found: [number, number][];
@@ -757,7 +846,7 @@ export function findPois(
         points.push({ x, y, kind, with: other });
       }
     }
-    if (points.length > 0 && !tooDense(points, view, maxPois)) classes.push({ kind, points });
+    if (points.length > 0) classes.push({ kind, other, points });
   };
 
   const plot = target.plot;
@@ -775,37 +864,74 @@ export function findPois(
     add('intersection', other.id, () => intersections(target, other, ctx));
   }
 
-  // Still too many: drop whole classes, least notable first (extrema, then crossings of the
-  // axes), then keep the intersections nearest the middle of the view.
-  const dropOrder: PoiKind[][] = [
-    ['max', 'min'],
-    ['root', 'xIntercept', 'yIntercept'],
-  ];
-  const total = () => classes.reduce((n, c) => n + c.points.length, 0);
-  for (const kinds of dropOrder) {
-    if (total() <= maxPois) break;
-    for (let i = classes.length - 1; i >= 0; i--) {
-      if (kinds.includes(classes[i].kind)) classes.splice(i, 1);
+  // Shown or left out together: the intersections with one curve, the crossings of one axis,
+  // the extrema (maxima without the minima between them would mislead).
+  const groups = new Map<string, { rank: number; points: Candidate[] }>();
+  for (const c of classes) {
+    const extremum = c.kind === 'max' || c.kind === 'min';
+    const key = c.other !== null ? `with ${c.other}` : extremum ? 'extrema' : c.kind;
+    const rank = c.other !== null ? 0 : extremum ? 2 : 1;
+    const group = groups.get(key) ?? { rank, points: [] };
+    group.points.push(...c.points);
+    groups.set(key, group);
+  }
+  const ranked = [...groups.values()].sort((p, q) => p.rank - q.rank);
+
+  // The intersections first, as many as fit, nearest the middle of the view…
+  const d = (p: Candidate) => Math.hypot((p.x - view.cx) * view.ppuX, (p.y - view.cy) * view.ppuY);
+  let shown: Candidate[] = [];
+  for (const g of ranked) {
+    if (g.rank === 0 && !crowded([], g.points, view, maxPois)) shown.push(...g.points);
+  }
+  if (spots(shown, view).length > maxPois) {
+    const kept: Candidate[] = [];
+    for (const p of shown.sort((p, q) => d(p) - d(q))) {
+      if (spots([...kept, p], view).length <= maxPois) kept.push(p);
     }
+    shown = kept;
   }
-  let all = classes.flatMap((c) => c.points);
-  if (all.length > maxPois) {
-    const d = (p: Candidate) => Math.hypot(p.x - view.cx, p.y - view.cy);
-    all = all.sort((p, q) => d(p) - d(q)).slice(0, maxPois);
+  // …then each other group, unless it would crowd the graph.
+  for (const g of ranked) {
+    if (g.rank !== 0 && !crowded(shown, g.points, view, maxPois)) shown = [...shown, ...g.points];
   }
-  return merge(all, view);
+  return merge(shown, view);
 }
 
-/** Too many to show, or typically closer than MIN_GAP_PX to the nearest other one. */
-function tooDense(points: readonly Candidate[], view: Viewport, maxPois: number): boolean {
-  if (points.length > maxPois) return true;
-  if (points.length < 3) return false;
-  const gaps = points.map((p, i) => {
+type Spot = { sx: number; sy: number };
+
+/** One screen spot per point: candidates within MERGE_PX of one another are one spot. */
+function spots(points: readonly Candidate[], view: Viewport, into: Spot[] = []): Spot[] {
+  for (const p of points) {
+    const sx = p.x * view.ppuX;
+    const sy = p.y * view.ppuY;
+    if (!into.some((q) => Math.hypot(q.sx - sx, q.sy - sy) < MERGE_PX)) into.push({ sx, sy });
+  }
+  return into;
+}
+
+/**
+ * Whether `added` would crowd the graph next to `shown`: more than `max` spots in all, or many
+ * new spots (three or more) typically closer than MIN_GAP_PX to their nearest neighbour. Only
+ * the new spots are judged, so points already shown close together (two crossings a few pixels
+ * apart) keep nothing else out; repeat passes through one spot (a rose's petals all meet at the
+ * origin) are one spot.
+ */
+function crowded(
+  shown: readonly Candidate[],
+  added: readonly Candidate[],
+  view: Viewport,
+  max: number,
+): boolean {
+  const all = spots(shown, view);
+  const before = all.length;
+  spots(added, view, all);
+  if (all.length > max) return true;
+  const fresh = all.slice(before);
+  if (fresh.length < 3) return false;
+  const gaps = fresh.map((p) => {
     let best = Number.POSITIVE_INFINITY;
-    for (let j = 0; j < points.length; j++) {
-      if (j === i) continue;
-      const q = points[j];
-      best = Math.min(best, Math.hypot((p.x - q.x) * view.ppuX, (p.y - q.y) * view.ppuY));
+    for (const q of all) {
+      if (q !== p) best = Math.min(best, Math.hypot(p.sx - q.sx, p.sy - q.sy));
     }
     return best;
   });
