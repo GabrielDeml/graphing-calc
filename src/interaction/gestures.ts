@@ -1,5 +1,6 @@
+import { flingVelocity, recordSample, type Sample } from '../plot/inertia';
 import type { Pt } from '../plot/viewport';
-import { panBy, pinchViewport, wheelZoomFactor, zoomAt } from '../plot/viewport';
+import { isWheelNotch, panBy, pinchViewport, wheelZoomFactor, zoomAt } from '../plot/viewport';
 import type { GraphController } from '../render/controller';
 
 export interface GestureCallbacks {
@@ -33,10 +34,16 @@ const TAP_MS = 300;
  */
 const HOLD_MS = 350;
 
+/** An arrow key pans the graph this far (CSS px). */
+const KEY_STEP_PX = 40;
+
 /**
  * Pan with one pointer, pinch-zoom with two, wheel/trackpad zoom, double-click zoom, keys. On
  * touch, a drag from the pinned trace's dot (or a press held on a curve) scrubs along the curve
- * instead.
+ * instead. A finger or pen that lets go of a pan while moving flings the view, which glides on
+ * until a new press, wheel or key catches it; a mouse wheel's notches and the arrow keys move
+ * in short animated steps that compose, while a trackpad's stream of small deltas is followed
+ * as it comes.
  */
 export function attachGestures(
   el: HTMLElement,
@@ -51,6 +58,15 @@ export function attachGestures(
   /** The pointer pressed on the pinned trace's dot: it scrubs once it moves. */
   let grab: number | null = null;
   let holdTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Where a finger or pen panning has lately been, for the velocity it lets go with. */
+  let samples: Sample[] = [];
+  /**
+   * The gesture may end in a fling: a finger or pen panning on its own. Not a mouse, and never
+   * once it pinched or scrubbed along a curve.
+   */
+  let flingable = false;
+  /** The press caught a gliding view: it stops it, and is no tap. */
+  let caught = false;
 
   const local = (e: { clientX: number; clientY: number }): Pt => {
     const r = el.getBoundingClientRect();
@@ -80,15 +96,22 @@ export function attachGestures(
   const onPointerDown = (e: PointerEvent) => {
     if (e.button !== 0 && e.pointerType === 'mouse') return;
     if (onControl(e)) return;
-    // Finish a running zoom animation first, so the gesture starts from where it ends.
+    // Catch a gliding view where it is; finish a running zoom animation, so the gesture starts
+    // from where it ends.
+    const stopped = controller.stop();
     controller.settle();
     el.setPointerCapture(e.pointerId);
     const p = local(e);
     pointers.set(e.pointerId, p);
     stopHold();
     if (pointers.size === 1) {
-      tapStart = { ...p, time: performance.now(), id: e.pointerId };
+      const now = performance.now();
+      tapStart = { ...p, time: now, id: e.pointerId };
       moved = false;
+      caught = stopped;
+      flingable = e.pointerType !== 'mouse';
+      samples = [];
+      if (flingable) recordSample(samples, { ...p, t: now });
       if (e.pointerType !== 'mouse') {
         if (cb.scrubStart?.(p.x, p.y)) {
           grab = e.pointerId;
@@ -100,13 +123,15 @@ export function attachGestures(
             if (pointers.size === 1 && at && !moved && hold(at.x, at.y)) {
               scrubbing = e.pointerId;
               tapStart = null;
+              flingable = false;
             }
           }, HOLD_MS);
         }
       }
     } else {
-      // A second finger: a pinch, never a scrub.
+      // A second finger: a pinch, never a scrub, nor a fling once it lets go.
       tapStart = null;
+      flingable = false;
       stopScrub();
     }
   };
@@ -133,6 +158,7 @@ export function attachGestures(
       if (grab === e.pointerId) {
         grab = null;
         scrubbing = e.pointerId;
+        flingable = false;
         pointers.set(e.pointerId, p);
         cb.scrub?.(p.x, p.y);
         return;
@@ -142,6 +168,7 @@ export function attachGestures(
     if (!moved && pointers.size === 1) return;
     if (pointers.size === 1) {
       controller.setView(panBy(controller.view, p.x - prev.x, p.y - prev.y));
+      if (flingable) recordSample(samples, { ...p, t: performance.now() });
     } else if (pointers.size === 2) {
       const [idA, idB] = [...pointers.keys()];
       const prevA = pointers.get(idA) as Pt;
@@ -159,15 +186,26 @@ export function attachGestures(
     stopHold();
     if (scrubbing === e.pointerId || grab === e.pointerId) stopScrub();
     if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
+    const now = performance.now();
     if (
       e.type === 'pointerup' &&
       tapStart &&
       tapStart.id === e.pointerId &&
       !moved &&
-      performance.now() - tapStart.time < TAP_MS
+      !caught &&
+      now - tapStart.time < TAP_MS
     ) {
       const p = local(e);
       cb.tap(p.x, p.y, e.pointerType);
+    }
+    // Let go of a pan while moving: the view glides on.
+    if (e.type === 'pointerup' && pointers.size === 0 && flingable && moved) {
+      const v = flingVelocity(samples, now);
+      if (v) controller.fling(v);
+    }
+    if (pointers.size === 0) {
+      flingable = false;
+      samples = [];
     }
     tapStart = null;
     // After a pinch, the remaining finger continues as a pan without a jump.
@@ -180,11 +218,18 @@ export function attachGestures(
 
   const onWheel = (e: WheelEvent) => {
     e.preventDefault();
-    controller.settle();
     const p = local(e);
     const factor = wheelZoomFactor(e.deltaY, e.deltaMode, e.ctrlKey, el.clientHeight);
-    const next = zoomAt(controller.view, p.x, p.y, factor);
-    if (next !== controller.view) controller.setView(next);
+    if (isWheelNotch(e.deltaY, e.deltaMode)) {
+      // A mouse wheel's notch: a short animated step, going on from where the last one ends.
+      if (factor !== 1) controller.wheelStep(factor, p.x, p.y);
+    } else {
+      // A trackpad: followed as it comes, from where a running animation ends.
+      controller.settle();
+      const next = zoomAt(controller.view, p.x, p.y, factor);
+      if (next !== controller.view) controller.setView(next);
+      else controller.stop();
+    }
     if (!onControl(e)) cb.hover(p.x, p.y);
   };
 
@@ -197,11 +242,9 @@ export function attachGestures(
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.target !== el) return;
-    const step = 40;
-    const pan = (dx: number, dy: number) => {
-      controller.settle();
-      controller.setView(panBy(controller.view, dx, dy));
-    };
+    const step = KEY_STEP_PX;
+    // An animated step, going on from where a running one ends (a held key glides along).
+    const pan = (dx: number, dy: number) => controller.pan(dx, dy);
     switch (e.key) {
       case '+':
       case '=':

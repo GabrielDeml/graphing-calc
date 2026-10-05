@@ -167,6 +167,19 @@ export function wheelZoomFactor(
   return f < 0.5 ? 0.5 : f > 2 ? 2 : f;
 }
 
+/** A wheel event this large (CSS px) is a mouse wheel's notch; trackpads send many small ones. */
+const NOTCH_PX = 50;
+
+/**
+ * Whether a wheel event is one notch of a mouse wheel (counted in lines, or a big step in
+ * pixels), whose zoom step is animated, rather than part of a trackpad's stream of small deltas,
+ * which already arrive smoothly and are followed as they come.
+ */
+export function isWheelNotch(deltaY: number, deltaMode: number): boolean {
+  if (deltaMode === 1 || deltaMode === 2) return deltaY !== 0;
+  return Math.abs(deltaY) >= NOTCH_PX;
+}
+
 /** Below this relative scale change an animation is treated as a pure pan. */
 const SAME_SCALE = 1e-9;
 

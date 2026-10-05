@@ -10,6 +10,7 @@ import {
   unionBounds,
   windowSpan,
 } from '../plot/bounds';
+import { glideDuration, glideOffset, type Velocity } from '../plot/inertia';
 import { type NearestHit, nearestOnPolyline, nearestPoint, traceExplicit } from '../plot/nearest';
 import { findPois, type Poi, type PoiCensus, type PoiCurve } from '../plot/poi';
 import { SceneCache } from '../plot/scene';
@@ -18,6 +19,7 @@ import {
   clampViewport,
   homeViewport,
   lerpViewport,
+  panBy,
   resizeViewport,
   toScreenX,
   toScreenY,
@@ -90,6 +92,13 @@ const HEAVY_FRAME_MS = 16;
 const TYPING_IDLE_MS = 300;
 /** Zoom to fit, framing a new curve and flying to a point take this long. */
 const FIT_MS = 220;
+/** A wheel notch's zoom step and an arrow key's pan step take this long. */
+const STEP_MS = 120;
+/**
+ * The longest a layout transition around the graph runs (a panel snapping; --dur-3 in
+ * global.css, with room to spare): its resizes stay at interactive quality until it ends.
+ */
+const LAYOUT_MS = 400;
 /** A view the user moved this recently is theirs: a new curve out of sight doesn't move it. */
 const USER_MOVE_MS = 2000;
 /**
@@ -142,6 +151,10 @@ export class GraphController {
   private animation = 0;
   /** Where the running zoom/home animation ends, so repeated presses compose. */
   private animTarget: Viewport | null = null;
+  /** The frame of a fling's glide, while the view glides on after a finger let go. */
+  private glide = 0;
+  /** Until when the layout around the graph is animating (see layoutTransition). */
+  private layoutUntil = Number.NEGATIVE_INFINITY;
   private hasView = false;
   /** When the last resize was drawn: a quick run of them (a list edge drag) is a gesture. */
   private lastResize = -Infinity;
@@ -197,6 +210,7 @@ export class GraphController {
   destroy(): void {
     cancelAnimationFrame(this.frame);
     cancelAnimationFrame(this.animation);
+    cancelAnimationFrame(this.glide);
     clearTimeout(this.idleTimer);
     clearTimeout(this.poiTimer);
     clearTimeout(this.frameTimer);
@@ -284,6 +298,7 @@ export class GraphController {
    */
   animateTo(target: Viewport, ms = 180, home = false, user = true): void {
     cancelAnimationFrame(this.animation);
+    this.stop();
     this.isHome = home;
     if (user) this.userMoved = performance.now();
     if (reducedMotion?.matches) {
@@ -317,8 +332,84 @@ export class GraphController {
 
   /** Zoom about the center; a press during an animation zooms from where that one ends. */
   zoomCenter(factor: number): void {
+    this.zoomBy(factor);
+  }
+
+  /**
+   * Zoom about a point on screen (the center by default), animated. Like the zoom buttons, a
+   * step during an animation goes on from where that one ends, so wheel notches in quick
+   * succession compose, with the point under the cursor staying under it (see lerpViewport).
+   */
+  zoomBy(factor: number, sx?: number, sy?: number, ms?: number): void {
     const base = this.animTarget ?? this.view;
-    this.animateTo(zoomAt(base, base.width / 2, base.height / 2, factor));
+    const target = zoomAt(base, sx ?? base.width / 2, sy ?? base.height / 2, factor);
+    // At a zoom limit: nothing to animate (a running animation goes on).
+    if (target !== base || !this.animTarget) this.animateTo(target, ms);
+  }
+
+  /**
+   * One step of panning by (dx, dy) CSS px (the content moves that way: an arrow key), animated.
+   * Steps compose like zooms: three quick presses end exactly three steps away.
+   */
+  pan(dx: number, dy: number, ms = STEP_MS): void {
+    const base = this.animTarget ?? this.view;
+    this.animateTo(panBy(base, dx, dy), ms);
+  }
+
+  /** A wheel notch: zoom about the cursor in a short animated step (see zoomBy). */
+  wheelStep(factor: number, sx: number, sy: number): void {
+    this.zoomBy(factor, sx, sy, STEP_MS);
+  }
+
+  /**
+   * Let the view glide on after a finger or pen let go of a pan at this velocity (px/s): it
+   * slows down exponentially and stops once barely moving (src/plot/inertia.ts). Any new input
+   * stops it (stop()), as does any animation. Not when motion is reduced.
+   */
+  fling(v: Velocity): void {
+    this.cancelAnimation();
+    const duration = glideDuration(v);
+    if (reducedMotion?.matches || !(duration > 0)) return;
+    this.isHome = false;
+    const start = performance.now();
+    let done = { x: 0, y: 0 };
+    const step = (now: number) => {
+      const t = Math.min(Math.max(0, now - start), duration);
+      const at = glideOffset(v, t);
+      const next = panBy(this.view, at.x - done.x, at.y - done.y);
+      done = at;
+      // A glide is the user's own move (a new curve out of sight doesn't take the view).
+      this.userMoved = performance.now();
+      const moved = next !== this.view;
+      if (moved) this.applyView(next);
+      // Stopped by a limit of the view, or slow enough to stop.
+      this.glide = moved && t < duration ? requestAnimationFrame(step) : 0;
+    };
+    this.glide = requestAnimationFrame(step);
+  }
+
+  /**
+   * Stop a fling's glide where it is: a new press, a wheel or a key catches the view. Returns
+   * whether one was gliding (so a tap that catches it is no tap).
+   */
+  stop(): boolean {
+    if (!this.glide) return false;
+    cancelAnimationFrame(this.glide);
+    this.glide = 0;
+    return true;
+  }
+
+  /**
+   * The layout around the graph started animating (`moving`, a panel snapping), or came to rest.
+   * The graph resizes every frame meanwhile: it is drawn at interactive quality from the first
+   * of those frames until the layout rests, then once at final quality, instead of resampling
+   * every curve at final quality frame after frame.
+   */
+  layoutTransition(moving: boolean): void {
+    const now = performance.now();
+    this.layoutUntil = moving ? now + LAYOUT_MS : now;
+    if (moving) this.markInteractive(LAYOUT_MS + IDLE_MS);
+    else if (this.quality === 'interactive') this.markInteractive();
   }
 
   home(): void {
@@ -545,10 +636,12 @@ export class GraphController {
     this.invalidate();
   }
 
+  /** Stop a running animation or glide where it is (input takes over from here). */
   private cancelAnimation(): void {
     cancelAnimationFrame(this.animation);
     this.animation = 0;
     this.animTarget = null;
+    this.stop();
   }
 
   private markInteractive(idleMs = IDLE_MS): void {
@@ -582,9 +675,11 @@ export class GraphController {
       ? resizeViewport(this.view, width, height)
       : this.startView(width, height);
     this.hasView = true;
-    // Resizes in quick succession (dragging the list's edge, resizing the window) sample at
-    // interactive quality, like a pan, and settle to final once they stop.
-    if (performance.now() - this.lastResize < IDLE_MS) this.markInteractive();
+    // Resizes in quick succession (dragging the list's edge, resizing the window, a panel
+    // snapping) sample at interactive quality, like a pan, and settle to final once they stop.
+    const now = performance.now();
+    if (now < this.layoutUntil) this.markInteractive(this.layoutUntil - now + IDLE_MS);
+    else if (now - this.lastResize < IDLE_MS) this.markInteractive();
     this.onViewChange?.(this.view);
     // Resizing clears the canvas; redraw synchronously to avoid a blank flash.
     cancelAnimationFrame(this.frame);
