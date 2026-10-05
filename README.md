@@ -53,11 +53,12 @@ Syntax notes:
 
 - **First visit:** a blank graph (the first visit, or after **New graph**) shows three examples
   under the list, typeset: `y = x²`, `x² + y² = 9` and `r = 1 + cos θ`. A tap or click on one
-  puts it in the first row and graphs it (one undo step, so `Ctrl+Z` gives the blank graph and
-  the examples back); they go away as soon as the list has any math in it. With a mouse or
-  trackpad the first row also has the caret, ready to type into; on touch nothing takes focus,
-  so no keypad pops up until you tap a row (with the keypad already open, an example goes into
-  the row being edited). Nothing covers the graph.
+  puts it in the first row and graphs it, shown, as in a new row (one undo step, so `Ctrl+Z`
+  gives the blank graph and the examples back); they go away as soon as the list has any math in
+  it, and don't come back while you empty a row to retype it. With a mouse or trackpad the first
+  row also has the caret, ready to type into, and keeps it after a click on an example; on touch
+  nothing takes focus, not even with a long press, so no keypad pops up until you tap a row (with
+  the keypad already open, an example goes into the row being edited). Nothing covers the graph.
 - **Graph:** drag to pan, use the wheel or pinch to zoom, double-click to zoom in, and the buttons
   at the top right zoom in and out, fit and reset the view. With the graph focused, the keyboard
   works too: arrows pan, `+` and `-` zoom, `0` resets.
@@ -65,8 +66,10 @@ Syntax notes:
   point under it stays put), and quick notches add up, each going on from where the last one
   will end; a trackpad's scrolling and pinching are followed as they come. Arrow keys pan in
   short glides too that add up exactly (three presses go three steps, however fast), as do the
-  zoom keys and buttons. On touch (or with a pen), let go of a drag while still moving and the
-  graph glides on, slowing to a stop; a new touch catches it where it is (that touch is no tap,
+  zoom keys and buttons; dragging meanwhile goes on from where a glide ends. On touch (or with a
+  pen), let go of a drag while still moving and the graph glides on, slowing to a stop (its speed
+  read from when the finger actually moved, so it works on heavy graphs that draw slowly too);
+  a new touch catches it where it is (that touch is no tap,
   so it doesn't select or deselect anything), and so do the wheel, the keys and the buttons. A
   drag that comes to rest before lifting stays put, and a pinch or a scrub along a curve never
   glides. With reduced motion turned on in the system, nothing glides: zooms and pans jump
@@ -280,7 +283,8 @@ Syntax notes:
   was in, not after the fraction); a change made outside
   the rows (delete, a color, New graph) is scrolled into view. On a phone, the keypad's top row
   has an **Undo** key (dimmed when there is nothing to undo; pressing it keeps the caret in the
-  row). **New graph**, deleting a row by touch, sliders made for you and rows the trace adds also
+  row), and after it a toast offers **Redo**, for the step a slip took back. **New graph**,
+  deleting a row by touch, sliders made for you and rows the trace adds also
   show an Undo button for a few seconds (it waits while you point at it or it has focus).
 - **Saved automatically:** the expression list, the view and the panel layout (including the
   list's width) are kept in the browser and come back on the next visit (sliders come back
@@ -294,11 +298,13 @@ Syntax notes:
   default width. The sidebar button in the list's header hides it, and the same button at the top
   of the graph's controls brings it back. On a phone the list is a panel under the graph: tap its
   header to cycle it between half, full and collapsed, or drag the header; it glides to its new
-  height (from wherever a drag let go), while the graph follows along at a quick drawing quality
-  and sharpens once the panel rests.
+  height (from wherever a drag let go, easing all the way into the collapsed height too), while
+  the graph follows along at a quick drawing quality and sharpens once the panel rests.
 - **Motion:** new rows open to their height and deleted ones close their place, so the rows
   around them slide instead of jumping; the keypad slides up from the bottom edge and away
-  again (the graph and the list take its room at once); keys give a little under the finger.
+  again (the graph and the list take its room at once), turning back from where it is if a row
+  is tapped while it goes; keys give a little under the finger, and a press counts on the key it
+  began on even if the sheet slides another one under the finger.
   The "Ready to work offline" note of a first visit is brief and small on a phone, and taps go
   through it to the graph.
 - **Look:** follows the system's light or dark setting. Math is set in STIX Two Text (with `≤`,

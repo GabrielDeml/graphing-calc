@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
-import { expect, exprInput, openApp, test, touchSession } from './helpers';
+import { expect, exprInput, openApp, test } from './helpers';
 
 /** The graph's view as [xmin, xmax, ymin, ymax]. */
 async function view(page: Page) {
@@ -134,22 +134,100 @@ test.describe('the wheel', () => {
   });
 });
 
+type Pt = { x: number; y: number };
+
 /**
- * A quick flick across the graph's middle, 20px every frame, still moving as it lets go: it
+ * Fingers on the touch screen (CDP takes touch points one at a time too), whose events carry
+ * their own time stamps on a clock that `wait` moves on: the page reads a finger's speed from
+ * those, so a busy test machine sending them late still makes the gesture it means.
+ */
+async function fingers(page: Page) {
+  const cdp = await page.context().newCDPSession(page);
+  let clock = Date.now() / 1000;
+  const send = (type: 'touchStart' | 'touchMove' | 'touchEnd', id: number, at: Pt) =>
+    cdp.send('Input.dispatchTouchEvent', {
+      type,
+      touchPoints: [{ ...at, id }],
+      timestamp: clock,
+    });
+  return {
+    down: (id: number, at: Pt) => {
+      // A new press is now (the clock never runs ahead of the real one).
+      clock = Math.max(clock, Date.now() / 1000);
+      return send('touchStart', id, at);
+    },
+    move: (id: number, at: Pt) => send('touchMove', id, at),
+    up: (id: number, at: Pt) => send('touchEnd', id, at),
+    /** Let `ms` go by, on the clock and (at least) in fact. */
+    wait: async (ms: number) => {
+      clock += ms / 1000;
+      await page.waitForTimeout(ms);
+    },
+  };
+}
+
+/**
+ * A quick flick across the graph's middle, `dx` px every frame, still moving as it lets go: it
  * lifts right after its last move.
  */
 async function flick(page: Page, dx: number) {
   const g = await box(page.getByTestId('graph'));
   const start = { x: g.x + g.width / 2, y: g.y + g.height / 2 };
-  const touch = await touchSession(page);
-  await touch.start(start);
+  const finger = await fingers(page);
+  await finger.down(0, start);
   for (let i = 1; i <= 6; i++) {
-    await page.waitForTimeout(16);
-    await touch.move({ x: start.x + i * dx, y: start.y });
+    await finger.wait(16);
+    await finger.move(0, { x: start.x + i * dx, y: start.y });
   }
-  await touch.end();
-  return { touch, start };
+  await finger.up(0, { x: start.x + 6 * dx, y: start.y });
+  return { finger, start };
 }
+
+interface Glide {
+  /** The view's xmin as the finger lifted. */
+  released: number;
+  /** Its xmin and ymin frame by frame from then on (until it rests, or a new press). */
+  frames: Array<[number, number]>;
+  resting: boolean;
+}
+
+/**
+ * From here on, what the graph draws after a finger lifts, noted by the page itself as it
+ * happens: the test's own round trips can come late (busy test machines), the glide doesn't wait.
+ */
+async function watchGlide(page: Page) {
+  await page.getByTestId('graph').evaluate((el) => {
+    const at = (): [number, number] => {
+      const [xmin, , ymin] = (el.getAttribute('data-view') ?? '').split(',').map(Number);
+      return [xmin, ymin];
+    };
+    const glide = { released: Number.NaN, frames: [] as Array<[number, number]>, resting: false };
+    (window as unknown as { glide: typeof glide }).glide = glide;
+    let pressed = false;
+    el.addEventListener('pointerdown', () => {
+      pressed = true;
+    });
+    el.addEventListener('pointerup', () => {
+      pressed = false;
+      glide.released = at()[0];
+      glide.frames = [];
+      glide.resting = false;
+      let still = 0;
+      const frame = () => {
+        const now = at();
+        const last = glide.frames[glide.frames.length - 1];
+        still = last && last[0] === now[0] ? still + 1 : 0;
+        glide.frames.push(now);
+        // At rest once it hasn't moved for a quarter second after moving.
+        glide.resting = still >= 15 && glide.frames.some(([x]) => x !== glide.released);
+        if (!pressed && !glide.resting && glide.frames.length < 400) requestAnimationFrame(frame);
+      };
+      requestAnimationFrame(frame);
+    });
+  });
+}
+
+const glideOf = (page: Page) => page.evaluate(() => (window as unknown as { glide: Glide }).glide);
 
 test.describe('flinging the graph', () => {
   test.skip(({ isMobile }) => !isMobile, 'touch');
@@ -157,39 +235,38 @@ test.describe('flinging the graph', () => {
   test('a flick glides on in its direction and slows to a stop', async ({ page }) => {
     await openApp(page);
     const before = await view(page);
+    await watchGlide(page);
     await flick(page, 20);
-    const released = (await view(page))[0];
+    await expect.poll(async () => (await glideOf(page)).resting, { timeout: 10_000 }).toBe(true);
+    const { released, frames } = await glideOf(page);
     // Dragged right: the view moves left, and goes on moving after the finger lifts.
     expect(released).toBeLessThan(before[0]);
-    await expect.poll(async () => (await view(page))[0]).toBeLessThan(released - 1);
-    let last = Number.NaN;
-    await expect
-      .poll(
-        async () => {
-          const now = (await view(page))[0];
-          const resting = now === last;
-          last = now;
-          return resting;
-        },
-        { intervals: [250] },
-      )
-      .toBe(true);
-    // Only sideways.
-    expect((await view(page))[2]).toBeCloseTo(before[2], 6);
+    expect(frames[frames.length - 1][0]).toBeLessThan(released - 1);
+    // Ever slower one way, and only sideways.
+    for (let i = 1; i < frames.length; i++) {
+      expect(frames[i][0]).toBeLessThanOrEqual(frames[i - 1][0]);
+      expect(frames[i][1]).toBeCloseTo(before[2], 6);
+    }
   });
 
   test('a press catches the gliding view, and is no tap', async ({ page }) => {
     await openApp(page);
     await exprInput(page, 0).tap();
     await expect(page.getByTestId('keypad')).toBeVisible();
-    const { touch, start } = await flick(page, -20);
-    const released = await view(page);
-    await page.waitForTimeout(30);
-    await touch.start(start);
-    await page.waitForTimeout(100);
+    await watchGlide(page);
+    // A fast flick: a long glide to catch.
+    const { finger, start } = await flick(page, -40);
+    // Once it is on its way.
+    await expect
+      .poll(async () => {
+        const { released, frames } = await glideOf(page);
+        return frames.some(([x]) => x > released + 0.5);
+      })
+      .toBe(true);
+    await finger.down(0, start);
+    await finger.wait(100);
     const caught = await view(page);
-    await touch.end();
-    expect(caught[0]).toBeGreaterThan(released[0]);
+    await finger.up(0, start);
     await page.waitForTimeout(400);
     expect(await view(page)).toEqual(caught);
     // A tap would have put the keypad away.
@@ -200,11 +277,14 @@ test.describe('flinging the graph', () => {
     await openApp(page);
     const g = await box(page.getByTestId('graph'));
     const start = { x: g.x + g.width / 2, y: g.y + g.height / 2 };
-    const touch = await touchSession(page);
-    await touch.start(start);
-    for (let i = 1; i <= 6; i++) await touch.move({ x: start.x, y: start.y + i * 20 });
-    await page.waitForTimeout(150);
-    await touch.end();
+    const finger = await fingers(page);
+    await finger.down(0, start);
+    for (let i = 1; i <= 6; i++) {
+      await finger.wait(16);
+      await finger.move(0, { x: start.x, y: start.y + i * 20 });
+    }
+    await finger.wait(150);
+    await finger.up(0, { x: start.x, y: start.y + 120 });
     await page.waitForTimeout(50);
     const lifted = await view(page);
     await page.waitForTimeout(400);
@@ -215,26 +295,21 @@ test.describe('flinging the graph', () => {
     await openApp(page);
     const g = await box(page.getByTestId('graph'));
     const [x, y] = [g.x + g.width / 2, g.y + g.height / 2];
-    // Each finger on its own: CDP takes touch points one at a time too.
-    const cdp = await page.context().newCDPSession(page);
-    const finger = (
-      type: 'touchStart' | 'touchMove' | 'touchEnd',
-      id: number,
-      at: { x: number; y: number },
-    ) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: [{ ...at, id }] });
-    await finger('touchStart', 0, { x: x - 20, y });
-    await finger('touchStart', 1, { x: x + 20, y });
+    const finger = await fingers(page);
+    await finger.down(0, { x: x - 20, y });
+    await finger.down(1, { x: x + 20, y });
     for (let d = 30; d <= 80; d += 10) {
-      await finger('touchMove', 0, { x: x - d, y });
-      await finger('touchMove', 1, { x: x + d, y });
+      await finger.wait(16);
+      await finger.move(0, { x: x - d, y });
+      await finger.move(1, { x: x + d, y });
     }
     // The second finger lifts; the first goes on alone, and flicks.
-    await finger('touchEnd', 1, { x: x + 80, y });
+    await finger.up(1, { x: x + 80, y });
     for (let i = 1; i <= 6; i++) {
-      await page.waitForTimeout(16);
-      await finger('touchMove', 0, { x: x - 80 + i * 20, y });
+      await finger.wait(16);
+      await finger.move(0, { x: x - 80 + i * 20, y });
     }
-    await finger('touchEnd', 0, { x: x + 40, y });
+    await finger.up(0, { x: x + 40, y });
     await page.waitForTimeout(50);
     const lifted = await view(page);
     await page.waitForTimeout(400);
