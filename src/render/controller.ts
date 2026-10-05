@@ -94,6 +94,8 @@ const TYPING_IDLE_MS = 300;
 const FIT_MS = 220;
 /** A wheel notch's zoom step and an arrow key's pan step take this long. */
 const STEP_MS = 120;
+/** One frame at 60 Hz. */
+const FRAME_MS = 1000 / 60;
 /**
  * The longest a layout transition around the graph runs (a panel snapping; --dur-3 in
  * global.css, with room to spare): its resizes stay at interactive quality until it ends.
@@ -362,28 +364,39 @@ export class GraphController {
   }
 
   /**
-   * Let the view glide on after a finger or pen let go of a pan at this velocity (px/s): it
-   * slows down exponentially and stops once barely moving (src/plot/inertia.ts). Any new input
-   * stops it (stop()), as does any animation. Not when motion is reduced.
+   * Let the view glide on after a finger or pen let go of a pan at this velocity (px/s), at
+   * `from` (performance.now()'s clock): it slows down exponentially and stops once barely moving
+   * (src/plot/inertia.ts). Any new input stops it (stop()), as does any animation. Not when
+   * motion is reduced.
    */
-  fling(v: Velocity): void {
+  fling(v: Velocity, from = performance.now()): void {
     this.cancelAnimation();
     const duration = glideDuration(v);
     if (reducedMotion?.matches || !(duration > 0)) return;
     this.isHome = false;
-    const start = performance.now();
+    // From when the finger lifted, but no more than a frame back: a release handled late (a slow
+    // frame) doesn't lurch forward to catch up.
+    const start = Math.max(from, performance.now() - FRAME_MS);
     let done = { x: 0, y: 0 };
     const step = (now: number) => {
+      // A frame that began before the release moves nothing yet; the glide goes on regardless.
       const t = Math.min(Math.max(0, now - start), duration);
       const at = glideOffset(v, t);
-      const next = panBy(this.view, at.x - done.x, at.y - done.y);
+      const view = this.view;
+      const next = panBy(view, at.x - done.x, at.y - done.y);
       done = at;
       // A glide is the user's own move (a new curve out of sight doesn't take the view).
       this.userMoved = performance.now();
-      const moved = next !== this.view;
-      if (moved) this.applyView(next);
-      // Stopped by a limit of the view, or slow enough to stop.
-      this.glide = moved && t < duration ? requestAnimationFrame(step) : 0;
+      if (next !== view) {
+        // Against the limits of the view along every way it glides: it stops there.
+        if (next.cx === view.cx && next.cy === view.cy) {
+          this.glide = 0;
+          return;
+        }
+        this.applyView(next);
+      }
+      // Slow enough to stop.
+      this.glide = t < duration ? requestAnimationFrame(step) : 0;
     };
     this.glide = requestAnimationFrame(step);
   }

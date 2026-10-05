@@ -4,6 +4,7 @@ import {
   flingVelocity,
   glideDuration,
   glideOffset,
+  inputTime,
   MAX_FLING_SPEED,
   MIN_FLING_SPEED,
   recordSample,
@@ -114,6 +115,35 @@ describe('flingVelocity', () => {
     if (!v) throw new Error('no fling');
     expect(Math.hypot(v.vx, v.vy)).toBeCloseTo(MAX_FLING_SPEED, 6);
     expect(v.vy / v.vx).toBeCloseTo(4 / 3, 6);
+  });
+});
+
+describe('inputTime', () => {
+  it("takes an event's own time stamp", () => {
+    expect(inputTime(1234.5, 1300)).toBe(1234.5);
+  });
+
+  it('falls back to now for a stamp on another clock, or none', () => {
+    expect(inputTime(0, 500)).toBe(500);
+    // Milliseconds since 1970, as some older browsers stamp events.
+    expect(inputTime(1_700_000_000_000, 500)).toBe(500);
+    expect(inputTime(Number.NaN, 500)).toBe(500);
+  });
+
+  it('keeps a flick that slow frames handled late a flick', () => {
+    // Moves 16 ms apart at 1500 px/s, each handled when a 100 ms frame let the page get to it,
+    // and the finger lifting 8 ms after the last move, handled 100 ms later still.
+    const samples: Sample[] = [];
+    for (let i = 0; i <= 6; i++) {
+      const stamp = 1000 + i * 16;
+      const handled = 1000 + Math.ceil((i * 16) / 100) * 100;
+      recordSample(samples, { x: i * 24, y: 0, t: inputTime(stamp, handled) });
+    }
+    const up = inputTime(1000 + 6 * 16 + 8, 1000 + 300);
+    expect(flingVelocity(samples, up)?.vx).toBeCloseTo(1500, 6);
+    // Stamped when handled, the same flick reads as a pause: no fling.
+    const late = samples.map((s, i) => ({ ...s, t: 1000 + Math.ceil((i * 16) / 100) * 100 }));
+    expect(flingVelocity(late, 1000 + 300)).toBeNull();
   });
 });
 

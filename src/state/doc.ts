@@ -26,16 +26,18 @@ export interface Row {
 
 let idCounter = 0;
 
-export function newRow(source = ''): Row {
-  idCounter += 1;
+/** What a new row starts with besides its text: shown, default slider bounds and t/θ range. */
+function freshSettings(): Pick<Row, 'hidden' | 'slider' | 'domain'> {
   return {
-    id: `r${idCounter}`,
-    source,
-    colorIndex: -1,
     hidden: false,
     slider: { min: '-10', max: '10', step: '', playing: false },
     domain: { min: '0', max: '2pi' },
   };
+}
+
+export function newRow(source = ''): Row {
+  idCounter += 1;
+  return { id: `r${idCounter}`, source, colorIndex: -1, ...freshSettings() };
 }
 
 /** A saved row as a document row (sliders paused), with a fresh id unless one is given. */
@@ -382,6 +384,22 @@ export function updateSource(
     if (source.trim() === '') setDoc('rows', i, 'colorIndex', -1);
   });
   ensureTrailingEmpty();
+}
+
+/**
+ * Put math in an empty row as if the row were new (an example): emptying a row keeps whether it
+ * is hidden, its slider bounds and its t/θ range, which the new math must not inherit. One edit,
+ * like typing it.
+ */
+export function fillEmptyRow(id: string, source: string): void {
+  const i = indexOf(id);
+  if (i < 0 || !isEmpty(doc.rows[i])) return;
+  batch(() => {
+    updateSource(id, source, 'edit', 'replace');
+    // Part of the same step (willChange folds what follows in the same tick).
+    willChange();
+    setDoc('rows', i, freshSettings());
+  });
 }
 
 export function toggleHidden(id: string): void {

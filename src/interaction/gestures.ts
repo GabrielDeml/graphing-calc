@@ -1,4 +1,4 @@
-import { flingVelocity, recordSample, type Sample } from '../plot/inertia';
+import { flingVelocity, inputTime, recordSample, type Sample } from '../plot/inertia';
 import type { Pt } from '../plot/viewport';
 import { isWheelNotch, panBy, pinchViewport, wheelZoomFactor, zoomAt } from '../plot/viewport';
 import type { GraphController } from '../render/controller';
@@ -36,6 +36,15 @@ const HOLD_MS = 350;
 
 /** An arrow key pans the graph this far (CSS px). */
 const KEY_STEP_PX = 40;
+
+/** When an input happened (see inertia.ts inputTime). */
+const timeOf = (e: Event) => inputTime(e.timeStamp, performance.now());
+
+/** Every position a move reports, the ones the browser merged into it first (each stamped). */
+function movesOf(e: PointerEvent): readonly PointerEvent[] {
+  const merged = e.getCoalescedEvents?.() ?? [];
+  return merged.length > 0 ? merged : [e];
+}
 
 /**
  * Pan with one pointer, pinch-zoom with two, wheel/trackpad zoom, double-click zoom, keys. On
@@ -111,7 +120,7 @@ export function attachGestures(
       caught = stopped;
       flingable = e.pointerType !== 'mouse';
       samples = [];
-      if (flingable) recordSample(samples, { ...p, t: now });
+      if (flingable) recordSample(samples, { ...p, t: timeOf(e) });
       if (e.pointerType !== 'mouse') {
         if (cb.scrubStart?.(p.x, p.y)) {
           grab = e.pointerId;
@@ -166,9 +175,14 @@ export function attachGestures(
       cb.leave();
     }
     if (!moved && pointers.size === 1) return;
+    // A wheel notch or arrow step still on its way ends first, so the drag goes on from there
+    // rather than cutting it short.
+    controller.settle();
     if (pointers.size === 1) {
       controller.setView(panBy(controller.view, p.x - prev.x, p.y - prev.y));
-      if (flingable) recordSample(samples, { ...p, t: performance.now() });
+      if (flingable) {
+        for (const m of movesOf(e)) recordSample(samples, { ...local(m), t: timeOf(m) });
+      }
     } else if (pointers.size === 2) {
       const [idA, idB] = [...pointers.keys()];
       const prevA = pointers.get(idA) as Pt;
@@ -198,10 +212,11 @@ export function attachGestures(
       const p = local(e);
       cb.tap(p.x, p.y, e.pointerType);
     }
-    // Let go of a pan while moving: the view glides on.
+    // Let go of a pan while moving: the view glides on, from when the finger lifted.
     if (e.type === 'pointerup' && pointers.size === 0 && flingable && moved) {
-      const v = flingVelocity(samples, now);
-      if (v) controller.fling(v);
+      const at = timeOf(e);
+      const v = flingVelocity(samples, at);
+      if (v) controller.fling(v, at);
     }
     if (pointers.size === 0) {
       flingable = false;

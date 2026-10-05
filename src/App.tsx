@@ -16,7 +16,7 @@ import { ui } from './state/ui';
 /** A mouse or trackpad: a desk, where the caret can wait in a row (no keypad pops up). */
 const finePointer = typeof matchMedia === 'function' && matchMedia('(pointer: fine)').matches;
 
-/** How long the keypad sheet takes to slide away (--dur-2, as its keypad-out animation). */
+/** How long the keypad sheet takes to slide away (--dur-2, as MathKeypad's slide). */
 const KEYPAD_OUT_MS = DUR_2;
 
 export default function App() {
@@ -63,17 +63,53 @@ export default function App() {
   );
   onCleanup(() => clearTimeout(leaveTimer));
 
+  let app!: HTMLDivElement;
+
+  /**
+   * The collapsed list's share (out of 100) of the room it splits with the graph: just its
+   * minimum (--panel-collapsed, global.css), measured, so a snap to it eases all the way in
+   * instead of running into that floor partway and stopping dead.
+   */
+  const [collapsedShare, setCollapsedShare] = createSignal(0);
+  onMount(() => {
+    const graph = app.querySelector<HTMLElement>(':scope > .graph');
+    const panel = app.querySelector<HTMLElement>(':scope > .panel');
+    if (!graph || !panel || typeof ResizeObserver !== 'function') return;
+    // The two resize every frame of a snap, their sum (the room) only when the keypad comes or
+    // goes, or the window changes.
+    const ro = new ResizeObserver(() => {
+      const room = graph.getBoundingClientRect().height + panel.getBoundingClientRect().height;
+      const floor = Number.parseFloat(getComputedStyle(app).getPropertyValue('--panel-collapsed'));
+      if (!(room > 0 && floor > 0)) return;
+      const share = Math.min(100, (100 * floor) / room);
+      if (Math.abs(share - collapsedShare()) * room < 50) return;
+      // A collapsed list keeps its height as the room changes, at once: only snaps glide.
+      const still = ui.panelSnap() === 'collapsed' && ui.panelDrag() === null;
+      if (still) app.style.transition = 'none';
+      setCollapsedShare(share);
+      if (still) {
+        void app.offsetHeight;
+        app.style.transition = '';
+      }
+    });
+    ro.observe(graph);
+    ro.observe(panel);
+    onCleanup(() => ro.disconnect());
+  });
+
   /**
    * The phone's graph and list rows, as shares of the room they split (fr, summing to 100), so a
    * snap animates between any two heights, from wherever a drag let go. Collapsed, the list keeps
-   * just its minimum (--panel-collapsed, global.css).
+   * just its minimum (see collapsedShare).
    */
   const panelRows = () => {
     const drag = ui.panelDrag();
     if (drag !== null) return { graph: `${100 - 100 * drag}fr`, panel: `${100 * drag}fr` };
     switch (ui.panelSnap()) {
-      case 'collapsed':
-        return { graph: '100fr', panel: '0fr' };
+      case 'collapsed': {
+        const share = collapsedShare();
+        return { graph: `${100 - share}fr`, panel: `${share}fr` };
+      }
       case 'full':
         return { graph: '15fr', panel: '85fr' };
       default:
@@ -83,6 +119,7 @@ export default function App() {
 
   return (
     <div
+      ref={app}
       class="app"
       classList={{
         'sidebar-collapsed': !ui.sidebarOpen(),

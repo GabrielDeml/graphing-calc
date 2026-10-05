@@ -1,4 +1,13 @@
-import { countColor, expect, exprInput, openApp, RED, setExpr, test } from './helpers';
+import {
+  countColor,
+  expect,
+  exprInput,
+  openApp,
+  RED,
+  setExpr,
+  test,
+  touchSession,
+} from './helpers';
 
 const example = (page: import('@playwright/test').Page, name: string) =>
   page.getByRole('button', { name: `Graph ${name}`, exact: true });
@@ -18,6 +27,39 @@ test.describe('first run at a desk', () => {
     await page.keyboard.type('y = 2x');
     await expect(exprInput(page, 0)).toHaveValue('y = 2x');
     await expect(page.locator('.example-chip')).toHaveCount(0);
+    // Emptied to retype it: they stay away.
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.press('Backspace');
+    await expect(exprInput(page, 0)).toHaveValue('');
+    await page.waitForTimeout(100);
+    await expect(page.locator('.example-chip')).toHaveCount(0);
+  });
+
+  test('a click on an example with no row being edited puts the caret in it', async ({ page }) => {
+    await openApp(page);
+    // A click on the graph takes the caret out of the row.
+    const g = await page.getByTestId('graph').boundingBox();
+    if (!g) throw new Error('no graph');
+    await page.mouse.click(g.x + g.width * 0.3, g.y + g.height * 0.7);
+    await expect(exprInput(page, 0)).not.toBeFocused();
+    await example(page, 'y = x²').click();
+    await expect(exprInput(page, 0)).toHaveValue('y = x^2');
+    await expect(exprInput(page, 0)).toBeFocused();
+  });
+
+  test('an example goes into an emptied row as into a new one: shown', async ({ page }) => {
+    // The first row was hidden, then emptied.
+    await page.addInitScript(() =>
+      localStorage.setItem(
+        'graphing-calc:v1',
+        JSON.stringify({ version: 1, rows: [{ source: '', hidden: true }], view: null }),
+      ),
+    );
+    await openApp(page);
+    await example(page, 'y = x²').click();
+    await expect(exprInput(page, 0)).toHaveValue('y = x^2');
+    await expect(page.getByRole('button', { name: 'Hide curve' })).toBeVisible();
+    await expect.poll(() => countColor(page, RED)).toBeGreaterThan(200);
   });
 
   test('a click on an example graphs it, as one step that undo takes back', async ({ page }) => {
@@ -74,6 +116,20 @@ test.describe('first run on a phone', () => {
     await expect(exprInput(page, 0)).toHaveValue('r = 1 + cos θ');
     await expect.poll(() => countColor(page, RED)).toBeGreaterThan(200);
     await expect(page.locator('.example-chip')).toHaveCount(0);
+    await expect(exprInput(page, 0)).not.toBeFocused();
+    await expect(page.getByTestId('keypad')).toHaveCount(0);
+  });
+
+  test('a long press on an example graphs it without popping up the keypad', async ({ page }) => {
+    await openApp(page);
+    const chip = await example(page, 'y = x²').boundingBox();
+    if (!chip) throw new Error('no chip');
+    const touch = await touchSession(page);
+    await touch.start({ x: chip.x + chip.width / 2, y: chip.y + chip.height / 2 });
+    await page.waitForTimeout(700);
+    await touch.end();
+    await expect(exprInput(page, 0)).toHaveValue('y = x^2');
+    await page.waitForTimeout(300);
     await expect(exprInput(page, 0)).not.toBeFocused();
     await expect(page.getByTestId('keypad')).toHaveCount(0);
   });

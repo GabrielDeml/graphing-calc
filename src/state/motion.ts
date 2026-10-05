@@ -12,4 +12,5 @@ export function reducedMotion(): boolean {
 
 /** The motion tokens of global.css, for animations run from script. */
 export const DUR_2 = 160;
+export const DUR_3 = 240;
 export const EASE_OUT = 'cubic-bezier(0.22, 1, 0.36, 1)';

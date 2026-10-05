@@ -2413,6 +2413,7 @@ button {
 
 /* ---------- Keypad ---------- */
 
+/* A sheet that slides up from the bottom edge as it shows, and back down (MathKeypad slideTo). */
 .keypad {
   background: var(--keypad-bg);
   padding: 6px 5px calc(5px + env(safe-area-inset-bottom));
@@ -2420,14 +2421,6 @@ button {
   -webkit-user-select: none;
   /* Like `manipulation` (no double-tap zoom delay) but without pinch-zoom either. */
   touch-action: pan-x pan-y;
-  /* A sheet sliding up from the bottom edge (the room it takes is the list's already). */
-  animation: keypad-in var(--dur-3) var(--ease-out);
-}
-
-@keyframes keypad-in {
-  from {
-    transform: translateY(100%);
-  }
 }
 
 /* Hidden: out of the layout at once (the graph and the list take its room), it slides away. */
@@ -2437,12 +2430,15 @@ button {
   right: 0;
   bottom: 0;
   pointer-events: none;
-  animation: keypad-out var(--dur-2) var(--ease-out) forwards;
 }
 
-@keyframes keypad-out {
-  to {
-    transform: translateY(100%);
+@media (max-width: 767px) {
+  /*
+   * As the keypad goes, the app takes back the home indicator's inset (.app padding-bottom),
+   * which the sheet covered: it still starts from the screen's bottom edge, where it was.
+   */
+  .keypad.leaving {
+    bottom: calc(-1 * env(safe-area-inset-bottom));
   }
 }
 

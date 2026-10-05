@@ -42,6 +42,19 @@ export function offerUndo(message: string): void {
 }
 
 /**
+ * After an undo from the keypad: a phone has no redo key, so a toast offers the step back
+ * ("Undone · Redo"), until anything else changes.
+ */
+export function offerRedo(): void {
+  const at = revision();
+  toast.show({
+    message: 'Undone',
+    action: { label: 'Redo', run: () => runHistory('redo') },
+    stale: () => revision() !== at,
+  });
+}
+
+/**
  * Undo and redo for the whole document, from anywhere on the page: Mod+Z, Mod+Shift+Z and Ctrl+Y
  * (capture phase, ahead of the inputs' own text undo), and the browser's undo commands (Edit
  * menu, context menu, shake to undo), which arrive as beforeinput historyUndo/historyRedo.

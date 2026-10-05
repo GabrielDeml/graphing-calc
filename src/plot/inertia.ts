@@ -27,6 +27,18 @@ export const MIN_FLING_SPEED = 100;
 /** A flick faster than this glides as if it were this fast (a few screens at most). */
 export const MAX_FLING_SPEED = 6000;
 
+/** An event stamped further than this from now is on some other clock. */
+const STAMP_RANGE_MS = 10_000;
+
+/**
+ * When an input happened, on performance.now()'s clock: the event's own time stamp, so a fling
+ * reads how the finger moved, not how late a slow frame (a heavy curve drawing) let the page
+ * handle its events. `now` where the stamp is missing or on some other clock.
+ */
+export function inputTime(stamp: number, now: number): number {
+  return stamp > 0 && Math.abs(now - stamp) < STAMP_RANGE_MS ? stamp : now;
+}
+
 /** Add a sample, dropping those too old to count towards the velocity. */
 export function recordSample(samples: Sample[], sample: Sample): void {
   samples.push(sample);
