@@ -817,7 +817,7 @@ button {
  * (src/mathedit/inline.ts): spaced operators, small raised exponents.
  */
 .quick-fix-text {
-  font-family: var(--math);
+  font-family: var(--math-text);
   font-size: 14px;
   font-weight: 400;
   white-space: nowrap;
