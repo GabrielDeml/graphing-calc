@@ -14,7 +14,7 @@ const RESIZE_STEP_PX = 16;
 
 const SNAPS: readonly PanelSnap[] = ['collapsed', 'half', 'full'];
 
-/** Approximate panel height for each snap state, as a fraction of the space above the keypad. */
+/** Approximate panel height for each snap state: its share of the room it splits with the graph. */
 function snapFraction(snap: PanelSnap): number {
   return snap === 'collapsed' ? 0 : snap === 'half' ? 0.45 : 0.85;
 }
@@ -43,37 +43,37 @@ export function ExpressionPanel() {
     handle.setPointerCapture(e.pointerId);
     const startY = e.clientY;
     const startH = panel.getBoundingClientRect().height;
-    const avail = (panel.parentElement?.clientHeight ?? window.innerHeight) - keypadHeight();
+    // The room the list splits with the graph (the keypad's is apart).
+    const graphH = document.querySelector('.graph')?.getBoundingClientRect().height ?? 0;
+    const avail = Math.max(1, startH + graphH);
     let moved = false;
     const move = (ev: PointerEvent) => {
       const dy = ev.clientY - startY;
       if (Math.abs(dy) > 6) moved = true;
-      if (moved) ui.setPanelDragPx(Math.max(56, Math.min(avail * 0.9, startH - dy)));
+      if (moved) ui.setPanelDrag(Math.max(0, Math.min(0.9, (startH - dy) / avail)));
     };
     const up = () => {
       handle.removeEventListener('pointermove', move);
       handle.removeEventListener('pointerup', up);
       handle.removeEventListener('pointercancel', up);
-      const h = ui.panelDragPx();
-      if (!moved || h === null) {
+      const frac = ui.panelDrag();
+      if (!moved || frac === null) {
         const i = SNAPS.indexOf(ui.panelSnap());
         ui.setPanelSnap(SNAPS[(i + 1) % SNAPS.length]);
       } else {
-        const frac = h / Math.max(1, avail);
         let best: PanelSnap = 'half';
         for (const s of SNAPS) {
           if (Math.abs(snapFraction(s) - frac) < Math.abs(snapFraction(best) - frac)) best = s;
         }
         ui.setPanelSnap(best);
       }
-      ui.setPanelDragPx(null);
+      // Together with the snap, so it glides there from where the finger let go.
+      ui.setPanelDrag(null);
     };
     handle.addEventListener('pointermove', move);
     handle.addEventListener('pointerup', up);
     handle.addEventListener('pointercancel', up);
   };
-
-  const keypadHeight = () => document.querySelector('.keypad')?.getBoundingClientRect().height ?? 0;
 
   const addRow = () => {
     const last = doc.rows[doc.rows.length - 1];

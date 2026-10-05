@@ -6,6 +6,7 @@ import {
   Match,
   on,
   onCleanup,
+  onMount,
   Show,
   Switch,
   untrack,
@@ -45,6 +46,7 @@ import { InsightLine } from './InsightLine';
 import { Icon } from './icons';
 import { blurActive, MathField } from './MathField';
 import { RangeControl } from './RangeControl';
+import { enterRow, leaveRow } from './rowMotion';
 import { SliderControl } from './SliderControl';
 
 const ERROR_DELAY_MS = 500;
@@ -153,6 +155,11 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
     if (ui.hoveredRowId() === props.row.id) ui.setHoveredRowId(null);
     if (ui.editingRowId() === props.row.id) ui.setEditingRowId(null);
   });
+
+  // Added or removed after the list opened: it opens, or its place closes, instead of the rows
+  // around it jumping.
+  onMount(() => enterRow(li));
+  onCleanup(() => leaveRow(li));
 
   // Picked on the graph (into view), or just added for the user: a brief pulse in its color.
   createEffect(

@@ -1,8 +1,9 @@
-import { For, onCleanup } from 'solid-js';
+import { createSignal, For, onCleanup } from 'solid-js';
 import { applyEdit, type EditOp } from '../keypad/editing';
 import { getPage, type KeyAction, type KeyDef, PAGE_ORDER, type PageId } from '../keypad/layouts';
-import { doc } from '../state/doc';
+import { canUndo, doc } from '../state/doc';
 import { focusRow, revealRow } from '../state/focus';
+import { runHistory } from '../state/historyUi';
 import { type EditTarget, keypad } from '../state/keypad';
 import { Icon } from './icons';
 import { revealCaret } from './MathField';
@@ -108,9 +109,12 @@ function Key(props: { def: KeyDef }) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   /** A pointer press already ran the action, so the click that follows it must not. */
   let pressed = false;
+  /** Held down: the key sinks a little (:active alone misses touches, whose press is prevented). */
+  const [down, setDown] = createSignal(false);
   const stop = () => {
     clearTimeout(timer);
     timer = undefined;
+    setDown(false);
   };
   onCleanup(stop);
 
@@ -118,7 +122,7 @@ function Key(props: { def: KeyDef }) {
     <button
       type="button"
       class={`key key-${props.def.variant}`}
-      classList={{ wide: (props.def.span ?? 1) > 1 }}
+      classList={{ wide: (props.def.span ?? 1) > 1, down: down() }}
       style={{ 'grid-column': `span ${props.def.span ?? 1}` }}
       aria-label={props.def.ariaLabel}
       data-testid={`key-${props.def.id}`}
@@ -128,6 +132,7 @@ function Key(props: { def: KeyDef }) {
         if (e.button !== 0) return;
         pressed = true;
         stop();
+        setDown(true);
         if (!runAction(props.def.action) || !props.def.repeat) return;
         const repeat = () => {
           if (runAction(props.def.action, true)) timer = setTimeout(repeat, REPEAT_EVERY_MS);
@@ -155,29 +160,66 @@ function Key(props: { def: KeyDef }) {
   );
 }
 
-export function MathKeypad() {
+/**
+ * The keypad's Undo: on a phone, with no undo key, the way back from a slip. Dimmed with nothing
+ * to undo; it stays focusable and pressable (aria-disabled), so a press never takes the focus
+ * from the field being edited.
+ */
+function UndoKey() {
+  return (
+    <button
+      type="button"
+      class="keypad-tool"
+      aria-label="Undo"
+      aria-disabled={!canUndo()}
+      data-testid="keypad-undo"
+      onPointerDown={(e) => e.preventDefault()}
+      onClick={() => {
+        if (canUndo()) runHistory('undo');
+      }}
+    >
+      <Icon name="undo" size={20} />
+    </button>
+  );
+}
+
+/**
+ * The keypad sheet: the page tabs (a segmented control), Undo and Hide in a bar over the keys.
+ * `leaving`: it slides away (App keeps it a moment once hidden), out of the layout, inert.
+ */
+export function MathKeypad(props: { leaving?: boolean }) {
   const page = () => getPage(keypad.page(), keypad.shift());
   return (
-    <section class="keypad" aria-label="Math keypad" data-testid="keypad">
-      <div class="keypad-tabs" role="tablist">
-        <For each={PAGE_ORDER}>
-          {(id) => (
-            <button
-              type="button"
-              role="tab"
-              class="keypad-tab"
-              aria-selected={keypad.page() === id}
-              data-testid={`keypad-tab-${id}`}
-              onPointerDown={(e) => e.preventDefault()}
-              onClick={() => keypad.setPage(id)}
-            >
-              {PAGE_LABELS[id]}
-            </button>
-          )}
-        </For>
+    <section
+      class="keypad"
+      classList={{ leaving: props.leaving }}
+      aria-label="Math keypad"
+      aria-hidden={props.leaving || undefined}
+      inert={props.leaving || undefined}
+      data-testid="keypad"
+    >
+      <div class="keypad-bar">
+        <div class="keypad-tabs" role="tablist" aria-label="Keypad pages">
+          <For each={PAGE_ORDER}>
+            {(id) => (
+              <button
+                type="button"
+                role="tab"
+                class="keypad-tab"
+                aria-selected={keypad.page() === id}
+                data-testid={`keypad-tab-${id}`}
+                onPointerDown={(e) => e.preventDefault()}
+                onClick={() => keypad.setPage(id)}
+              >
+                {PAGE_LABELS[id]}
+              </button>
+            )}
+          </For>
+        </div>
+        <UndoKey />
         <button
           type="button"
-          class="keypad-hide"
+          class="keypad-tool keypad-hide"
           aria-label="Hide keypad"
           data-testid="keypad-hide"
           onPointerDown={(e) => e.preventDefault()}

@@ -239,6 +239,26 @@ export function GraphView() {
       if (hit?.poi) pin(hit);
     };
 
+    // The phone's panel snapping animates the layout's rows: the graph resizes every frame of it.
+    const app = container.closest('.app');
+    if (app) {
+      const layout = (moving: boolean) => (e: Event) => {
+        const t = e as TransitionEvent;
+        if (t.target === app && t.propertyName === 'grid-template-rows') {
+          c.layoutTransition(moving);
+        }
+      };
+      const [run, end] = [layout(true), layout(false)];
+      app.addEventListener('transitionrun', run);
+      app.addEventListener('transitionend', end);
+      app.addEventListener('transitioncancel', end);
+      onCleanup(() => {
+        app.removeEventListener('transitionrun', run);
+        app.removeEventListener('transitionend', end);
+        app.removeEventListener('transitioncancel', end);
+      });
+    }
+
     createEffect(on(ui.homeRequests, () => c.home(), { defer: true }));
 
     // An insight's chip: fly there, and pin the trace on the point when it is on the curve (once

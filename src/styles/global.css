@@ -73,15 +73,19 @@
   /* Rings marking points of interest: grey, so they never read as a curve. */
   --poi-ring: #868c97;
 
-  /* Keypad (its restyle comes later; these only follow the surfaces). */
-  --keypad-bg: #e9ebef;
+  /*
+   * Keypad: a sheet of soft keys. Digits and letters on raised white, operators and functions a
+   * shade quieter, the action column darker, and ↵ (and shift on) in ink.
+   */
+  --keypad-bg: #eceef1;
+  --keypad-segment-bg: rgba(15, 23, 42, 0.06);
   --key-bg: #ffffff;
-  --key-op-bg: #f6f7f9;
-  --key-fn-bg: #f6f7f9;
-  --key-action-bg: #dcdfe5;
-  --key-primary-bg: var(--accent);
-  --key-primary-fg: var(--accent-ink);
-  --key-shadow: 0 1px 0 rgba(15, 23, 42, 0.12);
+  --key-op-bg: #f7f8fa;
+  --key-fn-bg: #f7f8fa;
+  --key-action-bg: #dfe2e7;
+  --key-primary-bg: var(--text-1);
+  --key-primary-fg: var(--surface-1);
+  --key-shadow: 0 1px 1px rgba(15, 23, 42, 0.07), 0 0 0 0.5px rgba(15, 23, 42, 0.05);
   --thumb-bg: #ffffff;
 
   --panel-collapsed: 104px;
@@ -133,11 +137,12 @@
     --poi-ring: #8d939e;
 
     --keypad-bg: #0b0c0f;
+    --keypad-segment-bg: rgba(255, 255, 255, 0.06);
     --key-bg: #22252b;
     --key-op-bg: #1a1c21;
     --key-fn-bg: #1a1c21;
     --key-action-bg: #2b2f36;
-    --key-shadow: 0 1px 0 rgba(0, 0, 0, 0.5);
+    --key-shadow: 0 1px 1px rgba(0, 0, 0, 0.45);
     --thumb-bg: #d5d8de;
   }
 }
@@ -237,6 +242,8 @@ button {
 .app {
   /* The sidebar's width, leaving the graph room in a narrow window (--sidebar-w is set inline). */
   --sidebar-col: min(var(--sidebar-w, 400px), calc(100vw - 360px));
+  /* Where the keypad sheet slides away from, out of the grid's flow (.keypad.leaving). */
+  position: relative;
   display: grid;
   height: 100dvh;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
@@ -315,12 +322,25 @@ button {
   /* Mobile: graph on top, expression panel below, keypad docked at the bottom. */
   .app {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(0, var(--graph-row, 55fr)) minmax(0, var(--panel-row, 45fr)) auto;
+    /*
+     * The graph and the list split the room above the keypad in shares (fr, summing to 100, set
+     * by App) that a snap animates between; the list never gets less than its collapsed height.
+     */
+    grid-template-rows:
+      minmax(0, var(--graph-row, 55fr))
+      minmax(var(--panel-collapsed), var(--panel-row, 45fr))
+      auto;
     grid-template-areas:
       "graph"
       "panel"
       "keypad";
     padding-bottom: env(safe-area-inset-bottom);
+    transition: grid-template-rows var(--dur-3) var(--ease-out);
+  }
+
+  /* Following a finger dragging the panel's handle: no lag. */
+  .app.panel-dragging {
+    transition: none;
   }
 
   .app.keypad-open {
@@ -590,6 +610,18 @@ button {
   background: var(--row-bg);
   border-bottom: 1px solid var(--hairline);
   transition: background-color var(--dur-2) var(--ease-out);
+}
+
+/* Opening as it is added (src/components/rowMotion.ts animates its height). */
+.expr-row.entering {
+  overflow: hidden;
+}
+
+/* Where a removed row was: a blank space that closes (rowMotion.ts). */
+.expr-row-gone {
+  overflow: hidden;
+  border-bottom: 1px solid var(--hairline);
+  pointer-events: none;
 }
 
 /* The row whose curve the graph is tracing: a fainter wash, no bar. */
@@ -2383,38 +2415,67 @@ button {
 
 .keypad {
   background: var(--keypad-bg);
-  padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+  padding: 6px 5px calc(5px + env(safe-area-inset-bottom));
   user-select: none;
   -webkit-user-select: none;
   /* Like `manipulation` (no double-tap zoom delay) but without pinch-zoom either. */
   touch-action: pan-x pan-y;
-  animation: keypad-in var(--dur-2) var(--ease-out);
+  /* A sheet sliding up from the bottom edge (the room it takes is the list's already). */
+  animation: keypad-in var(--dur-3) var(--ease-out);
 }
 
 @keyframes keypad-in {
   from {
-    transform: translateY(16px);
-    opacity: 0;
+    transform: translateY(100%);
   }
+}
+
+/* Hidden: out of the layout at once (the graph and the list take its room), it slides away. */
+.keypad.leaving {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  animation: keypad-out var(--dur-2) var(--ease-out) forwards;
+}
+
+@keyframes keypad-out {
+  to {
+    transform: translateY(100%);
+  }
+}
+
+/* The page tabs (a segmented control), then Undo and Hide. */
+.keypad-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 0 6px;
 }
 
 .keypad-tabs {
   display: flex;
-  gap: var(--space-1);
-  padding: 0 0 var(--space-1);
+  gap: 2px;
+  padding: 2px;
+  border-radius: 10px;
+  background: var(--keypad-segment-bg);
 }
 
-.keypad-tab,
-.keypad-hide {
-  height: 32px;
+.keypad-tab {
+  height: 30px;
   padding: 0 14px;
   border: none;
   border-radius: var(--radius-1);
   background: transparent;
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--text-2);
   touch-action: pan-x pan-y;
+  transition:
+    background-color var(--dur-1) var(--ease-out),
+    color var(--dur-1) var(--ease-out),
+    box-shadow var(--dur-1) var(--ease-out);
 }
 
 .keypad-tab[aria-selected="true"] {
@@ -2423,12 +2484,42 @@ button {
   color: var(--text-1);
 }
 
-.keypad-hide {
+.keypad-tool {
   display: inline-grid;
   place-items: center;
-  margin-left: auto;
-  padding: 0 10px;
+  width: 40px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-1);
+  background: transparent;
   color: var(--text-2);
+  touch-action: pan-x pan-y;
+  transition:
+    background-color var(--dur-1) var(--ease-out),
+    color var(--dur-1) var(--ease-out),
+    transform var(--dur-1) var(--ease-out);
+}
+
+/* Undo and Hide keep to the right. */
+.keypad-tabs + .keypad-tool {
+  margin-left: auto;
+}
+
+.keypad-tool:active {
+  background: var(--press);
+  transform: scale(0.96);
+}
+
+/* Nothing to undo: dimmed, and a press does nothing (it still keeps the field's focus). */
+.keypad-tool[aria-disabled="true"] {
+  color: var(--text-4);
+  cursor: default;
+}
+
+.keypad-tool[aria-disabled="true"]:active {
+  background: transparent;
+  transform: none;
 }
 
 .keypad-grid {
@@ -2444,7 +2535,7 @@ button {
   min-width: 0;
   padding: 0;
   border: none;
-  border-radius: var(--radius-1);
+  border-radius: 10px;
   background: var(--key-bg);
   color: var(--text-1);
   font-size: 18px;
@@ -2453,10 +2544,16 @@ button {
   box-shadow: var(--key-shadow);
   white-space: nowrap;
   overflow: hidden;
+  transition:
+    transform var(--dur-1) var(--ease-out),
+    filter var(--dur-1) var(--ease-out);
 }
 
-.key:active {
-  filter: brightness(0.92);
+/* Pressed (held, or a touch whose press is prevented to keep the field's focus): it gives. */
+.key:active,
+.key.down {
+  filter: brightness(0.93);
+  transform: scale(0.96);
 }
 
 .key-op {
@@ -2543,8 +2640,11 @@ button {
     border-right: 1px solid var(--hairline);
   }
 
-  .keypad-tab,
-  .keypad-hide {
+  .keypad-tab {
+    height: 26px;
+  }
+
+  .keypad-tool {
     height: 28px;
   }
 }

@@ -1,4 +1,4 @@
-import { onCleanup, onMount, Show } from 'solid-js';
+import { createEffect, createSignal, on, onCleanup, onMount, Show } from 'solid-js';
 import { ExpressionPanel } from './components/ExpressionPanel';
 import { GraphView } from './components/GraphView';
 import { MathKeypad } from './components/MathKeypad';
@@ -9,11 +9,15 @@ import { doc, isBlank } from './state/doc';
 import { focusRow } from './state/focus';
 import { attachHistoryKeys } from './state/historyUi';
 import { keypad } from './state/keypad';
+import { DUR_2, reducedMotion } from './state/motion';
 import './state/sliderAnimation';
 import { ui } from './state/ui';
 
 /** A mouse or trackpad: a desk, where the caret can wait in a row (no keypad pops up). */
 const finePointer = typeof matchMedia === 'function' && matchMedia('(pointer: fine)').matches;
+
+/** How long the keypad sheet takes to slide away (--dur-2, as its keypad-out animation). */
+const KEYPAD_OUT_MS = DUR_2;
 
 export default function App() {
   onMount(() => {
@@ -31,12 +35,45 @@ export default function App() {
   });
 
   const keypadVisible = () => keypad.enabled() && keypad.open();
+  /**
+   * The keypad sheet stays a moment once hidden, to slide away out of the layout (the graph and
+   * the list take its room at once); shown again meanwhile, it simply stays.
+   */
+  const [keypadShown, setKeypadShown] = createSignal(keypadVisible());
+  const [keypadLeaving, setKeypadLeaving] = createSignal(false);
+  let leaveTimer: ReturnType<typeof setTimeout> | undefined;
+  createEffect(
+    on(
+      keypadVisible,
+      (visible) => {
+        clearTimeout(leaveTimer);
+        if (visible || reducedMotion()) {
+          setKeypadLeaving(false);
+          setKeypadShown(visible);
+          return;
+        }
+        setKeypadLeaving(true);
+        leaveTimer = setTimeout(() => {
+          setKeypadShown(false);
+          setKeypadLeaving(false);
+        }, KEYPAD_OUT_MS);
+      },
+      { defer: true },
+    ),
+  );
+  onCleanup(() => clearTimeout(leaveTimer));
+
+  /**
+   * The phone's graph and list rows, as shares of the room they split (fr, summing to 100), so a
+   * snap animates between any two heights, from wherever a drag let go. Collapsed, the list keeps
+   * just its minimum (--panel-collapsed, global.css).
+   */
   const panelRows = () => {
-    const drag = ui.panelDragPx();
-    if (drag !== null) return { graph: '1fr', panel: `${drag}px` };
+    const drag = ui.panelDrag();
+    if (drag !== null) return { graph: `${100 - 100 * drag}fr`, panel: `${100 * drag}fr` };
     switch (ui.panelSnap()) {
       case 'collapsed':
-        return { graph: '1fr', panel: 'var(--panel-collapsed)' };
+        return { graph: '100fr', panel: '0fr' };
       case 'full':
         return { graph: '15fr', panel: '85fr' };
       default:
@@ -47,7 +84,11 @@ export default function App() {
   return (
     <div
       class="app"
-      classList={{ 'sidebar-collapsed': !ui.sidebarOpen(), 'keypad-open': keypadVisible() }}
+      classList={{
+        'sidebar-collapsed': !ui.sidebarOpen(),
+        'keypad-open': keypadVisible(),
+        'panel-dragging': ui.panelDrag() !== null,
+      }}
       style={{
         '--graph-row': panelRows().graph,
         '--panel-row': panelRows().panel,
@@ -57,8 +98,8 @@ export default function App() {
     >
       <ExpressionPanel />
       <GraphView />
-      <Show when={keypadVisible()}>
-        <MathKeypad />
+      <Show when={keypadShown()}>
+        <MathKeypad leaving={keypadLeaving()} />
       </Show>
       {/* Always there, so screen readers announce a toast when it appears in it. */}
       <div class="toasts" role="status">

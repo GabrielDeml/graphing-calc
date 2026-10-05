@@ -120,6 +120,16 @@ const [revision, setRevision] = createSignal(0);
 
 export { revision };
 
+/** Bumped by every undo or redo, which can find nothing to do and drop empty steps meanwhile. */
+const [historyMoves, setHistoryMoves] = createSignal(0);
+
+/** Whether there is anything to undo (tracked: the keypad's Undo key follows it). */
+export function canUndo(): boolean {
+  revision();
+  historyMoves();
+  return history.canUndo;
+}
+
 function snapshot(): Snapshot {
   return { rows: copyRows(unwrap(doc).rows), focus: focusedRow() };
 }
@@ -194,6 +204,7 @@ function showRestore(run: () => Restored | null): Restored | null {
     return run();
   } finally {
     showingRestore = false;
+    setHistoryMoves((n) => n + 1);
   }
 }
 

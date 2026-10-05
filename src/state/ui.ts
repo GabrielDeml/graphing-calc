@@ -16,8 +16,11 @@ export const ui = createRoot(() => {
   /** Desktop sidebar width (CSS px), set by dragging its edge. */
   const [sidebarWidth, setSidebarWidth] = createSignal(saved?.sidebarWidth ?? SIDEBAR_DEFAULT);
   const [panelSnap, setPanelSnap] = createSignal<PanelSnap>(saved?.panelSnap ?? 'half');
-  /** Explicit panel height while the mobile handle is being dragged. */
-  const [panelDragPx, setPanelDragPx] = createSignal<number | null>(null);
+  /**
+   * While the phone's panel is dragged by its handle, its height: its share (0…1) of the room it
+   * splits with the graph.
+   */
+  const [panelDrag, setPanelDrag] = createSignal<number | null>(null);
   /**
    * The row the graph and tools are about. Set by focusing a row; unlike focus it survives
    * clicking the graph. Cleared by Esc (that nothing else used), a tap on empty graph, or the
@@ -68,8 +71,8 @@ export const ui = createRoot(() => {
     setSidebarWidth,
     panelSnap,
     setPanelSnap,
-    panelDragPx,
-    setPanelDragPx,
+    panelDrag,
+    setPanelDrag,
     selectedRowId,
     setSelectedRowId,
     hoveredRowId,

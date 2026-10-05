@@ -22,7 +22,8 @@ export type IconName =
   | 'palette'
   | 'new-graph'
   | 'tangent'
-  | 'add-point';
+  | 'add-point'
+  | 'undo';
 
 // Functions, not elements: Solid elements are real DOM nodes, and each icon needs its own.
 const SHAPES: Record<IconName, () => JSX.Element> = {
@@ -61,6 +62,8 @@ const SHAPES: Record<IconName, () => JSX.Element> = {
   ),
   pause: () => <path d="M9 6v12M15 6v12" />,
   'chevron-down': () => <path d="m6.5 9.5 5.5 5.5 5.5-5.5" />,
+  // An arrow turning back.
+  undo: () => <path d="M9 14.5 4.5 10 9 5.5M4.5 10h10a5 5 0 0 1 0 10H12" />,
   alert: () => (
     <>
       <circle cx="12" cy="12" r="8.5" />
