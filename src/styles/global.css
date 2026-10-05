@@ -804,6 +804,14 @@ button {
   color: var(--text-2);
 }
 
+/* Room for a thumb. */
+@media (pointer: coarse) {
+  .quick-fix {
+    height: 32px;
+    padding: 0 12px 0 9px;
+  }
+}
+
 /* A fix's new text (`x^2`, `<=`), in the math's face. */
 .quick-fix-text {
   font-family: var(--math);
