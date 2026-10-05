@@ -70,6 +70,8 @@ export interface FracBox extends BoxBase {
   kind: 'frac';
   num: Block;
   den: Block;
+  /** The `/` (or `÷`). */
+  bar?: Span;
 }
 
 /** An exponent; it follows its base in the same block. */
@@ -78,6 +80,8 @@ export interface SupBox extends BoxBase {
   body: Block;
   /** Written with superscript characters (`x²`): one unit, no caret inside. */
   atomic?: true;
+  /** The `^` (or `**`); absent for superscript characters. */
+  op?: Span;
 }
 
 export interface RadicalBox extends BoxBase {
@@ -85,6 +89,8 @@ export interface RadicalBox extends BoxBase {
   /** '3' for a cube root. */
   index: string | null;
   body: Block;
+  /** `sqrt`, `cbrt`, `√` or `∛`. */
+  name: Span;
 }
 
 /** Parentheses or absolute value bars around a block. */
@@ -109,6 +115,8 @@ export interface Block {
   depth: number;
   /** Script style (exponents, subscripts): smaller, and no medium or thick spaces. */
   script: boolean;
+  /** Parentheses around the block that are drawn as structure (`1/(x+1)`, `sqrt(x)`). */
+  parens?: { open: Span; close: Span };
 }
 
 export interface Plan {
@@ -188,6 +196,7 @@ class Builder {
   nodeBlock(node: LNode, depth: number, script: boolean): { block: Block; hidden: Span[] } {
     if (node.type === 'group' && node.body.seps.length === 0 && node.close) {
       const block = this.groupBlock(node, depth, script);
+      block.parens = { open: node.open, close: node.close };
       return { block, hidden: [node.open, node.close] };
     }
     const boxes: Box[] = [];
@@ -195,11 +204,15 @@ class Builder {
     return { block: this.finish(boxes, node.span.start, node.span.end, depth, script), hidden: [] };
   }
 
-  /** The inside of a group as a block, from after its opener to its closer. */
+  /**
+   * The inside of a group as a block, from after its opener to its closer. An unclosed group
+   * runs to the end of its block, so spaces typed after what it holds are in it too.
+   */
   groupBlock(g: Group, depth: number, script: boolean): Block {
     const boxes: Box[] = [];
     this.emitBlock(g.body, boxes, depth, script);
-    const end = g.close ? g.close.start : Math.max(g.open.end, g.body.span.end);
+    let end = g.close ? g.close.start : Math.max(g.open.end, g.body.span.end);
+    if (!g.close) while (isSpaceChar(this.source.charCodeAt(end))) end++;
     return this.finish(boxes, g.open.end, end, depth, script);
   }
 
@@ -353,11 +366,18 @@ class Builder {
       const start = node.subStart + (braced ? 2 : 1);
       const end = start + node.sub.length;
       const hidden: Span[] = [{ start: node.subStart, end: start }];
-      if (braced) hidden.push({ start: end, end: end + 1 });
-      const digits = /^\d+$/.test(node.sub);
-      const atom = this.atom(node.sub, digits ? 'num' : 'var', { start, end }, 'ord');
-      if (node.sub.length > 1) atom.chars = true;
-      box.sub = this.finish([atom], start, end, depth + 1, true);
+      if (braced && this.source.charCodeAt(end) === 125) hidden.push({ start: end, end: end + 1 });
+      let inner: Box;
+      if (node.sub === '') {
+        // `a_` while the subscript is being typed: an empty place.
+        inner = { kind: 'slot', span: { start, end }, space: 0 };
+      } else {
+        const digits = /^\d+$/.test(node.sub);
+        const atom = this.atom(node.sub, digits ? 'num' : 'var', { start, end }, 'ord');
+        if (node.sub.length > 1) atom.chars = true;
+        inner = atom;
+      }
+      box.sub = this.finish([inner], start, end, depth + 1, true);
       box.subStart = node.subStart;
       box.hidden = hidden;
     }
@@ -374,7 +394,10 @@ class Builder {
       space: 0,
     };
     if (atomic) box.atomic = true;
-    else if (caret) hidden.unshift(caret);
+    else if (caret) {
+      hidden.unshift(caret);
+      box.op = { ...caret };
+    }
     if (hidden.length > 0) box.hidden = hidden;
     if (endsOpen(exp, block)) box.unclosed = true;
     return box;
@@ -399,6 +422,7 @@ class Builder {
       space: 0,
       hidden,
     };
+    if (bar) box.bar = { ...bar };
     classes.set(box, ['inner', 'inner']);
     if (endsOpen(right, den.block)) box.unclosed = true;
     return box;
@@ -416,7 +440,8 @@ class Builder {
       close,
       body,
       tall: isTall(body),
-      span: { ...span },
+      // Unclosed, it runs over the spaces after what it holds, like its block.
+      span: { start: span.start, end: close ? span.end : Math.max(span.end, body.end) },
       space: 0,
     };
     classes.set(box, ['open', 'close']);
@@ -438,6 +463,7 @@ class Builder {
       const hidden = [node.nameSpan];
       if (node.parens?.close) {
         body = this.groupBlock(node.parens, depth + 1, script);
+        body.parens = { open: node.parens.open, close: node.parens.close };
         hidden.push(node.parens.open, node.parens.close);
       } else if (node.parens) {
         // Unclosed: its `(` shows, as in nodeBlock.
@@ -452,7 +478,8 @@ class Builder {
         kind: 'radical',
         index,
         body,
-        span: { ...node.span },
+        name: { ...node.nameSpan },
+        span: { start: node.span.start, end: Math.max(node.span.end, body.end) },
         space: 0,
         hidden,
       };

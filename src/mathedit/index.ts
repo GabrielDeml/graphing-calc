@@ -1,11 +1,27 @@
 // Typeset math for the expression rows: the tolerant layout parse (layout.ts), the render plan
-// (plan.ts) and caret stops (caret.ts). Pure TS, like the engine.
+// (plan.ts), caret stops (caret.ts) and the editing commands (commands.ts). Pure TS, like the
+// engine.
 
 import type { NameContext } from '../engine/names';
 import { layoutParse } from './layout';
 import { flatPlan, type Plan, renderPlan } from './plan';
 
-export { type CaretStop, type CaretStops, caretStops } from './caret';
+export { type Caret, type CaretStop, type CaretStops, caretStops, resolveCaret } from './caret';
+export {
+  analyze,
+  type BlockInfo,
+  caretAt,
+  type EditDoc,
+  type EditKind,
+  type EditorCommand,
+  type EditorOptions,
+  type EditorResult,
+  type EditorState,
+  type Part,
+  readSelection,
+  runCommand,
+  type Selection,
+} from './commands';
 export { type Layout, layoutParse, printLayout } from './layout';
 export * from './plan';
 

@@ -141,7 +141,7 @@ const PAGE_123 = page('123', '123', [
   [
     X_KEY,
     ins('y', 'y', 'y', 'char'),
-    ins('sq', 'a²', 'squared', 'op', '^2'),
+    key('sq', 'a²', 'squared', { type: 'power', exponent: '2' }, 'op'),
     ins('pow', 'aᵇ', 'power', 'op', '^'),
     digit('7'),
     digit('8'),

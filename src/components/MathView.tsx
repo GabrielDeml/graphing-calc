@@ -4,21 +4,32 @@ import {
   type AtomBox,
   type Block,
   type Box,
+  type Caret,
+  type CaretStop,
+  type CaretStops,
+  caretStops,
   createTypesetter,
   errorLeaves,
+  type FenceBox,
   forEachLeaf,
   type Leaf,
-  leafSpan,
   type Names,
   type Plan,
   planShape,
   type RadicalBox,
+  readSelection,
+  resolveCaret,
 } from '../mathedit';
 
 const SVG = 'http://www.w3.org/2000/svg';
 
 /** One typesetter for every row, so a plan is reused while its text and names stay the same. */
 const typeset = createTypesetter();
+
+/** The plan of a row's text (shared with the row editor, so both read the same plan). */
+export function typesetRow(source: string, names: Names): Plan {
+  return typeset(source, names);
+}
 
 /**
  * Bumped when a web font finishes loading: the views then check their width again. (Their
@@ -61,40 +72,30 @@ function observeSize(e: Element, callback: () => void): () => void {
   };
 }
 
-/** Something a click can land on, and the source offsets on either side of it. */
-interface Target {
-  el: HTMLElement;
-  start: number;
-  end: number;
-  /** The element's text is the source's, so a click can land between its characters. */
-  chars: boolean;
-}
+/** Caret stops of a plan, worked out once per plan (a plan is reused while its text is). */
+const stopsCache = new WeakMap<Plan, CaretStops>();
 
-/** A box drawn around others (a fraction, a radical, a base and its scripts…). */
-interface Structure {
-  start: number;
-  end: number;
-  /** A radical's sign is a click target of its own, before the radicand. */
-  radical?: RadicalBox;
+function stopsOf(plan: Plan): CaretStops {
+  let stops = stopsCache.get(plan);
+  if (!stops) {
+    stops = caretStops(plan);
+    stopsCache.set(plan, stops);
+  }
+  return stops;
 }
 
 interface Drawn {
   plan: Plan;
   placeholder: string;
+  /** Drawn for editing: ghost closers after open groups. */
+  ghosts: boolean;
   shape: string;
   /** Elements of the plan's leaves, in forEachLeaf order. */
   leafEls: HTMLElement[];
-  /** Elements of the plan's structures, in structuresOf order. */
-  structureEls: HTMLElement[];
-  /** Elements of the radical signs, in the same order. */
-  signEls: HTMLElement[];
-}
-
-/** Where a click can land: worked out on a click, not on each redraw (a playing slider's). */
-interface Targets {
-  targets: Target[];
-  /** The structures, outermost first, with their elements. */
-  structures: (Structure & { el: HTMLElement })[];
+  /** The elements each box is drawn as (an atom with a subscript: its letters, and the script). */
+  boxEls: Map<Box, HTMLElement[]>;
+  /** An empty mark at the start of each block, on its baseline, in its font. */
+  struts: Map<Block, HTMLElement>;
 }
 
 function el(tag: 'span' | 'div', cls: string, text?: string): HTMLElement {
@@ -167,35 +168,53 @@ function radicalSign(): SVGSVGElement {
 
 const SPACE_CLASS = ['', ' m-s1', ' m-s2', ' m-s3'] as const;
 
-/**
- * Builds the elements of a plan and records those of its leaves and structures on the way, in
- * the orders forEachLeaf and structuresOf walk the plan.
- */
+/** The blocks a box holds, in drawing order. */
+function innerBlocks(box: Box): Block[] {
+  switch (box.kind) {
+    case 'frac':
+      return [box.num, box.den];
+    case 'sup':
+    case 'radical':
+    case 'fence':
+      return [box.body];
+    case 'atom':
+      return box.sub ? [box.sub] : [];
+    case 'slot':
+      return [];
+  }
+}
+
+/** Builds the elements of a plan and records those of its leaves, boxes and blocks. */
 class Painter {
   readonly leafEls: HTMLElement[] = [];
-  readonly structureEls: HTMLElement[] = [];
-  readonly signEls: HTMLElement[] = [];
+  readonly boxEls = new Map<Box, HTMLElement[]>();
+  readonly struts = new Map<Block, HTMLElement>();
 
-  private structure(e: HTMLElement): HTMLElement {
-    this.structureEls.push(e);
-    return e;
-  }
+  constructor(private readonly ghosts: boolean) {}
 
   block(block: Block, parent: HTMLElement): void {
+    const strut = el('span', 'm-strut');
+    parent.append(strut);
+    this.struts.set(block, strut);
     const { boxes } = block;
     for (let i = 0; i < boxes.length; i++) {
       const box = boxes[i] as Box;
       const next = boxes[i + 1];
       if (next?.kind === 'sup') {
         // A base and its scripts go in one grid (global.css): the exponent over a subscript.
-        const wrap = this.structure(el('span', `m-scripts${SPACE_CLASS[box.space]}`));
+        const wrap = el('span', `m-scripts${SPACE_CLASS[box.space]}`);
         if (box.kind === 'atom' && box.role === 'var') wrap.classList.add('m-after-it');
         if (box.kind === 'atom' && box.sub) {
-          wrap.append(this.leaf(box), this.sub(box.sub));
+          const leaf = this.leaf(box);
+          const sub = this.sub(box.sub);
+          wrap.append(leaf, sub);
+          this.boxEls.set(box, [leaf, sub]);
         } else {
           wrap.append(this.box(box, ''));
         }
-        wrap.append(this.sup(next.body));
+        const sup = this.sup(next.body);
+        this.boxEls.set(next, [sup]);
+        wrap.append(sup);
         parent.append(wrap);
         i++;
       } else {
@@ -211,17 +230,23 @@ class Painter {
   }
 
   private box(box: Box, space: string): HTMLElement {
+    const e = this.paint(box, space);
+    this.boxEls.set(box, [e]);
+    return e;
+  }
+
+  private paint(box: Box, space: string): HTMLElement {
     switch (box.kind) {
       case 'atom':
         return this.atom(box, space);
       case 'slot': {
         // Something to underline when it is marked: an en space.
-        const e = el('span', `m-slot${space}`, '\u2002');
+        const e = el('span', `m-slot${space}`, ' ');
         this.leafEls.push(e);
         return e;
       }
       case 'frac': {
-        const e = this.structure(el('span', `m-frac${space}`));
+        const e = el('span', `m-frac${space}`);
         const num = el('span', 'm-numer');
         const den = el('span', 'm-denom');
         this.block(box.num, num);
@@ -235,12 +260,13 @@ class Painter {
       case 'radical':
         return this.radical(box, space);
       case 'fence': {
-        const e = this.structure(el('span', `m-fence${box.tall ? ' m-tall' : ''}${space}`));
+        const e = el('span', `m-fence${box.tall ? ' m-tall' : ''}${space}`);
         const body = el('span', 'm-fence-body');
         e.append(this.delimiter(box.open, box.tall, false));
         this.block(box.body, body);
         e.append(body);
         if (box.close) e.append(this.delimiter(box.close, box.tall, true));
+        else if (this.ghosts) e.append(this.ghost(box));
         return e;
       }
     }
@@ -261,7 +287,7 @@ class Painter {
 
   private atom(box: AtomBox, space: string): HTMLElement {
     if (!box.sub) return this.leaf(box, space);
-    const e = this.structure(el('span', `m-subbed${space}`));
+    const e = el('span', `m-subbed${space}`);
     e.append(this.leaf(box), this.sub(box.sub));
     return e;
   }
@@ -278,12 +304,19 @@ class Painter {
     return e;
   }
 
+  /** The closer an open group will need, drawn faintly while the row is edited. */
+  private ghost(box: FenceBox): HTMLElement {
+    if (!box.tall) return el('span', 'm-a m-paren m-ghost', box.bars ? '|' : ')');
+    const e = el('span', `m-delim m-ghost${box.bars ? ' m-delim-bar' : ''}`);
+    if (!box.bars) e.append(tallParen(true));
+    return e;
+  }
+
   private radical(box: RadicalBox, space: string): HTMLElement {
-    const e = this.structure(el('span', `m-sqrt${space}`));
+    const e = el('span', `m-sqrt${space}`);
     if (box.index) e.append(el('span', 'm-sqrt-index', box.index));
     const sign = el('span', 'm-sqrt-sign');
     sign.append(radicalSign());
-    this.signEls.push(sign);
     const body = el('span', 'm-sqrt-body');
     this.block(box.body, body);
     e.append(sign, body);
@@ -291,85 +324,42 @@ class Painter {
   }
 }
 
-/** The structures of a block, in the order Painter makes their elements (outer ones first). */
-function structuresOf(block: Block, out: Structure[] = []): Structure[] {
-  const { boxes } = block;
-  for (let i = 0; i < boxes.length; i++) {
-    const box = boxes[i] as Box;
-    const next = boxes[i + 1];
-    if (next?.kind === 'sup') {
-      out.push({ start: box.span.start, end: next.span.end });
-      if (box.kind !== 'atom') boxStructures(box, out);
-      else if (box.sub) structuresOf(box.sub, out);
-      structuresOf(next.body, out);
-      i++;
-    } else {
-      boxStructures(box, out);
-    }
-  }
-  return out;
-}
-
-function boxStructures(box: Box, out: Structure[]): void {
-  switch (box.kind) {
-    case 'atom':
-      if (box.sub) {
-        out.push({ start: box.span.start, end: box.span.end });
-        structuresOf(box.sub, out);
-      }
-      break;
-    case 'frac':
-      out.push({ start: box.span.start, end: box.span.end });
-      structuresOf(box.num, out);
-      structuresOf(box.den, out);
-      break;
-    case 'radical':
-      out.push({ start: box.span.start, end: box.span.end, radical: box });
-      structuresOf(box.body, out);
-      break;
-    case 'fence':
-      out.push({ start: box.span.start, end: box.span.end });
-      structuresOf(box.body, out);
-      break;
-    case 'sup':
-      structuresOf(box.body, out);
-      break;
-    case 'slot':
-      break;
-  }
+/** The elements of `prev` for the boxes and blocks of `plan`, which has the same shape. */
+function rebind(prev: Drawn, plan: Plan): Pick<Drawn, 'boxEls' | 'struts'> {
+  const boxEls = new Map<Box, HTMLElement[]>();
+  const struts = new Map<Block, HTMLElement>();
+  const walk = (a: Block, b: Block) => {
+    const strut = prev.struts.get(a);
+    if (strut) struts.set(b, strut);
+    a.boxes.forEach((x, i) => {
+      const y = b.boxes[i];
+      if (!y) return;
+      const els = prev.boxEls.get(x);
+      if (els) boxEls.set(y, els);
+      const inner = innerBlocks(y);
+      innerBlocks(x).forEach((c, k) => {
+        const d = inner[k];
+        if (d) walk(c, d);
+      });
+    });
+  };
+  walk(prev.plan.root, plan.root);
+  return { boxEls, struts };
 }
 
 /**
- * Click targets: every leaf, and each radical sign (its left half is before the radical); and the
- * structures, with their elements.
+ * Draws a plan into `view` (before `keep`, the caret's layer). A plan of the same shape as the
+ * last one (a slider's value changed, a digit typed) only updates texts in place.
  */
-function targetsOf(drawn: Drawn): Targets {
-  const targets: Target[] = [];
-  let k = 0;
-  forEachLeaf(drawn.plan.root, (leaf: Leaf) => {
-    const span = leafSpan(leaf);
-    const e = drawn.leafEls[k++];
-    if (e) targets.push({ el: e, ...span, chars: leaf.kind === 'atom' && leaf.chars === true });
-  });
-  const structures: Targets['structures'] = [];
-  let signs = 0;
-  structuresOf(drawn.plan.root).forEach((s, i) => {
-    const e = drawn.structureEls[i];
-    if (e) structures.push({ ...s, el: e });
-    const sign = s.radical ? drawn.signEls[signs++] : undefined;
-    if (sign && s.radical) {
-      targets.push({ el: sign, start: s.start, end: s.radical.body.start, chars: false });
-    }
-  });
-  return { targets, structures };
-}
-
-/**
- * Draws a plan into `view`. A plan of the same shape as the last one (a slider's value changed)
- * only updates texts in place.
- */
-function draw(view: HTMLElement, plan: Plan, placeholder: string, prev: Drawn | null): Drawn {
-  const shape = `${planShape(plan)}\u0000${placeholder}`;
+function draw(
+  view: HTMLElement,
+  plan: Plan,
+  placeholder: string,
+  ghosts: boolean,
+  prev: Drawn | null,
+  keep: Element[],
+): Drawn {
+  const shape = `${planShape(plan)}\u0000${placeholder}\u0000${ghosts}`;
   if (prev && prev.shape === shape) {
     let k = 0;
     forEachLeaf(plan.root, (leaf) => {
@@ -383,20 +373,19 @@ function draw(view: HTMLElement, plan: Plan, placeholder: string, prev: Drawn | 
         e.textContent = leaf.text;
       }
     });
-    return { ...prev, plan, placeholder };
+    return { ...prev, ...rebind(prev, plan), plan, placeholder };
   }
-  const painter = new Painter();
+  const painter = new Painter(ghosts);
   const frag = document.createDocumentFragment();
+  const root = el('span', 'm-root');
+  painter.block(plan.root, root);
+  frag.append(root);
   if (placeholder && plan.root.boxes.length === 0) {
     frag.append(el('span', 'm-placeholder', placeholder));
-  } else {
-    const root = el('span', 'm-root');
-    painter.block(plan.root, root);
-    frag.append(root);
   }
-  view.replaceChildren(frag);
-  const { leafEls, structureEls, signEls } = painter;
-  return { plan, placeholder, shape, leafEls, structureEls, signEls };
+  view.replaceChildren(frag, ...keep);
+  const { leafEls, boxEls, struts } = painter;
+  return { plan, placeholder, ghosts, shape, leafEls, boxEls, struts };
 }
 
 /** Wavy underlines on the leaves an error span marks. */
@@ -408,68 +397,188 @@ function mark(drawn: Drawn, span: Span | null): void {
   });
 }
 
-/** x of each boundary between the characters of a target's text, both ends included. */
-function boundaries(target: Target): number[] | null {
-  const node = target.el.firstChild;
-  if (!(node instanceof Text)) return null;
-  const range = document.createRange();
-  const xs: number[] = [];
-  for (let i = 0; i <= node.length; i++) {
-    range.setStart(node, i);
-    range.setEnd(node, i);
-    xs.push(range.getBoundingClientRect().left);
-  }
-  return xs;
+// ---- where things are ----
+
+interface Rect {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
 }
 
-/** The source offset a point lands on: the nearest side (or character gap) of what it hits. */
-function hitTest(drawn: Drawn, x: number, y: number, length: number): number {
-  let best: { t: Target; r: DOMRect } | null = null;
+/** Reads element boxes, each once per measurement (a hit test reads many). */
+class Measure {
+  private readonly rects = new Map<Element, DOMRect>();
+  private readonly sizes = new Map<Element, number>();
+
+  rect(e: Element): DOMRect {
+    let r = this.rects.get(e);
+    if (!r) {
+      r = e.getBoundingClientRect();
+      this.rects.set(e, r);
+    }
+    return r;
+  }
+
+  /** The font size of an element (px). */
+  em(e: Element): number {
+    let s = this.sizes.get(e);
+    if (s === undefined) {
+      s = Number.parseFloat(getComputedStyle(e).fontSize) || 19;
+      this.sizes.set(e, s);
+    }
+    return s;
+  }
+
+  union(els: readonly Element[] | undefined): Rect | null {
+    if (!els || els.length === 0) return null;
+    let out: Rect | null = null;
+    for (const e of els) {
+      const r = this.rect(e);
+      out = out
+        ? {
+            left: Math.min(out.left, r.left),
+            right: Math.max(out.right, r.right),
+            top: Math.min(out.top, r.top),
+            bottom: Math.max(out.bottom, r.bottom),
+          }
+        : { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+    }
+    return out;
+  }
+}
+
+/** A caret on screen (client coordinates): its x, and the line it stands on. */
+interface CaretBox {
+  x: number;
+  top: number;
+  bottom: number;
+}
+
+/** x of the boundary before character `k` of an element's text. */
+function charX(e: HTMLElement, k: number): number | null {
+  const node = e.firstChild;
+  if (!(node instanceof Text)) return null;
+  const range = document.createRange();
+  const at = Math.max(0, Math.min(k, node.length));
+  range.setStart(node, at);
+  range.setEnd(node, at);
+  return range.getBoundingClientRect().left;
+}
+
+/**
+ * Where a caret stop is drawn: inside an atom, at its character boundary; in a gap, between the
+ * boxes on either side (each typed space a step further); at an empty place, inside it. It is
+ * as tall as its block's line, from the block's strut (which sits on the baseline).
+ */
+function caretBox(drawn: Drawn, stop: CaretStop, m: Measure): CaretBox | null {
+  const strut = drawn.struts.get(stop.block);
+  if (!strut) return null;
+  const s = m.rect(strut);
+  const em = m.em(strut);
+  const line = { top: s.top - 0.8 * em, bottom: s.top + 0.24 * em };
+  const { boxes } = stop.block;
+  if (stop.inside) {
+    const leaf = drawn.boxEls.get(stop.inside)?.[0];
+    const x = leaf ? charX(leaf, stop.offset - stop.inside.span.start) : null;
+    if (x !== null) return { x, ...line };
+  }
+  const prev = stop.inside ? undefined : boxes[stop.index - 1];
+  const next = stop.inside ? stop.inside : boxes[stop.index];
+  const slot = next?.kind === 'slot' ? next : prev?.kind === 'slot' ? prev : undefined;
+  if (slot) {
+    const r = m.union(drawn.boxEls.get(slot));
+    if (r) return { x: r.left + 0.14 * (r.right - r.left) + 1, ...line };
+  }
+  const pr = prev ? m.union(drawn.boxEls.get(prev)) : null;
+  const nr = next ? m.union(drawn.boxEls.get(next)) : null;
+  const g0 = prev ? prev.span.end : stop.block.start;
+  const g1 = next ? next.span.start : Math.max(stop.block.end, g0);
+  const left = pr ? pr.right : nr && stop.index === 0 ? Math.min(s.left, nr.left) : s.left;
+  const right = nr ? nr.left : pr ? pr.right + (g1 - g0) * 0.25 * em : s.left;
+  const t = (stop.offset - g0 + 0.5) / (g1 - g0 + 1);
+  return { x: left + Math.max(0, right - left) * t, ...line };
+}
+
+/** The highlight of a selection: across the boxes it covers in its block. */
+function selectionRect(
+  drawn: Drawn,
+  block: Block,
+  start: number,
+  end: number,
+  m: Measure,
+): Rect | null {
+  let out: Rect | null = null;
+  const add = (r: Rect | null) => {
+    if (!r) return;
+    out = out
+      ? {
+          left: Math.min(out.left, r.left),
+          right: Math.max(out.right, r.right),
+          top: Math.min(out.top, r.top),
+          bottom: Math.max(out.bottom, r.bottom),
+        }
+      : r;
+  };
+  for (const box of block.boxes) {
+    const { span } = box;
+    if (span.end <= start || span.start >= end || box.kind === 'slot') continue;
+    const r = m.union(drawn.boxEls.get(box));
+    if (!r) continue;
+    if (span.start >= start && span.end <= end) {
+      add(r);
+    } else if (box.kind === 'atom' && box.chars) {
+      // Part of a number or a name.
+      const leaf = drawn.boxEls.get(box)?.[0];
+      const from = leaf ? charX(leaf, Math.max(start, span.start) - span.start) : null;
+      const to = leaf ? charX(leaf, Math.min(end, box.subStart ?? span.end) - span.start) : null;
+      if (from !== null && to !== null) add({ ...r, left: from, right: to });
+    }
+  }
+  const strut = drawn.struts.get(block);
+  if (out && strut) {
+    const s = m.rect(strut);
+    const em = m.em(strut);
+    const top = Math.min((out as Rect).top, s.top - 0.8 * em);
+    const bottom = Math.max((out as Rect).bottom, s.top + 0.24 * em);
+    out = { ...(out as Rect), top, bottom };
+  }
+  return out;
+}
+
+/** The caret stop nearest a point (client coordinates): mostly by x, a line counting double. */
+function hitTest(drawn: Drawn, x: number, y: number): Caret {
+  const m = new Measure();
+  let best: CaretStop | null = null;
   let bestDistance = Number.POSITIVE_INFINITY;
-  let right = Number.NEGATIVE_INFINITY;
-  let left = Number.POSITIVE_INFINITY;
-  const { targets, structures } = targetsOf(drawn);
-  for (const t of targets) {
-    const r = t.el.getBoundingClientRect();
-    if (r.width === 0 && r.height === 0) continue;
-    right = Math.max(right, r.right);
-    left = Math.min(left, r.left);
-    const dx = x < r.left ? r.left - x : x > r.right ? x - r.right : 0;
-    const dy = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;
-    // Mostly sideways: a click beside a fraction goes to the nearer of its parts' ends.
-    const distance = dx + 2 * dy;
+  for (const stop of stopsOf(drawn.plan).list) {
+    const c = caretBox(drawn, stop, m);
+    if (!c) continue;
+    const dy = y < c.top ? c.top - y : y > c.bottom ? y - c.bottom : 0;
+    const distance = Math.abs(x - c.x) + 2 * dy;
     if (distance < bestDistance) {
       bestDistance = distance;
-      best = { t, r };
+      best = stop;
     }
   }
-  if (!best || x >= right) return length;
-  if (x <= left) return 0;
-  const { t, r } = best;
-  // Beside a structure, before or after all of it, not at the nearest symbol inside: past a
-  // radicand's or a denominator's invisible `)`.
-  for (const s of structures) {
-    if (!s.el.contains(t.el)) continue;
-    const sr = s.el.getBoundingClientRect();
-    if (x > sr.right) return s.end;
-    if (x < sr.left) return s.start;
-  }
-  if (t.chars) {
-    const xs = boundaries(t);
-    if (xs && xs.length === t.end - t.start + 1) {
-      let k = 0;
-      for (let i = 1; i < xs.length; i++) {
-        if (Math.abs((xs[i] as number) - x) < Math.abs((xs[k] as number) - x)) k = i;
-      }
-      return t.start + k;
-    }
-  }
-  return x < r.left + r.width / 2 ? t.start : t.end;
+  return best ? { offset: best.offset, depth: best.depth } : { offset: 0, depth: 0 };
+}
+
+// ---- the view ----
+
+/** What the editor shows in the view while the row is edited in place. */
+export interface CaretView {
+  anchor: Caret;
+  focus: Caret;
+  /** Changes with each edit or move: the caret holds still (doesn't blink) for a moment. */
+  seq: number;
 }
 
 export interface MathViewHandle {
-  /** The source offset a point (client coordinates) is on, for putting the caret there. */
-  offsetAt(x: number, y: number): number;
+  /** The caret position a point (client coordinates) is nearest to. */
+  caretAt(x: number, y: number): Caret;
+  /** Where a caret stop of the drawn text is (client x), for moving up and down. */
+  xOf(stop: CaretStop): number;
 }
 
 export interface MathViewProps {
@@ -481,32 +590,106 @@ export interface MathViewProps {
   placeholder?: string;
   /** Keep the last drawing (while the row is edited as plain text, it holds the row's height). */
   frozen: boolean;
+  /** Edited in place: the caret or selection, and the closers open groups still need. */
+  caret?: CaretView | null;
   ref?: (handle: MathViewHandle) => void;
 }
+
+/** How long the caret holds still after an edit or a move before it blinks again. */
+const CARET_HOLD_MS = 520;
 
 /**
  * A row's math, typeset: fractions, exponents, radicals, sized parentheses, upright function
  * names and italic letters (src/mathedit lays it out; this only builds elements). Purely
- * visual: the row's <input> lies over it and takes every click and key.
+ * visual: the row's <input> lies over it and takes every click and key. While the row is edited
+ * in place it also draws the caret (in the row's color) and the selection, and scrolls to keep
+ * the caret in view.
  */
 export function MathView(props: MathViewProps) {
   let view!: HTMLDivElement;
   let drawn: Drawn | null = null;
   let frame = 0;
+  let holdTimer: ReturnType<typeof setTimeout> | undefined;
+  let lastSeq = -1;
+  const caretEl = el('span', 'm-caret');
+  const selectionEl = el('span', 'm-selection');
+  caretEl.setAttribute('aria-hidden', 'true');
 
   const measure = () => {
-    view.classList.toggle('overflowing', view.scrollWidth > view.clientWidth + 1);
+    const overflow = view.scrollWidth > view.clientWidth + 1;
+    view.classList.toggle('overflowing', overflow);
+    view.classList.toggle('scrolled', overflow && view.scrollLeft > 0);
+    view.classList.toggle(
+      'scrolled-end',
+      overflow && view.scrollLeft + view.clientWidth >= view.scrollWidth - 1,
+    );
+  };
+
+  /** Places the caret and the selection, and scrolls the caret into view. */
+  const paintCaret = (caret: CaretView | null) => {
+    if (!drawn || !caret) {
+      caretEl.remove();
+      selectionEl.remove();
+      if (view.scrollLeft !== 0) view.scrollLeft = 0;
+      return;
+    }
+    const plan = drawn.plan;
+    const sel = readSelection(
+      { text: plan.source, anchor: caret.anchor, focus: caret.focus },
+      { names: props.names.ctx, plan: () => plan },
+    );
+    const m = new Measure();
+    const vr = m.rect(view);
+    const ox = vr.left + view.clientLeft - view.scrollLeft;
+    const oy = vr.top + view.clientTop - view.scrollTop;
+    const focus = resolveCaret(stopsOf(plan), caret.focus.offset, caret.focus.depth);
+    const box = caretBox(drawn, focus, m);
+    if (!box) return;
+    if (sel.collapsed) {
+      selectionEl.remove();
+      if (!caretEl.isConnected) view.append(caretEl);
+      caretEl.style.transform = `translate(${box.x - ox}px, ${box.top - oy}px)`;
+      caretEl.style.height = `${box.bottom - box.top}px`;
+    } else {
+      caretEl.remove();
+      const r = selectionRect(drawn, sel.block, sel.start, sel.end, m);
+      if (r) {
+        if (!selectionEl.isConnected) view.prepend(selectionEl);
+        selectionEl.style.transform = `translate(${r.left - ox}px, ${r.top - oy}px)`;
+        selectionEl.style.width = `${r.right - r.left}px`;
+        selectionEl.style.height = `${r.bottom - r.top}px`;
+      }
+    }
+    if (caret.seq !== lastSeq) {
+      lastSeq = caret.seq;
+      // Solid while typing and moving; it blinks again once things settle.
+      caretEl.classList.add('m-caret-hold');
+      clearTimeout(holdTimer);
+      holdTimer = setTimeout(() => caretEl.classList.remove('m-caret-hold'), CARET_HOLD_MS);
+    }
+    // Keep the caret in view, with some room on its side.
+    const x = box.x - ox;
+    const margin = Math.min(24, view.clientWidth / 4);
+    if (x - margin < view.scrollLeft) view.scrollLeft = Math.max(0, x - margin);
+    else if (x + margin > view.scrollLeft + view.clientWidth) {
+      view.scrollLeft = x + margin - view.clientWidth;
+    }
   };
 
   createEffect(() => {
     if (props.frozen) return;
+    const caret = props.caret ?? null;
     const plan = typeset(props.source, props.names);
     const placeholder = props.source === '' ? (props.placeholder ?? '') : '';
-    if (drawn?.plan !== plan || drawn.placeholder !== placeholder) {
-      drawn = draw(view, plan, placeholder, drawn);
+    const ghosts = caret !== null;
+    if (drawn?.plan !== plan || drawn.placeholder !== placeholder || drawn.ghosts !== ghosts) {
+      const keep = [selectionEl, caretEl].filter((e) => e.isConnected);
+      drawn = draw(view, plan, placeholder, ghosts, drawn, keep);
     }
+    view.classList.toggle('editing', ghosts);
     mark(drawn, props.errorSpan);
     fontsVersion();
+    paintCaret(caret);
     if (!frame) {
       frame = requestAnimationFrame(() => {
         frame = 0;
@@ -514,11 +697,22 @@ export function MathView(props: MathViewProps) {
       });
     }
   });
-  onMount(() => onCleanup(observeSize(view, measure)));
-  onCleanup(() => cancelAnimationFrame(frame));
+  onMount(() =>
+    onCleanup(
+      observeSize(view, () => {
+        if (props.caret && !props.frozen) paintCaret(props.caret);
+        measure();
+      }),
+    ),
+  );
+  onCleanup(() => {
+    cancelAnimationFrame(frame);
+    clearTimeout(holdTimer);
+  });
 
   props.ref?.({
-    offsetAt: (x, y) => (drawn ? hitTest(drawn, x, y, props.source.length) : 0),
+    caretAt: (x, y) => (drawn ? hitTest(drawn, x, y) : { offset: 0, depth: 0 }),
+    xOf: (stop) => (drawn ? (caretBox(drawn, stop, new Measure())?.x ?? 0) : 0),
   });
 
   return <div class="math-view" aria-hidden="true" ref={view} />;

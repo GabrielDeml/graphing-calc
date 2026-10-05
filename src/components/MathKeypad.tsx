@@ -44,6 +44,13 @@ function runEdit(op: EditOp, repeated: boolean): boolean {
     t.deleteEmpty?.();
     return true;
   }
+  // A row edited in its typeset form makes the edit by its own rules (and keeps its caret in
+  // view itself).
+  if (t.apply) {
+    t.apply(op);
+    revealRow(el);
+    return true;
+  }
   const len = el.value.length;
   const next = applyEdit(
     { text: el.value, selStart: el.selectionStart ?? len, selEnd: el.selectionEnd ?? len },

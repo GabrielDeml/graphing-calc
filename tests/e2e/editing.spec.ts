@@ -1,4 +1,4 @@
-import { expect, exprInput, openApp, setExpr, test, worldToScreen } from './helpers';
+import { contains, expect, exprInput, openApp, setExpr, test, worldToScreen } from './helpers';
 
 test.describe('editing rows', () => {
   test.skip(({ isMobile }) => isMobile, 'hardware keyboard and mouse');
@@ -317,20 +317,25 @@ test.describe('editing rows', () => {
     await expect(exprInput(page, 0)).toHaveValue('y = x + 1');
   });
 
-  test('the error underline lines up in a scrolled input', async ({ page }) => {
+  test('the error underline lines up in a scrolled row', async ({ page }) => {
     await openApp(page);
     const input = exprInput(page, 0);
     await input.click();
-    await input.pressSequentially(`y = ${'x + '.repeat(16)}(x`);
-    await expect(page.locator('.expr-row').first().getByRole('alert')).toBeVisible();
-    const scroll = await page
-      .locator('.expr-row')
-      .first()
-      .evaluate((row) => ({
-        input: (row.querySelector('.math-input') as HTMLElement).scrollLeft,
-        mirror: (row.querySelector('.math-mirror') as HTMLElement).scrollLeft,
-      }));
-    expect(scroll.input).toBeGreaterThan(0);
-    expect(scroll.mirror).toBe(scroll.input);
+    const text = `y = ${'x + '.repeat(16)}(x`;
+    await input.pressSequentially(text);
+    const row = page.locator('.expr-row').first();
+    await expect(row.getByRole('alert')).toBeVisible();
+    // The math scrolled to keep the caret in view, and the mark on the open '(' scrolled with it.
+    const math = row.locator('.math-view').first();
+    expect(await math.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
+    const area = await math.boundingBox();
+    const mark = await math.locator('.m-mark').boundingBox();
+    const caret = await math.locator('.m-caret').boundingBox();
+    if (!area || !mark || !caret) throw new Error('no boxes');
+    await expect(math.locator('.m-mark')).toHaveText('(');
+    expect(contains(area, mark)).toBe(true);
+    expect(contains(area, caret)).toBe(true);
+    expect(mark.x).toBeLessThan(caret.x);
+    expect(await input.evaluate((el: HTMLInputElement) => el.selectionStart)).toBe(text.length);
   });
 });

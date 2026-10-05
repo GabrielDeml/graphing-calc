@@ -133,13 +133,18 @@ test.describe('math keypad on touch devices: editing details', () => {
     const input = exprInput(page, 0);
     await input.tap();
     await tapKeys(page, ['y', 'eq', ...Array.from({ length: 14 }, () => ['x', 'add', '1']).flat()]);
-    const at = () =>
-      input.evaluate((el: HTMLInputElement) => ({
+    // The typeset math scrolls (the input under it holds the text and the caret's offset).
+    const math = page.locator('.expr-row').first().locator('.math-view').first();
+    const at = async () => ({
+      ...(await math.evaluate((el) => ({
         left: el.scrollLeft,
         max: el.scrollWidth - el.clientWidth,
+      }))),
+      ...(await input.evaluate((el: HTMLInputElement) => ({
         caret: el.selectionStart,
         length: el.value.length,
-      }));
+      }))),
+    });
     const end = await at();
     expect(end.max).toBeGreaterThan(100);
     expect(end.caret).toBe(end.length);

@@ -1,8 +1,9 @@
 import type { Locator, Page } from '@playwright/test';
 import { expect, exprInput, openApp, setExpr, test } from './helpers';
 
+/** A row's typeset math (its first: slider bounds are typeset too). */
 function view(page: Page, index: number) {
-  return page.locator('.expr-row').nth(index).locator('.math-view');
+  return page.locator('.expr-row').nth(index).locator('.math-view').first();
 }
 
 /**
@@ -47,10 +48,29 @@ test.describe('typeset rows', () => {
     // The input is still there, holding the text, invisible over the typeset math.
     await expect(exprInput(page, 0)).toHaveValue('y = 1/x');
     await expect(exprInput(page, 0)).toHaveCSS('opacity', '0');
-    // Focused again, it shows the plain text.
+    // Focused again, it stays typeset and is edited there: the caret is drawn in the math.
+    await exprInput(page, 0).focus();
+    await expect(view(page, 0).locator('.m-caret')).toBeVisible();
+    await expect(exprInput(page, 0)).toHaveCSS('opacity', '0');
+    await expect(view(page, 0)).toBeVisible();
+  });
+
+  test('with ?plain, a focused row is edited as plain text', async ({ page }) => {
+    await page.goto('./?plain');
+    await expect(exprInput(page, 0)).toBeVisible();
+    await typeRow(page, 0, 'y = (x + 1)/(x^2 + 1)');
+    const row = page.locator('.expr-row').first();
+    const typeset = await row.boundingBox();
     await exprInput(page, 0).focus();
     await expect(exprInput(page, 0)).toHaveCSS('opacity', '1');
     await expect(view(page, 0)).toBeHidden();
+    // It keeps the row's height meanwhile.
+    const editing = await row.boundingBox();
+    expect(Math.abs((editing?.height ?? 0) - (typeset?.height ?? 0))).toBeLessThan(1);
+    // Keys are the input's own: no structure is added.
+    await exprInput(page, 1).click();
+    await exprInput(page, 1).pressSequentially('1/2x', { delay: 20 });
+    await expect(exprInput(page, 1)).toHaveValue('1/2x');
   });
 
   test('the empty first row shows its placeholder', async ({ page }) => {
@@ -89,7 +109,7 @@ test.describe('typeset rows', () => {
     const row = page.locator('.expr-row').first();
     const typeset = await row.boundingBox();
     await exprInput(page, 0).focus();
-    await expect(exprInput(page, 0)).toHaveCSS('opacity', '1');
+    await expect(view(page, 0).locator('.m-caret')).toBeVisible();
     const editing = await row.boundingBox();
     expect(typeset?.height).toBeGreaterThan(55);
     expect(Math.abs((editing?.height ?? 0) - (typeset?.height ?? 0))).toBeLessThan(1);

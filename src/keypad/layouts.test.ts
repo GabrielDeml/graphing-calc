@@ -124,7 +124,7 @@ describe("'123' page", () => {
   const required: [label: string, op: EditOp][] = [
     ['x', { type: 'insert', text: 'x' }],
     ['y', { type: 'insert', text: 'y' }],
-    ['a²', { type: 'insert', text: '^2' }],
+    ['a²', { type: 'power', exponent: '2' }],
     ['aᵇ', { type: 'insert', text: '^' }],
     ...[...'0123456789'].map((d): [string, EditOp] => [d, { type: 'insert', text: d }]),
     ['.', { type: 'insert', text: '.' }],

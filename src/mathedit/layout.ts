@@ -10,7 +10,8 @@
 //   `)` that closes nothing  → 'error' atom
 //   relation or comma in ( ) → kept inside the group as a separator
 //   number after an operand  → implicit product, like a name (`x2`)
-//   absurd nesting           → the rest of the row becomes one 'error' atom
+//   `a_` or `a_{}`           → the name with an empty subscript (one being typed)
+//   absurd nesting          → the rest of the row becomes one 'error' atom
 
 import type { RelOp } from '../engine/ast';
 import { isBuiltinFunction, PREFIXABLE_FUNCTIONS } from '../engine/builtinNames';
@@ -195,6 +196,21 @@ function tokens(source: string, ctx: NameContext): LTok[] {
       const err = errors[e] as MathError;
       const span = err.span as Span;
       if (span.start >= before) break;
+      // `a_` or `a_{}` while a subscript is being typed: the name with an empty subscript.
+      const prev = out[out.length - 1];
+      const text = source.slice(span.start, span.end);
+      if (
+        err.code === 'bad-subscript' &&
+        (text === '_' || text === '_{}') &&
+        prev?.kind === 'ident' &&
+        prev.end === span.start &&
+        prev.sub === undefined
+      ) {
+        prev.sub = '';
+        prev.subStart = span.start;
+        prev.end = span.end;
+        continue;
+      }
       out.push({
         kind: 'error',
         text: source.slice(span.start, span.end),
@@ -248,7 +264,10 @@ function spanOf(t: Span): Span {
 }
 
 function isFunctionName(t: LTok): boolean {
-  return t.kind === 'ident' && (t.nameKind === 'builtinFn' || t.nameKind === 'userFn');
+  // A name with an empty subscript (`ln_`) is a name being typed, not a function.
+  return (
+    t.kind === 'ident' && t.sub !== '' && (t.nameKind === 'builtinFn' || t.nameKind === 'userFn')
+  );
 }
 
 /** Tokens after which the engine reads an implicit product (and a tolerant read, an operand). */
@@ -611,7 +630,7 @@ export function printLayoutNode(node: LNode): string {
     case 'num':
       return String(node.value);
     case 'name':
-      return node.name;
+      return node.sub === '' ? `${node.name}_` : node.name;
     case 'unary':
       return `(${node.op === '-' ? 'neg' : 'pos'} ${printLayoutNode(node.arg)})`;
     case 'binary':

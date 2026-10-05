@@ -25,7 +25,7 @@ scratch in plain TypeScript.
 | `k = 2a + 1` | Derived variable, shows its value |
 | `f(x) = x^2`, `g(u, v) = u v` | Functions you can call from other rows: `y = f(x - 1)` |
 | `2^10`, `sqrt(2)` | Shows the value |
-| `y = (x+1)/(x^2+1)`, `sqrt(x)`, `e^(-x^2)` | Typed as plain text, shown typeset once you leave the row: a stacked fraction, a radical, a raised exponent |
+| `y = (x+1)/(x^2+1)`, `sqrt(x)`, `e^(-x^2)` | Shown typeset as you type: a stacked fraction, a radical, a raised exponent (see **Editing math** below) |
 
 Syntax notes:
 
@@ -34,7 +34,7 @@ Syntax notes:
 - **Functions without parentheses:** `sin x^2` means `sin(x²)` and `sin x cos x` means
   `sin(x)·cos(x)`. `sin^2 x` means `sin(x)²`.
 - **Powers and division:** `^` is right-associative and `-x^2` means `-(x²)`. `1/2x` means
-  `(1/2)·x`.
+  `(1/2)·x` (typed key by key in a row, it becomes `1/(2x)`: see **Editing math**).
 - **Absolute value:** `|x|`, plus `!` for factorial, `π` / `pi`, `τ` / `tau`, `e`, `θ` / `theta`.
 - **Built-in functions:**
   - trig `sin cos tan sec csc cot`
@@ -77,20 +77,49 @@ Syntax notes:
   names upright and letters in italic, `≤` `≥` `−` `·` `π` `θ` for `<=` `>=` `-` `*` `pi` `theta`
   (only on screen: the text stays as typed). Letters group the way the graph reads them, so
   `asin(x)` shows as a·sin once there is a slider `a`, and `pix` as πx. Click or tap a symbol to
-  edit the row with the caret right there (drag instead to select the plain text); the row you
-  edit shows its plain text and keeps its height. A row with an error underlines the mistake in
-  the typeset math too: a missing part (`y = 2 +`, `x^`) shows as a faint box, a parenthesis
+  put the caret right there (see **Editing math**). Slider bounds and t/θ ranges show typeset too
+  (`2pi` as 2π) and are edited as plain text. A row with an error underlines the mistake in the
+  typeset math too: a missing part (`y = 2 +`, `x^`) shows as a faint box, a parenthesis
   you haven't closed stays visible (`y = 1/(x`), and numbers missing an operator between them
   stay apart (`2 3`). Exponents rise clear of the baseline, even a fraction (`e^(-x^2/2)`), and
   `a_1^2` stacks the 2 over the 1. The color mark and the row's buttons line up with the math's
   main line, however tall a fraction makes the row. The empty first row shows "Try y = sin(x)".
   A row too long for the list fades out at its end (checked again as the list's width changes);
   absurdly deep nesting (`1/x/x/…` dozens of levels down) shows as plain text past 64 levels.
+- **Editing math:** a row is edited where it is typeset, with a caret in the row's color that
+  glides through the math and blinks once you stop typing. The text underneath stays plain math
+  (`1/(2x)`), which is what copy and paste use, and what you type stays where the caret is:
+  - `/` makes a fraction of what is before the caret (with nothing there, an empty numerator
+    first) and puts the caret in the denominator; `^` starts an exponent, and `_` a subscript
+    right after a letter. With a selection, `/` and `^` take it as the numerator or the base, and
+    `(` and `|` put it in parentheses or bars. Empty places show as faint boxes.
+  - Typing goes on in the denominator or exponent you are in: `1/2x` typed key by key becomes
+    `1/(2x)` and `e^2x` becomes `e^(2x)`, with parentheses added only where the math needs them.
+    `+`, `-`, `=`, `<`, `>` and `,` at the end of an exponent or subscript leave it first, so
+    `x^2+1` reads as typed; `Space` leaves an exponent or subscript too (elsewhere it is a
+    space). `→` leaves a denominator.
+  - `(` shows its `)` faintly until you type it, or press `→` at the end of the group; `)` and
+    `|` step over a closer that is already there. Typing `sqrt` or `cbrt` opens its parentheses.
+    `=` after `=` is ignored, `=<` and `=>` become `<=` and `>=`, and a dash `—` is a minus.
+  - `←` and `→` walk through the math (into a numerator, on into its denominator, then out), `↑`
+    and `↓` go between numerator and denominator and in and out of exponents (and on to the row
+    above or below when there is nowhere else to go), `Home` and `End` go to the row's start and
+    end. With `Shift` they select, and so does dragging the mouse across the math; a selection
+    takes whole fractions and exponents.
+  - `Backspace` at the start of a numerator, denominator, exponent, subscript, radical or
+    parentheses takes that structure apart and keeps what it held (`x^‸2` becomes `x2`); right
+    after one, it steps inside. Function names, `π`, `<=` and `x²` go as one symbol, and an
+    exponent or subscript left empty goes away when you leave it.
+  - Pasted text, and text from an input method (IME), go in exactly as written.
+  - A long row scrolls sideways to keep the caret in view.
+  - Adding `?plain` to the app's address (`…/graphing-calc/?plain`) edits rows as plain text
+    instead, typeset only once you leave them: a way out if a browser or a keyboard app has
+    trouble with the editor.
 - **Rows:**
   - `Enter` starts a new row. On an empty row it moves on to the next one instead, and on the
     empty row at the end it stays put (the keypad's ↵ puts the keypad away there).
   - `Backspace` on an empty row deletes it (on the empty row at the end it just moves up).
-  - `↑` and `↓` move between rows.
+  - `↑` and `↓` move between rows (once there is no fraction or exponent to move into).
   - Tap a curve's color dot to hide it (the dot turns hollow and the row fades) or show it again.
   - The row you are working on is selected: a bar and a faint wash in its color, which stay when
     you click the graph, until `Esc`, a tap on empty graph, or deleting the row. Clicking another
@@ -113,7 +142,8 @@ Syntax notes:
   anywhere in the app. Typing undoes in bursts, and deleting is a burst of its own, so text
   deleted or typed over right after it was typed comes back. A slider drag is one step, arrow
   keys on a slider undo like typing, and a playing slider adds none (undoing something else
-  leaves it where it is). Undo puts the caret back where the change was; a change made outside
+  leaves it where it is). Undo puts the caret back where the change was (in the denominator it
+  was in, not after the fraction); a change made outside
   the rows (delete, a color, New graph) is scrolled into view. Phones have no undo key yet: **New
   graph**, and deleting a row by touch, show an Undo button for a few seconds instead (it waits
   while you point at it or it has focus).
@@ -137,7 +167,9 @@ Syntax notes:
   numbers, functions and letters. The keyboard key on the letters page switches that row to the
   device keyboard, and the keyboard button in the header switches modes for good. Tapping the
   graph or the chevron hides the keypad; on a phone held sideways, the list and keypad sit beside
-  the graph. On desktop the keypad is off by default and can be turned on from the header.
+  the graph. On desktop the keypad is off by default and can be turned on from the header. Its
+  keys edit the way typing does: `÷` starts a fraction and `aᵇ` an exponent, `a²` squares what is
+  before the caret and carries on after the exponent, and `←` `→` walk through the math.
 
 ## Development
 
@@ -164,7 +196,8 @@ src/plot/         geometry: viewport, ticks, adaptive samplers, marching squares
                   interest (pure TS)
 src/keypad/       on-screen keypad layouts and text-editing logic (pure TS)
 src/mathedit/     typeset rows: a tolerant parse that reads text exactly as the engine does,
-                  the render plan (boxes, spacing, error marks) and caret stops (pure TS)
+                  the render plan (boxes, spacing, error marks), caret stops and the editing
+                  commands, which splice the text and check where it landed (pure TS)
 src/render/       canvas drawing and the render loop
 src/interaction/  pan / zoom / pinch gestures
 src/state/        Solid stores and signals; the undo history core, the autosave format and what

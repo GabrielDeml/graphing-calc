@@ -141,14 +141,16 @@ export function editKind(before: string, after: string): EditKind {
  * sealing the open one). Typing coalesces with typing and deleting with deleting, but switching
  * between them starts a new step, so undo always brings back text that was typed and then
  * deleted, however quickly (select all + Backspace). Typing over a selection starts a new
- * typing burst.
+ * typing burst. `kind` overrides what the texts suggest: a typeset row's editor knows that
+ * typing `x` into `1/2` is an insertion, though its parentheses make `1/(2x)` look like a
+ * replacement.
  */
 export function editGroup(
   field: string,
   before: string,
   after: string,
+  kind: EditKind = editKind(before, after),
 ): { group: string; fresh: boolean } {
-  const kind = editKind(before, after);
   return { group: `${kind === 'delete' ? 'delete' : 'type'}:${field}`, fresh: kind === 'replace' };
 }
 

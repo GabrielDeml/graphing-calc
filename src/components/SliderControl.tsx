@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, Show, untrack } from 'solid-js';
 import { formatSliderValue, formatValue } from '../engine/format';
-import { analysis, evalNumber } from '../state/analysis';
+import { analysis, evalNumber, nameContext } from '../state/analysis';
 import { endUndoStep, type Row, setSliderField, setSliderPlaying } from '../state/doc';
 import { rowInput } from '../state/focus';
 import { setSliderValue } from '../state/rowActions';
@@ -112,6 +112,7 @@ export function SliderControl(props: { row: Row; name: string; value: number; st
         onChange={(t) => setSliderField(props.row.id, 'min', t)}
         onEnter={blurActive}
         ariaLabel={`${props.name} slider minimum`}
+        names={nameContext()}
       />
       <div class="slider-track" style={{ '--frac': String(fraction()) }}>
         <input
@@ -155,6 +156,7 @@ export function SliderControl(props: { row: Row; name: string; value: number; st
         onChange={(t) => setSliderField(props.row.id, 'max', t)}
         onEnter={blurActive}
         ariaLabel={`${props.name} slider maximum`}
+        names={nameContext()}
       />
       <span class="slider-step">
         <span aria-hidden="true">step</span>
@@ -165,6 +167,7 @@ export function SliderControl(props: { row: Row; name: string; value: number; st
           onChange={(t) => setSliderField(props.row.id, 'step', t)}
           onEnter={blurActive}
           ariaLabel={`${props.name} slider step`}
+          names={nameContext()}
         />
       </span>
     </div>

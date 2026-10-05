@@ -1,4 +1,5 @@
 import { createRoot, createSignal } from 'solid-js';
+import type { EditOp } from '../keypad/editing';
 import type { PageId } from '../keypad/layouts';
 import { savedState } from './persist';
 
@@ -14,6 +15,11 @@ export interface EditTarget {
   enter(): void;
   /** ⌫ on an empty field (expression rows delete themselves, like the hardware key). */
   deleteEmpty?(): void;
+  /**
+   * Make an edit itself (rows edited in their typeset form, by their editor's rules); without
+   * it, the keypad applies plain text edits (applyEdit) and commits the result.
+   */
+  apply?(op: EditOp): void;
 }
 
 const coarsePointer = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;

@@ -928,9 +928,10 @@ button {
 
 /*
  * Typeset rows: the math shows typeset (.math-view) and the input lies over it, invisible, taking
- * every click and key. Focused, the input shows the plain text over the hidden view, which keeps
- * its last drawing so the row keeps its height. A taller row centers the input's line, and the
- * error mirror's with it.
+ * every click and key. Edited in place (.in-place), it stays so: the view draws the caret. Else,
+ * focused, the input shows the plain text over the hidden view, which keeps its last drawing so
+ * the row keeps its height. A taller row centers the input's line, and the error mirror's with
+ * it.
  */
 .math-field.typeset .math-input {
   position: absolute;
@@ -939,13 +940,29 @@ button {
   height: 100%;
 }
 
-.math-field.typeset:not(:focus-within) .math-input {
+.math-field.typeset:not(:focus-within) .math-input,
+.math-field.in-place .math-input {
   opacity: 0;
 }
 
 .math-field.typeset:not(:focus-within) .math-mirror,
-.math-field.typeset:focus-within .math-view {
+.math-field.typeset:not(.in-place):focus-within .math-view {
   visibility: hidden;
+}
+
+/* No native caret, selection handles, magnifier or callout over the math being edited. */
+.math-field.in-place {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.math-field.in-place .math-input {
+  caret-color: transparent;
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .math-field.typeset .math-mirror {
@@ -961,6 +978,9 @@ button {
  * the input's metrics (19px on 24px lines, 4px 2px padding), so the text doesn't move on focus.
  */
 .math-view {
+  position: relative;
+  /* The selection's highlight goes under the math, not under the row. */
+  isolation: isolate;
   min-height: 32px;
   padding: 4px 2px;
   overflow: hidden;
@@ -982,10 +1002,104 @@ button {
   display: inline-block;
 }
 
-/* A row too long for the list fades out at its end. */
+/* A row too long for the list fades out at its end, and at its start once scrolled. */
 .math-view.overflowing {
   -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
   mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+}
+
+.math-view.overflowing.scrolled {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 20px,
+    #000 calc(100% - 28px),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 20px,
+    #000 calc(100% - 28px),
+    transparent
+  );
+}
+
+.math-view.overflowing.scrolled.scrolled-end {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 20px);
+  mask-image: linear-gradient(to right, transparent, #000 20px);
+}
+
+/* Each block starts with this: an empty box on its baseline, in its font, to stand the caret on. */
+.m-strut {
+  display: inline-block;
+  width: 0;
+  height: 0;
+}
+
+/*
+ * The caret, in the row's color (the accent until the row has one). It glides between places,
+ * holds still while keys come, and blinks softly once they stop.
+ */
+.m-caret {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--accent);
+  pointer-events: none;
+  transition:
+    transform var(--dur-1) var(--ease-out),
+    height var(--dur-1) var(--ease-out);
+  animation: caret-blink 1.1s ease-in-out 0.5s infinite;
+}
+
+.expr-row.plots .m-caret {
+  background: var(--row-color);
+}
+
+.m-caret.m-caret-hold {
+  animation: none;
+}
+
+@keyframes caret-blink {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  55%,
+  90% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m-caret {
+    animation: none;
+  }
+}
+
+/* The selection: a soft wash of the row's color under what it covers. */
+.m-selection {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: -1;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  pointer-events: none;
+}
+
+.expr-row.plots .m-selection {
+  background: color-mix(in srgb, var(--row-color) 20%, transparent);
+}
+
+/* The closer an open group will need, while the row is edited: there, but not yet typed. */
+.m-ghost {
+  opacity: 0.3;
 }
 
 .m-placeholder {
@@ -1019,7 +1133,11 @@ button {
   margin-left: 0.2778em;
 }
 
-/* An empty place (`2 +`, `x^`): a faint box. */
+/* An empty place (`2 +`, `x^`): a faint box; a little clearer while the row is edited. */
+.math-view.editing .m-slot {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--row-color) 40%, var(--hairline-strong));
+}
+
 .m-slot {
   display: inline-block;
   width: 0.6em;
@@ -1258,12 +1376,46 @@ button {
   box-shadow: inset 0 0 0 1px var(--danger);
 }
 
+/* Their typeset math (`2π`), shown at rest, with the input's metrics and quiet look. */
+.slider-bound .math-view,
+.range-bound .math-view {
+  min-height: 24px;
+  font-size: 15px;
+  line-height: 20px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  color: var(--text-2);
+  transition: background-color var(--dur-1) var(--ease-out);
+}
+
+.slider-bound.typeset:not(:focus-within):hover .math-view,
+.range-bound.typeset:not(:focus-within):hover .math-view {
+  background: var(--hover);
+}
+
+.slider-bound.typeset:not(:focus-within):has(.math-input[aria-invalid="true"]) .math-view,
+.range-bound.typeset:not(:focus-within):has(.math-input[aria-invalid="true"]) .math-view {
+  box-shadow: inset 0 0 0 1px var(--danger);
+}
+
+.slider-max .math-view,
+.slider-step .math-view,
+.range-control .range-bound:first-child .math-view {
+  text-align: right;
+}
+
+.range-bound .math-view {
+  min-width: 28px;
+}
+
 /* Phones zoom into fields under 16px. */
 @media (pointer: coarse) {
   .slider-bound .math-input,
   .range-bound .math-input,
   .slider-bound .math-mirror,
-  .range-bound .math-mirror {
+  .range-bound .math-mirror,
+  .slider-bound .math-view,
+  .range-bound .math-view {
     font-size: 16px;
   }
 }

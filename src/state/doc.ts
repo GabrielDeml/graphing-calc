@@ -1,7 +1,7 @@
 import { batch, createSignal } from 'solid-js';
 import { createStore, produce, reconcile, unwrap } from 'solid-js/store';
 import { focusedRow, focusRow } from './focus';
-import { caretAfterChange, editGroup, History } from './history';
+import { caretAfterChange, type EditKind, editGroup, History } from './history';
 import { type SavedRow, savedState } from './persist';
 
 export interface SliderSettings {
@@ -73,8 +73,11 @@ export type ChangeOrigin = 'edit' | 'drag' | 'key' | 'animation';
 
 interface Snapshot {
   rows: Row[];
-  /** The row being edited when the snapshot was taken; undo puts the caret back there. */
-  focus: { id: string; caret: number } | null;
+  /**
+   * The row being edited when the snapshot was taken; undo puts the caret back there (at its
+   * depth too, in a typeset row: in a denominator rather than after the fraction).
+   */
+  focus: { id: string; caret: number; depth?: number } | null;
 }
 
 /** Undo history copies; whether a slider is playing is live state, not part of a step. */
@@ -225,7 +228,9 @@ function restore(target: Snapshot | undefined, focusChanged: boolean): Restored 
   };
   // Back to the row the step was made in, with the caret where the text changed.
   if (target.focus && getRow(target.focus.id)) {
-    focusRow(target.focus.id, caret(target.focus.id, target.focus.caret));
+    const { id, caret: at, depth } = target.focus;
+    const offset = caret(id, at);
+    focusRow(id, offset, offset === at ? depth : undefined);
     return { focused: target.focus.id, changed };
   }
   // A step made outside the rows (×, a color, New graph). The row being edited keeps focus; if
@@ -319,13 +324,22 @@ export function adoptRows(saved: readonly SavedRow[]): boolean {
   return true;
 }
 
-export function updateSource(id: string, source: string, origin: ChangeOrigin = 'edit'): void {
+/**
+ * Set a row's text. `kind`: how an edit changed it, when the editor knows better than the texts
+ * show (see editGroup).
+ */
+export function updateSource(
+  id: string,
+  source: string,
+  origin: ChangeOrigin = 'edit',
+  kind?: EditKind,
+): void {
   const i = indexOf(id);
   if (i < 0) return;
   const before = doc.rows[i].source;
   if (before === source) return;
   if (origin === 'edit') {
-    const { group, fresh } = editGroup(id, before, source);
+    const { group, fresh } = editGroup(id, before, source, kind);
     if (fresh) history.seal();
     willChange(group);
   } else if (origin === 'drag') willChange(`drag:${id}`, Number.POSITIVE_INFINITY);

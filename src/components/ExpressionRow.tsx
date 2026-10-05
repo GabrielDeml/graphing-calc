@@ -233,7 +233,7 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
       <div class="expr-body">
         <MathField
           value={props.row.source}
-          onChange={(text) => updateSource(props.row.id, text)}
+          onChange={(text, kind) => updateSource(props.row.id, text, 'edit', kind)}
           // Keypad ↵ (the hardware key goes through onKeyDown): on the empty last row, where
           // Enter has nowhere to go, it means "done" and puts the keypad away.
           onEnter={() => enterFrom(props.row.id) || blurActive()}
@@ -254,6 +254,7 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
           placeholder={props.index === 0 ? 'Try y = sin(x)' : ''}
           testId="expr-input"
           names={nameContext()}
+          inPlace
         />
 
         {/* Outside the error gate: a bad t/θ range is reported as a row error, and the fields
