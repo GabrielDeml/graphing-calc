@@ -71,31 +71,43 @@ export default function App() {
    * instead of running into that floor partway and stopping dead.
    */
   const [collapsedShare, setCollapsedShare] = createSignal(0);
+  /**
+   * Measure the room (the graph's height and the list's), which changes when the keypad comes or
+   * goes or the window resizes, never as a snap moves the split.
+   */
+  const measureRoom = () => {
+    const graph = app.querySelector(':scope > .graph');
+    const panel = app.querySelector(':scope > .panel');
+    if (!graph || !panel) return;
+    const room = graph.getBoundingClientRect().height + panel.getBoundingClientRect().height;
+    const floor = Number.parseFloat(getComputedStyle(app).getPropertyValue('--panel-collapsed'));
+    if (!(room > 0 && floor > 0)) return;
+    const share = Math.min(100, (100 * floor) / room);
+    if (Math.abs(share - collapsedShare()) * room < 50) return;
+    // A collapsed list keeps its height as the room changes, at once: only snaps glide.
+    const still = ui.panelSnap() === 'collapsed' && ui.panelDrag() === null;
+    if (still) app.style.transition = 'none';
+    setCollapsedShare(share);
+    if (still) {
+      void app.offsetHeight;
+      app.style.transition = '';
+    }
+  };
   onMount(() => {
-    const graph = app.querySelector<HTMLElement>(':scope > .graph');
-    const panel = app.querySelector<HTMLElement>(':scope > .panel');
-    if (!graph || !panel || typeof ResizeObserver !== 'function') return;
-    // The two resize every frame of a snap, their sum (the room) only when the keypad comes or
-    // goes, or the window changes.
-    const ro = new ResizeObserver(() => {
-      const room = graph.getBoundingClientRect().height + panel.getBoundingClientRect().height;
-      const floor = Number.parseFloat(getComputedStyle(app).getPropertyValue('--panel-collapsed'));
-      if (!(room > 0 && floor > 0)) return;
-      const share = Math.min(100, (100 * floor) / room);
-      if (Math.abs(share - collapsedShare()) * room < 50) return;
-      // A collapsed list keeps its height as the room changes, at once: only snaps glide.
-      const still = ui.panelSnap() === 'collapsed' && ui.panelDrag() === null;
-      if (still) app.style.transition = 'none';
-      setCollapsedShare(share);
-      if (still) {
-        void app.offsetHeight;
-        app.style.transition = '';
-      }
-    });
-    ro.observe(graph);
-    ro.observe(panel);
+    measureRoom();
+    // The window: the app's own size, which the split inside it never changes.
+    if (typeof ResizeObserver !== 'function') return;
+    const ro = new ResizeObserver(measureRoom);
+    ro.observe(app);
     onCleanup(() => ro.disconnect());
   });
+  // The keypad: measured once it has come into the layout or gone out of it (all of this update
+  // applied), before any frame.
+  createEffect(
+    on([keypadVisible, keypadShown, keypadLeaving], () => queueMicrotask(measureRoom), {
+      defer: true,
+    }),
+  );
 
   /**
    * The phone's graph and list rows, as shares of the room they split (fr, summing to 100), so a

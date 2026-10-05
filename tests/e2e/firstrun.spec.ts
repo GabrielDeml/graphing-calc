@@ -1,13 +1,4 @@
-import {
-  countColor,
-  expect,
-  exprInput,
-  openApp,
-  RED,
-  setExpr,
-  test,
-  touchSession,
-} from './helpers';
+import { countColor, expect, exprInput, openApp, RED, setExpr, test } from './helpers';
 
 const example = (page: import('@playwright/test').Page, name: string) =>
   page.getByRole('button', { name: `Graph ${name}`, exact: true });
@@ -122,12 +113,12 @@ test.describe('first run on a phone', () => {
 
   test('a long press on an example graphs it without popping up the keypad', async ({ page }) => {
     await openApp(page);
-    const chip = await example(page, 'y = x²').boundingBox();
-    if (!chip) throw new Error('no chip');
-    const touch = await touchSession(page);
-    await touch.start({ x: chip.x + chip.width / 2, y: chip.y + chip.height / 2 });
-    await page.waitForTimeout(700);
-    await touch.end();
+    // What a long touch press ends with: a click whose detail is 0, as a keyboard's is.
+    await example(page, 'y = x²').evaluate((chip) => {
+      chip.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch' }));
+      chip.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'touch' }));
+      chip.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0 }));
+    });
     await expect(exprInput(page, 0)).toHaveValue('y = x^2');
     await page.waitForTimeout(300);
     await expect(exprInput(page, 0)).not.toBeFocused();

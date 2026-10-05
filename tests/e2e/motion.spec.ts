@@ -109,6 +109,43 @@ test.describe('the phone layout in motion', () => {
     expect(during.filter((q) => q !== 'interactive')).toEqual([]);
   });
 
+  test('collapsing the list eases all the way in, not stopping dead at its floor', async ({
+    page,
+  }) => {
+    await openApp(page);
+    await page.locator('.panel-title').tap();
+    await expect(page.locator('.app')).toHaveAttribute('data-panel', 'full');
+    await page.waitForTimeout(400);
+    // The list's height frame by frame (with the frame's time) as it collapses.
+    await page.evaluate(() => {
+      const panel = document.querySelector('.app > .panel') as HTMLElement;
+      const frames: Array<[number, number]> = [];
+      (window as unknown as { collapse: Promise<Array<[number, number]>> }).collapse =
+        (async () => {
+          for (let i = 0; i < 40; i++) {
+            const t = await new Promise<number>((done) => requestAnimationFrame(done));
+            frames.push([t, panel.getBoundingClientRect().height]);
+          }
+          return frames;
+        })();
+    });
+    await page.locator('.panel-title').tap();
+    await expect(page.locator('.app')).toHaveAttribute('data-panel', 'collapsed');
+    const frames = await page.evaluate(
+      () => (window as unknown as { collapse: Promise<Array<[number, number]>> }).collapse,
+    );
+    const [from, floor] = [frames[0][1], frames[frames.length - 1][1]];
+    expect(floor).toBeLessThan(from - 100);
+    const left = frames.findLastIndex(([, h]) => h >= from - 0.5);
+    const landed = frames.findIndex(([, h]) => h <= floor + 0.5);
+    // Down all the way, never back up.
+    for (let i = 1; i < frames.length; i++) {
+      expect(frames[i][1]).toBeLessThanOrEqual(frames[i - 1][1] + 0.5);
+    }
+    // It lands as the snap ends (--dur-3, 240 ms), eased, rather than early, at full speed.
+    expect(frames[landed][0] - frames[left][0]).toBeGreaterThan(160);
+  });
+
   test('the keypad slides away while the graph takes its room at once', async ({ page }) => {
     await openApp(page);
     await exprInput(page, 0).tap();
@@ -135,7 +172,8 @@ test.describe('the phone layout in motion', () => {
         frames.push({ top: top(), leaving: !!first?.classList.contains('leaving') });
       const open = top();
       (document.querySelector('[data-testid="keypad-hide"]') as HTMLElement).click();
-      for (let i = 0; i < 2; i++) {
+      // Until it is on its way down.
+      for (let i = 0; i < 8 && !(top() > open + 10); i++) {
         await frame();
         note();
       }
@@ -156,6 +194,33 @@ test.describe('the phone layout in motion', () => {
     }
     expect(run.frames[run.frames.length - 1].top).toBeCloseTo(run.open, 0);
     await expect(page.getByTestId('keypad')).not.toHaveClass(/\bleaving\b/);
+  });
+
+  test('with a home indicator, the sheet slides away from where it was', async ({ page }) => {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { bottom: 34 } });
+    await openApp(page);
+    await exprInput(page, 0).tap();
+    await expect(page.getByTestId('keypad')).toBeVisible();
+    await page.waitForTimeout(300);
+    const open = await page.getByTestId('keypad').boundingBox();
+    // Hidden, and its slide held at its start.
+    const start = await page.evaluate(() => {
+      (document.querySelector('[data-testid="keypad-hide"]') as HTMLElement).click();
+      const sheet = document.querySelector('.keypad.leaving') as HTMLElement;
+      for (const a of sheet.getAnimations()) {
+        a.pause();
+        a.currentTime = 0;
+      }
+      const r = sheet.getBoundingClientRect();
+      const inset = getComputedStyle(document.querySelector('.app') as HTMLElement).paddingBottom;
+      return { y: r.y, height: r.height, inset };
+    });
+    // The app took the inset back meanwhile.
+    expect(start.inset).toBe('34px');
+    expect(start.y).toBeCloseTo(open?.y ?? Number.NaN, 0);
+    expect(start.height).toBeCloseTo(open?.height ?? Number.NaN, 0);
+    await expect(page.getByTestId('keypad')).toHaveCount(0);
   });
 
   test('with reduced motion the keypad goes at once', async ({ page }) => {

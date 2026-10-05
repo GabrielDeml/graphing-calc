@@ -215,16 +215,26 @@ test.describe('flinging the graph', () => {
     await openApp(page);
     const g = await box(page.getByTestId('graph'));
     const [x, y] = [g.x + g.width / 2, g.y + g.height / 2];
-    const touch = await touchSession(page);
-    await touch.start({ x: x - 20, y }, { x: x + 20, y });
-    for (let d = 30; d <= 80; d += 10) await touch.move({ x: x - d, y }, { x: x + d, y });
-    // The second finger lifts (a move that leaves it out); the first flicks on alone.
-    await touch.move({ x: x - 80, y });
+    // Each finger on its own: CDP takes touch points one at a time too.
+    const cdp = await page.context().newCDPSession(page);
+    const finger = (
+      type: 'touchStart' | 'touchMove' | 'touchEnd',
+      id: number,
+      at: { x: number; y: number },
+    ) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: [{ ...at, id }] });
+    await finger('touchStart', 0, { x: x - 20, y });
+    await finger('touchStart', 1, { x: x + 20, y });
+    for (let d = 30; d <= 80; d += 10) {
+      await finger('touchMove', 0, { x: x - d, y });
+      await finger('touchMove', 1, { x: x + d, y });
+    }
+    // The second finger lifts; the first goes on alone, and flicks.
+    await finger('touchEnd', 1, { x: x + 80, y });
     for (let i = 1; i <= 6; i++) {
       await page.waitForTimeout(16);
-      await touch.move({ x: x - 80 + i * 20, y });
+      await finger('touchMove', 0, { x: x - 80 + i * 20, y });
     }
-    await touch.end();
+    await finger('touchEnd', 0, { x: x + 40, y });
     await page.waitForTimeout(50);
     const lifted = await view(page);
     await page.waitForTimeout(400);

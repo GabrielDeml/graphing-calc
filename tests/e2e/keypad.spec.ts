@@ -102,6 +102,44 @@ test.describe('math keypad on touch devices', () => {
     await expect(page.getByTestId('expr-input')).toHaveCount(1);
   });
 
+  test('after its Undo, a toast offers the step back', async ({ page }) => {
+    await openApp(page);
+    await exprInput(page, 0).tap();
+    await tapKeys(page, ['y', 'eq', 'x']);
+    await page.getByTestId('keypad-undo').tap();
+    await expect(exprInput(page, 0)).toHaveValue('');
+    const toast = page.getByTestId('toast');
+    await expect(toast).toContainText('Undone');
+    await toast.getByRole('button', { name: 'Redo', exact: true }).tap();
+    await expect(exprInput(page, 0)).toHaveValue('y=x');
+    await expect(toast).toHaveCount(0);
+    await expect(page.getByTestId('keypad')).toBeVisible();
+  });
+
+  test('a press counts on the button it began on, wherever its click lands', async ({ page }) => {
+    await openApp(page);
+    await exprInput(page, 0).tap();
+    await page.getByTestId('keypad-tab-fx').tap();
+    await expect(page.getByTestId('keypad-tab-fx')).toHaveAttribute('aria-selected', 'true');
+    // A press on the 123 tab whose click lands on a key that slid under the finger meanwhile
+    // (the sheet sliding up): the tab is chosen, the key does nothing.
+    await page.evaluate(() => {
+      const tab = document.querySelector('[data-testid="keypad-tab-123"]') as HTMLElement;
+      const init = { bubbles: true, cancelable: true, pointerType: 'touch' };
+      tab.dispatchEvent(new PointerEvent('pointerdown', init));
+      tab.dispatchEvent(new PointerEvent('pointerup', init));
+      const key = document.querySelector('[data-testid="key-7"]') as HTMLElement;
+      key.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+    await expect(page.getByTestId('keypad-tab-123')).toHaveAttribute('aria-selected', 'true');
+    await expect(exprInput(page, 0)).toHaveValue('');
+    // A click with no press before it (a screen reader) works the key.
+    await page.evaluate(() =>
+      (document.querySelector('[data-testid="key-7"]') as HTMLElement).click(),
+    );
+    await expect(exprInput(page, 0)).toHaveValue('7');
+  });
+
   test('a key gives a little while it is held', async ({ page }) => {
     await openApp(page);
     await exprInput(page, 0).tap();
