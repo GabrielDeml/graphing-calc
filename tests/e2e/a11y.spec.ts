@@ -26,7 +26,10 @@ test.describe('accessibility on desktop', () => {
     await setExpr(page, 0, 'y = x^2');
     await setExpr(page, 1, 'a = 2');
     await setExpr(page, 2, 'y = m x');
-    await expect(page.locator('.expr-row').nth(2).getByRole('alert')).toBeVisible();
+    // While the row is edited, its unknown name is offered as a slider (a chip, not an alert).
+    await expect(
+      page.locator('.expr-row').nth(2).getByRole('button', { name: 'Add slider: m' }),
+    ).toBeVisible();
     // Header, graph controls, row marks and actions, play.
     await expectIconButtonsNamed(page, 10);
 

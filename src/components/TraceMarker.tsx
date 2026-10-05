@@ -69,33 +69,38 @@ export function TraceMarker(props: {
             <span class="trace-dot" />
             <span
               class="trace-pill"
+              classList={{ 'has-actions': !!props.actions }}
               ref={measure}
               style={{ left: `${pillLeft()}px`, 'max-width': `${maxWidth()}px` }}
             >
-              <span class="trace-swatch" />
-              <Show when={props.kind}>
-                {(kind) => (
-                  <span class="trace-kind">
-                    <Show when={kind().meets.length > 0}>
-                      <span>Intersection with</span>
-                      <For each={kind().meets}>
-                        {(m) => (
-                          <span class="trace-meet" style={{ '--meet-color': m.color }}>
-                            <span class="trace-meet-text">{m.text}</span>
-                          </span>
-                        )}
+              <span class="trace-line">
+                <span class="trace-swatch" />
+                <Show when={props.kind}>
+                  {(kind) => (
+                    <span class="trace-kind">
+                      <Show when={kind().meets.length > 0}>
+                        <span>Intersection with</span>
+                        <For each={kind().meets}>
+                          {(m) => (
+                            <span class="trace-meet" style={{ '--meet-color': m.color }}>
+                              <span class="trace-meet-text">{m.text}</span>
+                            </span>
+                          )}
+                        </For>
+                      </Show>
+                      <For each={kind().names}>
+                        {(name) => <span class="trace-kind-name">{name}</span>}
                       </For>
-                    </Show>
-                    <For each={kind().names}>
-                      {(name) => <span class="trace-kind-name">{name}</span>}
-                    </For>
-                  </span>
-                )}
-              </Show>
-              {/* The status holds only "(x, y)". */}
-              <span class="trace-label" role="status">
-                {label()}
+                    </span>
+                  )}
+                </Show>
+                {/* The status holds only "(x, y)". */}
+                <span class="trace-label" role="status">
+                  {label()}
+                </span>
               </span>
+              {/* On the far side of the coordinates from the point: a finger reaching for a
+                  point beside the pinned one lands on the graph, not on these. */}
               <Show when={props.actions}>
                 {(actions) => (
                   <span class="trace-actions">

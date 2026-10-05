@@ -1904,23 +1904,34 @@ button {
 }
 
 /*
- * Color dot, what the point is (when it is something), then "(x, y)". TraceMarker sets its left
- * (beside the point, kept inside the graph) and its max-width.
+ * Color dot, what the point is (when it is something), then "(x, y)"; a pinned point of an
+ * explicit curve adds a row of actions on the side away from the point. TraceMarker sets its
+ * left (beside the point, kept inside the graph) and its max-width.
  */
 .trace-pill {
   position: absolute;
   bottom: var(--space-3);
   left: var(--space-3);
   display: flex;
-  align-items: center;
-  gap: 7px;
-  height: 28px;
-  padding: 0 11px 0 10px;
+  flex-direction: column-reverse;
   border-radius: var(--radius-pill);
   background: var(--surface-float);
   box-shadow: var(--elev-2);
   color: var(--text-1);
   white-space: nowrap;
+}
+
+.trace-pill.has-actions {
+  border-radius: var(--radius-2);
+}
+
+.trace-line {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  height: 28px;
+  padding: 0 11px 0 10px;
 }
 
 .trace-swatch {
@@ -1996,33 +2007,37 @@ button {
 .trace.flip-y .trace-pill {
   bottom: auto;
   top: var(--space-3);
+  flex-direction: column;
 }
 
-/* A pinned point's one-tap actions, after the coordinates: quiet, like the pill itself. */
+/* A pinned point's one-tap actions: quiet, like the pill itself. */
 .trace-actions {
   display: flex;
-  flex: none;
-  align-items: center;
   gap: 2px;
-  margin-right: -7px;
-  padding-left: 6px;
-  border-left: 1px solid var(--hairline);
+  padding: 3px;
+  border-bottom: 1px solid var(--hairline);
   animation: fade-in var(--dur-2) var(--ease-out);
 }
 
+.trace.flip-y .trace-actions {
+  border-top: 1px solid var(--hairline);
+  border-bottom: none;
+}
+
 .trace-action {
-  position: relative;
   display: inline-flex;
+  flex: none;
   align-items: center;
-  gap: 4px;
-  height: 22px;
-  padding: 0 7px 0 5px;
+  gap: 5px;
+  height: 28px;
+  padding: 0 9px 0 7px;
   border: none;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-1);
   background: transparent;
   color: var(--text-2);
   font-size: 12.5px;
   pointer-events: auto;
+  touch-action: manipulation;
   transition:
     background-color var(--dur-1) var(--ease-out),
     color var(--dur-1) var(--ease-out);
@@ -2033,12 +2048,13 @@ button {
   color: var(--text-1);
 }
 
-/* A finger needs more room than the pill shows: the button reaches past it, unseen. */
+.trace-action:active {
+  background: var(--press);
+}
+
 @media (pointer: coarse) {
-  .trace-action::before {
-    content: "";
-    position: absolute;
-    inset: -11px -1px;
+  .trace-action {
+    height: 36px;
   }
 }
 

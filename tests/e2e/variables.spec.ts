@@ -28,9 +28,20 @@ test('user functions can be defined and called', async ({ page }) => {
   await expect.poll(() => countColorNear(page, 1, 0, GREEN)).toBe(0);
 });
 
-test('unknown names offer to add sliders', async ({ page }) => {
+test('unknown names become sliders on Enter, and Undo brings the offer back', async ({ page }) => {
   await openApp(page);
   await setExpr(page, 0, 'y = m x + b');
+  await exprInput(page, 0).press('Enter');
+  await expect(exprInput(page, 1)).toHaveValue('m = 1');
+  await expect(exprInput(page, 2)).toHaveValue('b = 1');
+  await expect(exprInput(page, 3)).toBeFocused();
+  await expect(page.locator('.expr-row').first().getByRole('alert')).toHaveCount(0);
+  const toast = page.getByTestId('toast');
+  await expect(toast).toContainText('Added sliders m, b');
+  await toast.getByRole('button', { name: 'Undo' }).click();
+  await expect(page.getByTestId('expr-input')).toHaveCount(2);
+  await expect(exprInput(page, 0)).toHaveValue('y = m x + b');
+  // The one-tap way stays.
   const fix = page.getByRole('button', { name: /Add sliders: m, b/ });
   await expect(fix).toBeVisible();
   await fix.click();
