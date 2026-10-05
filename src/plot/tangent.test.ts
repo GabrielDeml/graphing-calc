@@ -51,12 +51,12 @@ describe('formatSlope', () => {
   it.each([
     // The same at any zoom, finer for gentle slopes, coarser for steep ones.
     [0.04, 1000, '0.04'],
-    [1 / 3, 1000, '0.333'],
+    [1 / 3, 1000, '0.3333'],
     [2 * Math.SQRT2, 1000, '2.828'],
     [-1.26, 1000, '-1.26'],
     [3e8 + 0.4, 1000, '300000000'],
     [1e-9, 1000, '0'],
-    [1 / 3, 100, '0.33'],
+    [1 / 3, 100, '0.333'],
   ])('%d across %d px is %s', (m, span, text) => {
     expect(formatSlope(m, span)).toBe(text);
   });
@@ -77,7 +77,7 @@ describe('tangentRow', () => {
     ['x', Math.SQRT2, 0, 2 * Math.SQRT2, 5, 'y = 2.828(x - 1.41)'],
     // Zoomed far out, a gentle slope is still a slope.
     ['x', 20, 0.4, 0.04, 0.5, 'y = 0.04(x - 20) + 0.4'],
-    ['x', 3000, 1000, 1 / 3, 0.05, 'y = 0.333(x - 3000) + 1000'],
+    ['x', 3000, 1000, 1 / 3, 0.05, 'y = 0.3333(x - 3000) + 1000'],
     // x = f(y): the roles swap.
     ['y', 1, 1, 2, 50, 'x = 2(y - 1) + 1'],
   ] as const)('%s at (%d, %d), slope %d: %s', (variable, u, v, m, ppu, text) => {
@@ -92,10 +92,10 @@ describe('tangentRow', () => {
       const a = new DocumentEngine().update([{ id: 'r0', source: text }]);
       const plot = a.byId.get('r0')?.plot;
       if (plot?.kind !== 'explicitY') throw new Error(`${text}: not a curve`);
-      // Through the point, with its slope: within half a pixel of it across the view.
+      // Through the point, with its slope: within a tenth of a pixel of it across the view.
       expect(plot.f(x0)).toBeCloseTo(f(x0), 2);
       const slope = plot.f(x0 + 1) - plot.f(x0);
-      expect(Math.abs(Math.atan(slope) - Math.atan(m)) * 1000).toBeLessThan(0.5);
+      expect(Math.abs(Math.atan(slope) - Math.atan(m)) * 1000).toBeLessThan(0.1);
     }
   });
 });

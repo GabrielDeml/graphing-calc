@@ -53,16 +53,20 @@ Syntax notes:
   at the top right zoom or reset the view. With the graph focused, the keyboard works too: arrows
   pan, `+` and `-` zoom, `0` resets.
 - **Trace:** hover a curve to see its coordinates, in a pill with the curve's color; its row in the
-  list lights up faintly. On touch, tap a curve to pin the trace. Near a point of interest the
+  list lights up faintly. On touch, tap a curve to pin the trace; with a mouse, click the selected
+  curve (the first click on a curve selects it). Near a point of interest the
   trace snaps to it and names it ("Root", "Minimum", "Intersection with ● y = x/3"), and its ring
   grows. Where curves cross, the trace stays on the selected one. To scrub along a curve on
   touch, drag the pinned trace's dot, or press and hold on a curve for a moment (the dot grows)
   and then drag; any other drag pans, and a tap next to the pinned dot is still a tap. `Esc`
   lets go of a pinned trace along with the selection. On a pinned point of a curve `y = f(x)` (or
-  `x = f(y)`), two buttons over the coordinates add a row below the curve's: **Tangent here** adds
+  `x = f(y)`), two buttons by the coordinates add a row below the curve's: **Tangent here** adds
   the tangent line there, as `y = 2.828(x - 1.414)`, and **Keep point** adds the point, as
-  `(1.414, 0)`, written the way the pill shows the numbers (no tangent at a corner like `|x|` at
-  0).
+  `(1.414, 0)`, written the way the pill shows the numbers (the slope as precisely as the view
+  needs, however far out it is zoomed). There is no tangent at a corner like `|x|` at 0, nor on
+  a straight line, which is its own. A second tap adds nothing more, and on touch a toast offers
+  to undo it. The pill moves below the point near the top of the graph, and keeps clear of the
+  zoom buttons.
 - **The selected curve:** the selected row's curve is drawn on top, a little bolder, with a soft
   halo. Clicking or tapping a curve selects its row (it scrolls into view and pulses briefly)
   without opening it for editing, so no keypad pops up; a click a little away from every curve
@@ -72,11 +76,12 @@ Syntax notes:
   axis, as `sqrt(4 - x^2)` does at ±2), local maxima and minima, where it crosses the axes and
   where it meets the other curves, as grey rings that bloom in once found. Hover or click one (or
   tap it) to see what it is; clicking a ring pins the trace there, while clicking elsewhere on a
-  curve only selects it. From the graph, `Tab` reaches them and the arrow keys walk from one to
-  the next. Only what is in view is shown, and only while it stays readable: kinds of points
-  that would crowd the graph are left out whole, extrema first and then crossings of the axes
-  (zoomed out on `sin(x)`, its extrema go, then its roots), until you zoom in. While you type in
-  the selected row, its rings stay, faded, until the new ones are found.
+  curve only selects it (a click on the selected curve pins it there). From the graph, `Tab`
+  reaches them and the arrow keys walk from one to the next. Only what is in view is shown, and
+  only while it stays readable: kinds of points that would crowd the graph are left out whole,
+  extrema first and then crossings of the axes (zoomed out on `sin(x)`, its extrema go, then its
+  roots), until you zoom in. While you type in the selected row, its rings stay, faded, until the
+  new ones are found.
 - **Typeset math:** rows you aren't editing show their math typeset, as in a textbook: stacked
   fractions, raised exponents (and `x²` typed with a superscript), subscripts, square and cube
   roots under a radical sign, parentheses and `|x|` bars that grow around a fraction, function
@@ -166,27 +171,36 @@ Syntax notes:
   Typing a value past a bound that is a plain number moves the bound out to it.
 - **Sliders made for you:** letters a row uses that nothing defines (`m` and `b` in
   `y = m x + b`) become sliders `m = 1` and `b = 1` right below it when you press `Enter` (the new
-  row for your next expression comes after them), when you leave the row, or when you pause
-  typing for a moment and the caret isn't on a name. The new rows pulse once, and a toast says
-  "Added sliders m, b" with an Undo button; `Ctrl+Z` undoes them too, in one step, and the row
-  keeps its caret. Meanwhile, the letters are offered quietly as an "Add sliders: m, b" chip under
-  the row (no error; not the name you are still typing), which adds them at once. A pause never makes a slider of a letter that may
-  be on its way to a function (`s` before `sin`; leaving the row or `Enter` does), a name followed
-  by `(` (`f(x)`, a function still to define) is never made one, and nor is a name in a slider's
-  bounds or a t range. Sliders you undo or delete aren't made again for that row; it says the name
-  is not defined instead, with the chip. A slider made this way that you type a value into
-  beyond its range takes a round range around it instead of just widening (`a = 50` gives
-  0 to 100, `a = -3` gives -10 to 0), until you set its bounds yourself.
+  row for your next expression comes after them), when you leave the row (once the click that
+  left it has landed), or when you pause typing for a moment and the caret isn't on a name. The
+  new rows pulse once, and a toast says "Added sliders m, b" with an Undo button; `Ctrl+Z` undoes
+  them too, in one step, and the row keeps its caret. Meanwhile, the letters are offered quietly
+  as an "Add sliders: m, b" chip under the row (no error; not the name you are still typing),
+  which adds them at once. A pause makes none while the letters just before the caret may be on
+  their way to a function (`s` before `sin`, a space away too; leaving the row or `Enter` makes
+  them). A name called like a function still to define is never made one: `f`, `g` or `h`
+  before `(`, or any name given just names, as in `F(x)`; `a(x - h)^2` is a product, so `a`,
+  `h` and `k` in `y = a(x - h)^2 + k` all become sliders. Nor is a name in a slider's bounds or a
+  t range, and switching to another window or app mid-name makes nothing. Sliders you undo or
+  delete, or add with the chip and undo, aren't made again for that row; it says the name is not
+  defined instead, with the chip. An undo or redo never makes sliders by itself either. A slider
+  made this way that you type a value into beyond its range takes a round range around it
+  instead of just widening (`a = 50` gives 0 to 100, `a = -3` gives -10 to 0), until you set its
+  bounds yourself.
 - **Completions:** typing the first two or more letters of a function's name (a built-in one or
   one you defined, such as `area(r)`) shows the rest of it faintly after the caret, with its
   parenthesis: `si` shows `n(`. `Tab` or `→` (the keypad's `→` too) takes it; anything else
-  carries on as usual, so the suggestion never gets typed by itself. Letters that already read
-  as names (`ex` is e·x, `ab` with sliders a and b) are left alone.
+  carries on as usual, so the suggestion never gets typed by itself, and holding `→` down only
+  moves the caret. Taken inside parentheses (`sqrt(si)`), it adds the call's own `)` too, so the
+  group around keeps its closer: `sqrt(sin())`. Letters that already read as names (`ex` is e·x,
+  `ab` with sliders a and b) are left alone.
 - **Fixes:** when an error's hint names a rewrite, the rewrite is offered as a chip on the error
-  line: `x2` → `x^2` or `2x`, `=<` → `<=`, `==` → `=`, `2e3` → `2*10^3`, `sin^-1(x)` →
-  `asin(x)`, `a = x^2` → `a(x) = x^2`, `log_2(x)` → `log(x)/log(2)`. Click it, or press `Tab`
-  in a row you have typed in to take the first one (and the sliders chip the same way); `Tab`
-  moves on as usual otherwise. A fix is one undo step, and the caret stays where it was.
+  line, set as math (`x²`, `≤`): `x2` → `x^2` or `2x`, `=<` → `<=`, `==` → `=`, `2e3` →
+  `2*10^3`, `sin^-1(x)` → `asin(x)`, `a = x^2` → `a(x) = x^2`, `log_2(x)` → `log(x)/log(2)`
+  (`_` after `log` types its base). The hint then only says what the chips don't. Click a chip,
+  or press `Tab` in a row you have typed in to take the first one (and the sliders chip the same
+  way); `Tab` moves on as usual otherwise. A fix is one undo step of its own (typing after it is
+  another), and the caret stays where it was.
 - **Undo:** `Ctrl+Z` (`⌘Z` on a Mac) undoes and `Ctrl+Shift+Z` (`⌘⇧Z`) or `Ctrl+Y` redoes, from
   anywhere in the app. Typing undoes in bursts, and deleting is a burst of its own, so text
   deleted or typed over right after it was typed comes back. A slider drag is one step, arrow
@@ -194,8 +208,8 @@ Syntax notes:
   leaves it where it is). Undo puts the caret back where the change was (in the denominator it
   was in, not after the fraction); a change made outside
   the rows (delete, a color, New graph) is scrolled into view. Phones have no undo key yet: **New
-  graph**, deleting a row by touch and sliders made for you show an Undo button for a few seconds
-  instead (it waits while you point at it or it has focus).
+  graph**, deleting a row by touch, sliders made for you and rows the trace adds show an Undo
+  button for a few seconds instead (it waits while you point at it or it has focus).
 - **Saved automatically:** the expression list, the view and the panel layout (including the
   list's width) are kept in the browser and come back on the next visit (sliders come back
   paused), and so is the keypad mode once you pick one with the header's keyboard button. Nothing

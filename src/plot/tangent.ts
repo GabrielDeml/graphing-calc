@@ -1,7 +1,7 @@
 // What the trace's one-tap actions write into a new row: the tangent line at the traced point of
 // an explicit curve, and the point itself. Coordinates are written to the precision the trace
 // shows them at (formatCoordinate), so the new row reads like the trace pill; a slope to what
-// keeps the line on the curve's tangent across the view.
+// keeps the line on the curve's tangent across the view, just as precisely.
 
 import { formatCoordinate, formatDecimals } from '../engine/format';
 import type { Fn1 } from '../engine/types';
@@ -53,13 +53,14 @@ export function isStraight(f: Fn1, u: number, m: number): boolean {
 }
 
 /**
- * A slope, rounded only as far as keeps a line through the traced point within half a pixel of
- * the true tangent across a view `span` px across (its diagonal): the line's angle may be off
- * by 0.5/span radians, so a steep slope needs fewer decimals and a gentle one more (but the same
- * at any zoom: slopes have no units). Plain decimals; 0 when it is flat to the eye.
+ * A slope, rounded only as far as keeps a line through the traced point within a tenth of a
+ * pixel of the true tangent across a view `span` px across (its diagonal), as precise as the
+ * trace's coordinates: the line's angle may be off by 0.1/span radians, so a steep slope needs
+ * fewer decimals and a gentle one more (but the same at any zoom: slopes have no units). Plain
+ * decimals; 0 when it is level to the eye.
  */
 export function formatSlope(m: number, span: number): string {
-  const tolerance = (0.5 * (1 + m * m)) / Math.max(1, span);
+  const tolerance = (0.1 * (1 + m * m)) / Math.max(1, span);
   return formatDecimals(m, Math.ceil(-Math.log10(2 * tolerance)));
 }
 
