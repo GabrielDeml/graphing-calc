@@ -1,8 +1,9 @@
 import type { PlotItem } from '../engine/types';
+import { drawsIn, fitViewport, plotBounds, unionBounds } from '../plot/bounds';
 import { type NearestHit, nearestOnPolyline, nearestPoint, traceExplicit } from '../plot/nearest';
-import { findPois, type Poi, type PoiCurve } from '../plot/poi';
+import { findPois, type Poi, type PoiCensus, type PoiCurve } from '../plot/poi';
 import { SceneCache } from '../plot/scene';
-import type { Quality, RowGeometry, ViewCenter, Viewport } from '../plot/types';
+import type { Bounds, Quality, RowGeometry, ViewCenter, Viewport } from '../plot/types';
 import {
   clampViewport,
   homeViewport,
@@ -67,6 +68,15 @@ const POI_SETTLE_MS = 250;
 const HEAVY_FRAME_MS = 16;
 /** …and settles to final quality once it pauses this long. */
 const TYPING_IDLE_MS = 300;
+/** Zoom to fit, framing a new curve and flying to a point take this long. */
+const FIT_MS = 220;
+/** A view the user moved this recently is theirs: a new curve out of sight doesn't move it. */
+const USER_MOVE_MS = 2000;
+/**
+ * Framing a new curve keeps what is in view too, unless that takes this much more zooming out
+ * than framing the curve alone (the new curve far away).
+ */
+const MAX_UNION_ZOOM_OUT = 8;
 
 /**
  * Owns the canvas, the viewport and the render loop. Deliberately not reactive: pans and zooms at
@@ -84,7 +94,14 @@ export class GraphController {
    * They are world points, so they stay valid while the view moves.
    */
   onPois:
-    | ((pois: readonly Poi[], view: Viewport, rowId: string | null, stale: boolean) => void)
+    | ((
+        pois: readonly Poi[],
+        view: Viewport,
+        rowId: string | null,
+        stale: boolean,
+        /** What the search counted in view (null unless it found them just now). */
+        census: PoiCensus | null,
+      ) => void)
     | null = null;
   /** Milliseconds spent drawing the last frame (debug overlay). */
   lastFrameMs = 0;
@@ -110,6 +127,8 @@ export class GraphController {
   private lastResize = -Infinity;
   /** The view is the home view, or animating to it (a restored or moved view is not). */
   private isHome: boolean;
+  /** When the user last moved the view (a pan, a zoom, a button). */
+  private userMoved = Number.NEGATIVE_INFINITY;
   private disposers: Array<() => void> = [];
   /** The row drawn on top, thicker, whose points of interest are found. */
   private emphasis: string | null = null;
@@ -120,6 +139,8 @@ export class GraphController {
   private poiStale = false;
   /** Until when the points of interest wait for typing to pause. */
   private poiSettle = 0;
+  /** The view the last Zoom to fit flew to. */
+  private fitted: string | null = null;
   private poiTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
@@ -199,6 +220,8 @@ export class GraphController {
     }
     this.rows = rows;
     this.values = values;
+    // What a fit showed may have moved.
+    this.fitted = null;
     this.invalidate();
   }
 
@@ -226,16 +249,19 @@ export class GraphController {
   setView(v: Viewport, interactive = true): void {
     this.cancelAnimation();
     this.isHome = false;
+    this.userMoved = performance.now();
     this.applyView(v, interactive);
   }
 
   /**
    * Animate to a target view (zoom buttons, home); a jump when motion is reduced. `home`: the
    * target is the home view, set before the first frame so even a jump reports it as home.
+   * `user`: the user asked for it (not so when the graph frames a new curve by itself).
    */
-  animateTo(target: Viewport, ms = 180, home = false): void {
+  animateTo(target: Viewport, ms = 180, home = false, user = true): void {
     cancelAnimationFrame(this.animation);
     this.isHome = home;
+    if (user) this.userMoved = performance.now();
     if (reducedMotion?.matches) {
       this.cancelAnimation();
       this.applyView(target);
@@ -273,6 +299,73 @@ export class GraphController {
 
   home(): void {
     this.animateTo(homeViewport(this.view.width, this.view.height), undefined, true);
+  }
+
+  /**
+   * Fly to show every curve on the graph, with room around, equally scaled (src/plot/bounds.ts);
+   * home when there are none. Pressed again before the view moves, it stays: a curve with no end
+   * (x²) is fitted over the x in view, which a fit widens.
+   */
+  zoomToFit(): void {
+    const base = this.animTarget ?? this.view;
+    if (this.fitted === viewKey(base)) return;
+    let box: Bounds | null = null;
+    for (const row of this.rows) {
+      if (!row.ghost) box = unionBounds(box, this.boundsOf(row, base));
+    }
+    if (!box) {
+      this.home();
+      return;
+    }
+    const target = fitViewport(box, base);
+    this.animateTo(target, FIT_MS);
+    this.fitted = viewKey(target);
+  }
+
+  /** Fly so that a world point is in view, well inside it (it stays put when it already is). */
+  flyTo(x: number, y: number): void {
+    const base = this.animTarget ?? this.view;
+    const b = viewBounds(base);
+    const [mx, my] = [(b.xmax - b.xmin) * 0.15, (b.ymax - b.ymin) * 0.15];
+    if (x >= b.xmin + mx && x <= b.xmax - mx && y >= b.ymin + my && y <= b.ymax - my) return;
+    this.animateTo(clampViewport({ ...base, cx: x, cy: y }), FIT_MS);
+  }
+
+  /**
+   * A row has just become a curve: when none of it shows, and the user has not moved the view
+   * for a while, frame it, together with what is in view when that is not much farther out.
+   * Returns whether the view moves.
+   */
+  frameNew(id: string): boolean {
+    if (performance.now() - this.userMoved < USER_MOVE_MS || this.animTarget) return false;
+    const row = this.rows.find((r) => r.id === id && !r.ghost);
+    const geometry = row && this.geometries.get(row.id);
+    const view = viewBounds(this.view);
+    if (!row || !geometry || drawsIn(geometry, view)) return false;
+    const own = this.boundsOf(row, this.view);
+    if (!own) return false;
+    let target = fitViewport(own, this.view);
+    const shown = this.rows.some((r) => {
+      const g = r !== row && !r.ghost && this.geometries.get(r.id);
+      return g && drawsIn(g, view);
+    });
+    const both = shown ? unionBounds(own, view) : null;
+    if (both) {
+      const wide = fitViewport(both, this.view);
+      if (wide.ppuX * MAX_UNION_ZOOM_OUT >= target.ppuX) target = wide;
+    }
+    this.animateTo(target, FIT_MS, false, false);
+    return true;
+  }
+
+  /** Where a row's curve is (null where it draws nothing to be found, or fails). */
+  private boundsOf(row: SceneRow, view: Viewport): Bounds | null {
+    try {
+      return plotBounds(row.plot, view);
+    } catch (err) {
+      console.warn('Failed to find the bounds of row', row.id, err);
+      return null;
+    }
   }
 
   /** Whether a row is in the current scene (a pinned trace drops its anchor when it isn't). */
@@ -543,15 +636,21 @@ export class GraphController {
       geometry: this.geometries.get(r.id) as RowGeometry,
     });
     let pois: Poi[] = [];
+    const census: PoiCensus = { kinds: {}, meets: new Map() };
     try {
-      pois = findPois(curve(row), others.map(curve), this.view);
+      pois = findPois(curve(row), others.map(curve), this.view, { census });
     } catch (err) {
       console.warn('Failed to find points of interest', row.id, err);
     }
-    this.setPois(pois, { view, plots, values, id: row.id });
+    this.setPois(pois, { view, plots, values, id: row.id }, false, census);
   }
 
-  private setPois(pois: readonly Poi[], inputs: GraphController['poiInputs'], stale = false): void {
+  private setPois(
+    pois: readonly Poi[],
+    inputs: GraphController['poiInputs'],
+    stale = false,
+    census: PoiCensus | null = null,
+  ): void {
     const found = inputs !== null && !stale;
     const unchanged =
       (pois === this.pois && stale === this.poiStale) ||
@@ -559,7 +658,7 @@ export class GraphController {
     this.pois = pois;
     this.poiInputs = inputs;
     this.poiStale = stale;
-    if (found || !unchanged) this.onPois?.(pois, this.view, inputs?.id ?? null, stale);
+    if (found || !unchanged) this.onPois?.(pois, this.view, inputs?.id ?? null, stale, census);
   }
 }
 

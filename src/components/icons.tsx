@@ -11,6 +11,7 @@ export type IconName =
   | 'minus'
   | 'close'
   | 'home'
+  | 'fit'
   | 'more'
   | 'sidebar-hide'
   | 'sidebar-show'
@@ -29,6 +30,13 @@ const SHAPES: Record<IconName, () => JSX.Element> = {
   minus: () => <path d="M5 12h14" />,
   close: () => <path d="M7 7l10 10M17 7 7 17" />,
   home: () => <path d="M4.5 10.5 12 4.5l7.5 6V19a1 1 0 0 1-1 1h-4v-5.5h-5V20h-4a1 1 0 0 1-1-1z" />,
+  // A curve, and the corners of a frame closing round it.
+  fit: () => (
+    <>
+      <path d="M4.5 9V6a1.5 1.5 0 0 1 1.5-1.5h3M15 4.5h3A1.5 1.5 0 0 1 19.5 6v3M19.5 15v3a1.5 1.5 0 0 1-1.5 1.5h-3M9 19.5H6A1.5 1.5 0 0 1 4.5 18v-3" />
+      <path d="M8 15.5c1.6-4.2 4.6-6.5 8-7" />
+    </>
+  ),
   more: () => (
     <>
       <circle cx="6" cy="12" r="1.25" fill="currentColor" stroke="none" />

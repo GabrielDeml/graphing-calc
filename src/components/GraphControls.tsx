@@ -6,8 +6,8 @@ import { Icon } from './icons';
 /**
  * The graph's floating controls: one pill at the top right (the top-left corner stays free for
  * the graph itself). With the list hidden on a wide screen, the button that brings it back leads.
- * Zoom to fit joins zoom and reset once there are bounds to fit (src/plot/bounds.ts, with
- * auto-framing): a fit from the sampled curves alone would fly off to the poles of y = 1/x.
+ * Zoom to fit flies to show every curve (src/plot/bounds.ts: robust bounds, so it doesn't fly off
+ * to the poles of y = 1/x); with none, it goes home like Reset view.
  */
 export function GraphControls(props: {
   controller: GraphController;
@@ -43,6 +43,14 @@ export function GraphControls(props: {
         <Icon name="minus" />
       </button>
       <span class="graph-controls-divider" aria-hidden="true" />
+      <button
+        type="button"
+        class="icon-button"
+        aria-label="Zoom to fit"
+        onClick={() => props.controller.zoomToFit()}
+      >
+        <Icon name="fit" />
+      </button>
       <button
         type="button"
         class="icon-button"
