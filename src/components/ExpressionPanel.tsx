@@ -4,6 +4,7 @@ import { focusRow, revealRow } from '../state/focus';
 import { keypad } from '../state/keypad';
 import { clampSidebarWidth, SIDEBAR_DEFAULT, SIDEBAR_MIN, sidebarMaxWidth } from '../state/layout';
 import { mobileQuery, type PanelSnap, ui } from '../state/ui';
+import { Examples } from './Examples';
 import { ExpressionList } from './ExpressionList';
 import { GraphMenu } from './GraphMenu';
 import { Icon } from './icons';
@@ -136,6 +137,7 @@ export function ExpressionPanel() {
       </header>
       <div class="panel-scroll" ref={scroller}>
         <ExpressionList />
+        <Examples />
       </div>
       <SidebarResizer />
     </section>

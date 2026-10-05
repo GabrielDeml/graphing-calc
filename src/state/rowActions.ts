@@ -9,6 +9,7 @@ import {
   doc,
   endUndoStep,
   getRow,
+  isBlank,
   isRestoring,
   removeRow,
   updateSource,
@@ -221,4 +222,22 @@ export function addTraceRow(afterId: string, source: string): boolean {
   }
   ui.flashRows([addRowAfter(afterId, source)], true);
   return true;
+}
+
+/**
+ * A first-run example (the list is blank): its math goes into the first row and is graphed, as
+ * an undo step of its own. The row becomes the selected one and pulses; the caret goes to its
+ * end when a row was being edited, or `focus` asks (the example's button had focus), never
+ * otherwise (no keypad pops up on a phone).
+ */
+export function fillExample(source: string, focus = false): void {
+  const first = doc.rows[0];
+  if (!first || !isBlank()) return;
+  const editing = focusedRow() !== null;
+  updateSource(first.id, source, 'edit', 'replace');
+  // Typing on after it is a step of its own.
+  endUndoStep();
+  ui.setSelectedRowId(first.id);
+  ui.flashRows([first.id], false);
+  if (editing || focus) focusRow(first.id, 'end');
 }

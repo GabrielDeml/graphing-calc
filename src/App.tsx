@@ -5,14 +5,22 @@ import { MathKeypad } from './components/MathKeypad';
 import { Toast } from './components/Toast';
 import { UpdatePrompt } from './components/UpdatePrompt';
 import './state/autosave';
+import { doc, isBlank } from './state/doc';
+import { focusRow } from './state/focus';
 import { attachHistoryKeys } from './state/historyUi';
 import { keypad } from './state/keypad';
 import './state/sliderAnimation';
 import { ui } from './state/ui';
 
+/** A mouse or trackpad: a desk, where the caret can wait in a row (no keypad pops up). */
+const finePointer = typeof matchMedia === 'function' && matchMedia('(pointer: fine)').matches;
+
 export default function App() {
   onMount(() => {
     onCleanup(attachHistoryKeys(document));
+    // A first visit (or a blank graph) at a desk: the first row is ready to type in. Never on
+    // touch, or in keypad mode, where focusing a row would bring up a keypad nobody asked for.
+    if (finePointer && !keypad.enabled() && isBlank()) focusRow(doc.rows[0].id, 'end');
     // Esc deselects the row, from a field, the graph or anywhere, unless something else used it
     // (the menu and the color picker close). On window, so it runs after their listeners.
     const deselect = (e: KeyboardEvent) => {
