@@ -48,6 +48,7 @@ import type {
   RowKind,
   RowResult,
   Span,
+  UnknownUse,
 } from './types';
 
 /** Trig functions whose argument sets a period (sin(kx) repeats every 2π/k). */
@@ -70,6 +71,8 @@ interface RowAnalysis {
   readonly refs: readonly string[];
   /** 'unknown-name' error when the row uses names nothing defines. */
   readonly unknown: MathError | null;
+  /** Where the row uses the unknown names its error offers sliders for, in source order. */
+  readonly unknownUses: readonly UnknownUse[];
 }
 
 /** A standalone constant expression (domain bound, slider field). */
@@ -131,21 +134,29 @@ function userNames(nodes: readonly Node[]): string[] {
   return [...names];
 }
 
-/** 'unknown-name' error for `nodes`, offering sliders for every unknown name, in source order. */
-function unknownNames(nodes: readonly Node[], source: string): MathError | null {
+/** The names in `nodes` that nothing defines, in source order. */
+function unknownNodes(nodes: readonly Node[]): NameNode[] {
   const unknown: NameNode[] = [];
   for (const node of nodes) {
     forEachNode(node, (n) => {
       if (n.type === 'name' && n.kind === 'unknown') unknown.push(n);
     });
   }
-  if (unknown.length === 0) return null;
-  unknown.sort((a, b) => a.span.start - b.span.start);
-  const first = unknown[0];
+  return unknown.sort((a, b) => a.span.start - b.span.start);
+}
+
+/** Whether a slider for an unknown name could fix it. */
+function sliderable(name: string): boolean {
   // `log_2(x)` is a log base, not a variable: a slider named log_2 would be no fix at all.
-  const names = [...new Set(unknown.map((n) => n.name))].filter(
-    (name) => isDefinableName(name) && !name.startsWith('log_'),
-  );
+  return isDefinableName(name) && !name.startsWith('log_');
+}
+
+/** 'unknown-name' error for `nodes`, offering sliders for every unknown name, in source order. */
+function unknownNames(nodes: readonly Node[], source: string): MathError | null {
+  const unknown = unknownNodes(nodes);
+  if (unknown.length === 0) return null;
+  const first = unknown[0];
+  const names = [...new Set(unknown.map((n) => n.name))].filter(sliderable);
   const fixes: QuickFix[] = [];
   let hint: string | undefined;
   if (first.name.startsWith('log_')) {
@@ -229,7 +240,7 @@ function analyzeRow(
   } catch (e) {
     // Nothing here should throw; a bug must not take down the whole document.
     const parsed: ParseResult = { ok: false, error: internalError(e) };
-    return { key, head, parsed, cls: null, refs: [], unknown: null };
+    return { key, head, parsed, cls: null, refs: [], unknown: null, unknownUses: [] };
   }
 }
 
@@ -240,7 +251,7 @@ function analyzeRowUnsafe(
   ctx: NameContext,
 ): RowAnalysis {
   const parsed = parse(source, definitionContext(head, ctx));
-  if (!parsed.ok) return { key, head, parsed, cls: null, refs: [], unknown: null };
+  if (!parsed.ok) return { key, head, parsed, cls: null, refs: [], unknown: null, unknownUses: [] };
   const nodes = statementNodes(parsed.statement);
   const cls = classify(parsed.statement, head);
   let refNodes = nodes;
@@ -257,6 +268,9 @@ function analyzeRowUnsafe(
     cls,
     refs: userNames(refNodes),
     unknown: unknownNames(nodes, source),
+    unknownUses: unknownNodes(nodes)
+      .filter((n) => sliderable(n.name))
+      .map((n) => ({ name: n.name, span: { start: n.span.start, end: n.span.end } })),
   };
 }
 
@@ -327,7 +341,10 @@ function sameFix(a: QuickFix | undefined, b: QuickFix | undefined): boolean {
   );
 }
 
-function sameFixes(a: readonly QuickFix[] | undefined, b: readonly QuickFix[] | undefined): boolean {
+function sameFixes(
+  a: readonly QuickFix[] | undefined,
+  b: readonly QuickFix[] | undefined,
+): boolean {
   if (a === b) return true;
   if ((a?.length ?? 0) !== (b?.length ?? 0)) return false;
   return (a ?? []).every((fix, i) => sameFix(fix, b?.[i]));
@@ -491,6 +508,15 @@ export class DocumentEngine {
    */
   refsOf(id: string): readonly string[] {
     return this.byRow.get(id)?.refs ?? [];
+  }
+
+  /**
+   * Where a row's text uses the unknown names its error offers sliders for, from the last
+   * update(), in source order (a name used twice is there twice). Auto sliders read it: a name
+   * followed by `(` is more likely a function still to be defined.
+   */
+  unknownUses(id: string): readonly UnknownUse[] {
+    return this.byRow.get(id)?.unknownUses ?? [];
   }
 
   /**

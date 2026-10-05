@@ -1016,6 +1016,23 @@ describe('quick fixes', () => {
     }
   });
 
+  it('unknownUses: where the names offered as sliders are used', () => {
+    const engine = new DocumentEngine();
+    engine.update(rows('y = m x + b + m', 'y = f(x) + log_2(x)', '(cos t, sin t)', 'k = 1'));
+    expect(engine.unknownUses('r0')).toEqual([
+      { name: 'm', span: { start: 4, end: 5 } },
+      { name: 'b', span: { start: 10, end: 11 } },
+      { name: 'm', span: { start: 14, end: 15 } },
+    ]);
+    // A log base is no slider.
+    expect(engine.unknownUses('r1')).toEqual([{ name: 'f', span: { start: 4, end: 5 } }]);
+    expect(engine.unknownUses('r3')).toEqual([]);
+    expect(engine.unknownUses('nope')).toEqual([]);
+    // Only the row's own text: a t range's names are its fields'.
+    engine.update([{ id: 'r0', source: '(cos t, sin t)', domain: { min: '0', max: 'k' } }]);
+    expect(engine.unknownUses('r0')).toEqual([]);
+  });
+
   it('a t range offers sliders, never a rewrite of its own text', () => {
     const e = err(
       new DocumentEngine().update([

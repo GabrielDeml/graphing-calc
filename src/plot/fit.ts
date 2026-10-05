@@ -283,7 +283,8 @@ function repeats(f: Fn1, period: number): boolean {
   const pairs = xs.map((x) => [f(x), f(x + period)] as const);
   for (const [a] of pairs) if (Number.isFinite(a)) scale = Math.max(scale, Math.abs(a));
   return pairs.every(([a, b]) => {
-    if (!Number.isFinite(a) || !Number.isFinite(b)) return !Number.isFinite(a) && !Number.isFinite(b);
+    if (!Number.isFinite(a) || !Number.isFinite(b))
+      return !Number.isFinite(a) && !Number.isFinite(b);
     return Math.abs(a - b) <= 1e-8 * (Math.abs(a) + Math.abs(b) + scale) + 1e-300;
   });
 }
@@ -363,7 +364,9 @@ export function extremesOver(
     const t = Math.max(-1, Math.min(1, (0.5 * (a - c)) / den));
     const x = start + (i - 0.5 + t) * h;
     const v = f(x);
-    return Number.isFinite(v) && sign * v >= sign * b ? { x, v } : { x: start + (i - 0.5) * h, v: b };
+    return Number.isFinite(v) && sign * v >= sign * b
+      ? { x, v }
+      : { x: start + (i - 0.5) * h, v: b };
   };
   const top = refine(iMax, 1);
   const bottom = refine(iMin, -1);
@@ -439,7 +442,7 @@ export function basisFit(f: Fn1, basis: readonly Fn1[], span: number): number[] 
   const c = snap(fitted);
   const floor = 1e-12 * Math.max(...values.map(Math.abs));
   for (let i = 0; i < 40; i++) {
-    const u = span * ((i + 0.7071067811865476) / 40) * 1.7 - 0.35 * span;
+    const u = span * ((i + Math.SQRT1_2) / 40) * 1.7 - 0.35 * span;
     const v = f(u);
     if (!Number.isFinite(v)) return null;
     let q = 0;

@@ -16,6 +16,12 @@ export type QuickFix =
   | { kind: 'addSliders'; names: string[] }
   | { kind: 'replace'; span: Span; text: string; label: string };
 
+/** A use of a name nothing defines: the name, and where it is in the row's text. */
+export interface UnknownUse {
+  name: string;
+  span: Span;
+}
+
 export interface MathError {
   /** Stable machine-readable code, e.g. 'unexpected-char', 'missing-rparen', 'unknown-name'. */
   code: string;

@@ -22,6 +22,7 @@ export {
   runCommand,
   type Selection,
 } from './commands';
+export { type Completion, completionAt } from './complete';
 export { type Layout, layoutParse, printLayout } from './layout';
 export * from './plan';
 

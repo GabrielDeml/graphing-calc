@@ -9,6 +9,7 @@ import {
   Switch,
   untrack,
 } from 'solid-js';
+import { sliderFixNames } from '../engine/errors';
 import { formatValue } from '../engine/format';
 import type { MathError } from '../engine/types';
 import { analysis, nameContext, steadyRows } from '../state/analysis';
@@ -281,15 +282,15 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
                 <Show when={err().hint}>
                   <span class="expr-hint">{err().hint}</span>
                 </Show>
-                <Show when={err().quickFix}>
-                  {(fix) => (
+                <Show when={sliderFixNames(err()).length > 0 && sliderFixNames(err())}>
+                  {(names) => (
                     <button
                       type="button"
                       class="quick-fix"
-                      onClick={() => addSliders(props.row.id, fix().names)}
+                      onClick={() => addSliders(props.row.id, names())}
                     >
                       <Icon name="plus" size={13} />
-                      Add slider{fix().names.length > 1 ? 's' : ''}: {fix().names.join(', ')}
+                      Add slider{names().length > 1 ? 's' : ''}: {names().join(', ')}
                     </button>
                   )}
                 </Show>

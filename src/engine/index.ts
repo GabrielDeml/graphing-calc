@@ -39,4 +39,5 @@ export type {
   RowKind,
   RowResult,
   Span,
+  UnknownUse,
 } from './types';
