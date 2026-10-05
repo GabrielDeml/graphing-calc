@@ -16,6 +16,9 @@ export function blurActive(): void {
   keypad.setOpen(false);
 }
 
+/** How far (px) a press on the typeset math may move and still be a click, not a drag. */
+const DRAG_SLOP = 5;
+
 let measureCtx: CanvasRenderingContext2D | null | undefined;
 
 /** Width of some text in a field's font (its computed style); null without a canvas. */
@@ -106,8 +109,8 @@ export function MathField(props: MathFieldProps) {
   let mirror: HTMLDivElement | undefined;
   let view: MathViewHandle | undefined;
   const [focused, setFocused] = createSignal(false);
-  /** Where a click on the typeset math puts the caret, once the click has focused the input. */
-  let pendingCaret: number | null = null;
+  /** A press on the typeset math: where it was, and the offset of what it is on. */
+  let press: { x: number; y: number; offset: number } | null = null;
 
   const target: EditTarget = {
     get el() {
@@ -146,17 +149,16 @@ export function MathField(props: MathFieldProps) {
 
   /**
    * A click on the typeset math lands on the invisible input, whose own text is laid out
-   * differently: the browser puts the caret by that. Once the click has focused the field, the
-   * caret goes where the clicked symbol is in the text instead: on the click, or in the task
-   * after the focus (a tap's click can land elsewhere once the keypad opens and moves the list).
-   * Only after a press on the typeset math, and only over a collapsed caret: Playwright's fill()
-   * selects everything, then focuses.
+   * differently: the browser puts the caret by that. Once the press has focused the field, the
+   * caret goes where the pressed symbol is in the text instead: in the task after the focus (a
+   * tap's click can land elsewhere once the keypad opens and moves the list), and again on the
+   * click, since a mouse that moves while held makes the browser put it back by the plain text.
+   * The task after the focus leaves a selection alone (Playwright's fill() selects everything,
+   * then focuses); a press that dragged keeps the selection it made in the text, shown by then.
    */
   const placeCaret = () => {
-    const at = pendingCaret;
-    pendingCaret = null;
-    if (at === null || input.selectionStart !== input.selectionEnd) return;
-    input.setSelectionRange(at, at);
+    if (!press) return;
+    input.setSelectionRange(press.offset, press.offset);
     revealCaret(input);
   };
 
@@ -222,28 +224,35 @@ export function MathField(props: MathFieldProps) {
         }}
         onFocus={() => {
           setFocused(true);
-          if (pendingCaret !== null) setTimeout(placeCaret, 0);
+          if (press) {
+            setTimeout(() => {
+              if (input.selectionStart === input.selectionEnd) placeCaret();
+            }, 0);
+          }
           keypad.setTarget(target);
           openKeypad();
           props.onFocus?.();
         }}
         onBlur={() => {
           setFocused(false);
-          pendingCaret = null;
+          press = null;
           if (keypad.nativeEl() === input) keypad.setNativeEl(null);
           props.onBlur?.();
         }}
         onPointerDown={(e) => {
-          pendingCaret =
+          press =
             view && e.button === 0 && document.activeElement !== input
-              ? view.offsetAt(e.clientX, e.clientY)
+              ? { x: e.clientX, y: e.clientY, offset: view.offsetAt(e.clientX, e.clientY) }
               : null;
         }}
         onPointerCancel={() => {
-          pendingCaret = null;
+          press = null;
         }}
-        onClick={() => {
-          placeCaret();
+        onClick={(e) => {
+          if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) <= DRAG_SLOP) {
+            placeCaret();
+          }
+          press = null;
           openKeypad();
         }}
       />

@@ -166,6 +166,33 @@ test.describe('editing rows', () => {
     await expect(toggle).toBeFocused();
   });
 
+  test('every color can be picked, over the rows below the picker', async ({ page }) => {
+    await openApp(page);
+    const sources = ['y = x', 'y = 2x', 'y = 3x'];
+    for (const [i, text] of sources.entries()) await setExpr(page, i, text);
+    await exprInput(page, 0).click();
+    const toggle = page.locator('.expr-row').first().getByRole('button', { name: 'Change color' });
+    await toggle.click();
+    const names = await page
+      .locator('.color-choice')
+      .evaluateAll((els) => els.map((e) => e.getAttribute('aria-label') ?? ''));
+    expect(names.length).toBeGreaterThan(3);
+    await toggle.click();
+    for (const name of names) {
+      await toggle.click();
+      // The click fails if anything (the next row's buttons) lies over the swatch.
+      await page.getByRole('button', { name, exact: true }).click();
+      await expect(page.locator('.color-picker')).toHaveCount(0);
+      await toggle.click();
+      await expect(page.getByRole('button', { name, exact: true })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+      await toggle.click();
+    }
+    for (const [i, text] of sources.entries()) await expect(exprInput(page, i)).toHaveValue(text);
+  });
+
   test('the color picker of a low row is scrolled into view', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 480 });
     await openApp(page);

@@ -13,6 +13,14 @@ import {
   type NameL,
 } from './layout';
 
+/**
+ * How deep boxes nest. The layout bounds its own recursion, not its left chains: `1/x/x/x…` nests
+ * a fraction in each numerator. Deeper boxes are drawn as their text, so nothing that walks a plan
+ * (or its elements) goes deeper; browsers stall on a few hundred nested fraction elements, and
+ * nothing this deep is readable anyway.
+ */
+export const MAX_PLAN_DEPTH = 64;
+
 /** Space before a box: none, thin, medium or thick (TeX's 3, 4 and 5 mu). */
 export type Space = 0 | 1 | 2 | 3;
 
@@ -29,7 +37,7 @@ export type AtomRole =
   | 'punct'
   /** Parentheses and absolute value bars. */
   | 'paren'
-  /** Text that isn't math. */
+  /** Text that isn't math, or math nested too deep to typeset. */
   | 'err';
 
 interface BoxBase {
@@ -172,13 +180,15 @@ class Builder {
     return box;
   }
 
-  /** A block of one node; a parenthesized group that fills it draws no parentheses. */
+  /**
+   * A block of one node; a parenthesized group that fills it draws no parentheses. While the
+   * group is unclosed it keeps its `(`, so the row doesn't look finished (and "Missing ')'" marks
+   * a symbol that is there).
+   */
   nodeBlock(node: LNode, depth: number, script: boolean): { block: Block; hidden: Span[] } {
-    if (node.type === 'group' && node.body.seps.length === 0) {
+    if (node.type === 'group' && node.body.seps.length === 0 && node.close) {
       const block = this.groupBlock(node, depth, script);
-      const hidden = [node.open];
-      if (node.close) hidden.push(node.close);
-      return { block, hidden };
+      return { block, hidden: [node.open, node.close] };
     }
     const boxes: Box[] = [];
     this.emit(node, boxes, depth, script);
@@ -197,21 +207,26 @@ class Builder {
   finish(boxes: Box[], start: number, end: number, depth: number, script: boolean): Block {
     let prevRight: SpaceClass | null = null;
     let prev: Box | null = null;
-    for (const box of boxes) {
+    boxes.forEach((box, i) => {
       // A superscript hugs its base; the base's class goes on to the right.
-      if (box.kind === 'sup') continue;
+      if (box.kind === 'sup') return;
       if (prevRight !== null && prev !== null) {
         let space = SPACING[prevRight][classOf(box, 0)] ?? 0;
         if (space < 0) space = script ? 0 : -space;
-        // Text that isn't math keeps the gaps it was typed with (`y == 2` reads like a relation).
-        if ((isError(prev) && this.spaceAfter(prev)) || (isError(box) && this.spaceBefore(box))) {
+        // Text that isn't math keeps the gaps it was typed with (`y == 2` reads like a relation),
+        // and two numbers side by side (a missing operator) don't read as one (`2 3` isn't 23).
+        if (
+          (isError(prev) && this.spaceAfter(prev)) ||
+          (isError(box) && this.spaceBefore(box)) ||
+          (isNumber(prev) && isNumber(box) && boxes[i - 1] === prev)
+        ) {
           space = 3;
         }
         box.space = space as Space;
       }
       prevRight = classOf(box, 1);
       prev = box;
-    }
+    });
     return { boxes, start, end, depth, script };
   }
 
@@ -241,6 +256,13 @@ class Builder {
   }
 
   emit(node: LNode, out: Box[], depth: number, script: boolean): void {
+    if (depth > MAX_PLAN_DEPTH) {
+      const { start, end } = node.span;
+      const box = this.atom(this.source.slice(start, end), 'err', node.span, 'ord');
+      if (end - start > 1) box.chars = true;
+      out.push(box);
+      return;
+    }
     // Sums and products chain to the left; walk the chain instead of recursing down it.
     const chain: LNode[] = [];
     let n = node;
@@ -283,10 +305,20 @@ class Builder {
           out.push(this.frac(node.left, node.right, node.opSpan, node.span, depth, script));
         }
         return;
-      case 'postfix':
-        this.emit(node.arg, out, depth, script);
-        out.push(this.atom('!', 'op', node.opSpan, 'close'));
+      case 'postfix': {
+        // `x!!!` chains to the left too.
+        const bangs: Span[] = [];
+        let arg: LNode = node;
+        while (arg.type === 'postfix') {
+          bangs.push(arg.opSpan);
+          arg = arg.arg;
+        }
+        this.emit(arg, out, depth, script);
+        for (let i = bangs.length - 1; i >= 0; i--) {
+          out.push(this.atom('!', 'op', bangs[i] as Span, 'close'));
+        }
         return;
+      }
       case 'call':
         this.call(node, out, depth, script);
         return;
@@ -404,10 +436,14 @@ class Builder {
       const index = node.callee === 'cbrt' ? '3' : null;
       let body: Block;
       const hidden = [node.nameSpan];
-      if (node.parens) {
+      if (node.parens?.close) {
         body = this.groupBlock(node.parens, depth + 1, script);
-        hidden.push(node.parens.open);
-        if (node.parens.close) hidden.push(node.parens.close);
+        hidden.push(node.parens.open, node.parens.close);
+      } else if (node.parens) {
+        // Unclosed: its `(` shows, as in nodeBlock.
+        const { parens } = node;
+        const fence = this.fence(parens, false, groupExtent(parens), depth + 1, script);
+        body = this.finish([fence], parens.open.start, fence.span.end, depth + 1, script);
       } else {
         const arg = node.arg as LNode;
         body = this.nodeBlock(arg, depth + 1, script).block;
@@ -444,6 +480,10 @@ function isError(box: Box): boolean {
   return box.kind === 'atom' && box.role === 'err';
 }
 
+function isNumber(box: Box): boolean {
+  return box.kind === 'atom' && box.role === 'num';
+}
+
 function groupExtent(g: Group): Span {
   return {
     start: g.open.start,
@@ -475,6 +515,16 @@ function isTall(block: Block): boolean {
         return false;
     }
   });
+}
+
+/** A plan that draws the whole source as plain text. */
+export function flatPlan(source: string): Plan {
+  const boxes: Box[] = [];
+  if (source.trim() !== '') {
+    const span = { start: 0, end: source.length };
+    boxes.push({ kind: 'atom', text: source, role: 'err', span, space: 0, chars: true });
+  }
+  return { source, root: { boxes, start: 0, end: source.length, depth: 0, script: false } };
 }
 
 /** The render plan of a layout. Never throws. */

@@ -3,7 +3,7 @@
 
 import type { NameContext } from '../engine/names';
 import { layoutParse } from './layout';
-import { type Plan, renderPlan } from './plan';
+import { flatPlan, type Plan, renderPlan } from './plan';
 
 export { type CaretStop, type CaretStops, caretStops } from './caret';
 export { type Layout, layoutParse, printLayout } from './layout';
@@ -28,7 +28,12 @@ export function createTypesetter(limit = 256): (source: string, names: Names) =>
     if (plan) {
       cache.delete(key);
     } else {
-      plan = renderPlan(layoutParse(source, names.ctx));
+      try {
+        plan = renderPlan(layoutParse(source, names.ctx));
+      } catch {
+        // Not expected (both never throw), but one row's drawing must not take the list down.
+        plan = flatPlan(source);
+      }
       if (cache.size >= limit) cache.delete(cache.keys().next().value as string);
     }
     cache.set(key, plan);

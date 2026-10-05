@@ -77,10 +77,15 @@ Syntax notes:
   names upright and letters in italic, `≤` `≥` `−` `·` `π` `θ` for `<=` `>=` `-` `*` `pi` `theta`
   (only on screen: the text stays as typed). Letters group the way the graph reads them, so
   `asin(x)` shows as a·sin once there is a slider `a`, and `pix` as πx. Click or tap a symbol to
-  edit the row with the caret right there; the row you edit shows its plain text and keeps its
-  height. A row with an error underlines the mistake in the typeset math too, and a missing part
-  (`y = 2 +`, `x^`) shows as a faint box. The empty first row shows "Try y = sin(x)". A row too
-  long for the list fades out at its end.
+  edit the row with the caret right there (drag instead to select the plain text); the row you
+  edit shows its plain text and keeps its height. A row with an error underlines the mistake in
+  the typeset math too: a missing part (`y = 2 +`, `x^`) shows as a faint box, a parenthesis
+  you haven't closed stays visible (`y = 1/(x`), and numbers missing an operator between them
+  stay apart (`2 3`). Exponents rise clear of the baseline, even a fraction (`e^(-x^2/2)`), and
+  `a_1^2` stacks the 2 over the 1. The color mark and the row's buttons line up with the math's
+  main line, however tall a fraction makes the row. The empty first row shows "Try y = sin(x)".
+  A row too long for the list fades out at its end (checked again as the list's width changes);
+  absurdly deep nesting (`1/x/x/…` dozens of levels down) shows as plain text past 64 levels.
 - **Rows:**
   - `Enter` starts a new row. On an empty row it moves on to the next one instead, and on the
     empty row at the end it stays put (the keypad's ↵ puts the keypad away there).

@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { definitionContext, detectDefinition } from '../engine/definition';
 import { EMPTY_CONTEXT, type NameContext } from '../engine/names';
 import { parse } from '../engine/parser';
 import { printStatement } from '../engine/print';
 import { mulberry32, randomSource } from '../engine/testing/fuzz';
 import type { Span } from '../engine/types';
-import { type LBlock, type LNode, layoutParse, printLayout, rowContext } from './layout';
+import { type LBlock, type LNode, layoutParse, printLayout } from './layout';
 
 function ctxOf(vars: string[] = [], fns: Record<string, number> = {}): NameContext {
   return { vars: new Set(vars), fns: new Map(Object.entries(fns)) };
@@ -17,9 +18,9 @@ function lp(source: string, ctx: NameContext = EMPTY_CONTEXT): string {
   return printLayout(layoutParse(source, ctx));
 }
 
-/** The engine's reading of a row, with the row's definition head applied as DocumentEngine does. */
+/** The engine's reading of a row, with its definition head applied as DocumentEngine does. */
 function engine(source: string, ctx: NameContext): string | null {
-  const r = parse(source, rowContext(source, ctx));
+  const r = parse(source, definitionContext(detectDefinition(source), ctx));
   return r.ok ? printStatement(r.statement) : null;
 }
 

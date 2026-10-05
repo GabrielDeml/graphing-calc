@@ -526,6 +526,8 @@ button {
 .expr-row {
   --row-color: var(--text-3);
   --row-bg: var(--surface-0);
+  /* The math's axis over its baseline (0.258em of 19px): where a minus or a fraction bar is. */
+  --math-axis: 4.9px;
   position: relative;
   display: grid;
   grid-template-columns: 40px minmax(0, 1fr);
@@ -557,12 +559,27 @@ button {
   }
 }
 
-/* Centered on the math's first line, which a fraction makes taller. */
+/*
+ * The color mark and the row's actions center on the math's axis, however far the math reaches
+ * above or below it (fractions): they share its baseline (grid baseline alignment), and each sets
+ * its own with an empty first item whose bottom edge is that far under their middle.
+ */
 .expr-mark {
   grid-row: 1;
-  align-self: center;
-  display: flex;
-  justify-content: center;
+  align-self: baseline;
+  display: grid;
+  justify-items: center;
+  align-items: start;
+}
+
+.expr-mark::before {
+  content: "";
+  grid-area: 1 / 1;
+  height: calc(14px + var(--math-axis));
+}
+
+.expr-mark > * {
+  grid-area: 1 / 1;
 }
 
 /* The color mark: shows and hides the curve; hollow while hidden. */
@@ -614,6 +631,7 @@ button {
 
 .expr-body > .math-field {
   grid-row: 1;
+  align-self: baseline;
 }
 
 /* Hidden curves recede. */
@@ -628,15 +646,18 @@ button {
  * them while it is being edited.
  */
 .expr-actions {
-  /* Over the end of the math's line, centered on it like the color mark. */
+  --action-size: 28px;
+  --action-gap: 2px;
+  /* Over the end of the math's line, centered on its axis like the color mark. */
   position: relative;
   z-index: 2;
   grid-area: 1 / 2;
   justify-self: end;
-  align-self: center;
+  align-self: baseline;
   margin-right: -4px;
   display: flex;
-  gap: 2px;
+  align-items: flex-start;
+  gap: var(--action-gap);
   padding-left: var(--space-5);
   background: linear-gradient(to right, transparent, var(--row-bg) 20px);
   opacity: 0;
@@ -647,6 +668,17 @@ button {
 
 .expr-actions > * {
   pointer-events: auto;
+}
+
+.expr-actions::before {
+  content: "";
+  height: calc(var(--action-size) / 2 + var(--math-axis));
+  margin-right: calc(-1 * var(--action-gap));
+}
+
+/* The actions stack over the row's input; an open picker must also stack over the rows below. */
+.expr-row.picker-open {
+  z-index: 3;
 }
 
 .expr-row:hover .expr-actions,
@@ -677,8 +709,8 @@ button {
 }
 
 .expr-actions .icon-button {
-  width: 28px;
-  height: 28px;
+  width: var(--action-size);
+  height: var(--action-size);
   color: var(--text-4);
 }
 
@@ -944,6 +976,12 @@ button {
   -webkit-user-select: none;
 }
 
+/* A line even when empty, so the row's color mark and actions always have a baseline to share. */
+.math-view::before {
+  content: "";
+  display: inline-block;
+}
+
 /* A row too long for the list fades out at its end. */
 .math-view.overflowing {
   -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
@@ -1050,22 +1088,48 @@ button {
   border-top: max(1px, 0.055em) solid currentColor;
 }
 
-/* An exponent hangs from its base's top, so it rises over tall bases (parentheses, radicals). */
+/*
+ * A base and its scripts, in a grid whose baseline is the base's (the first item). The exponent
+ * hangs from the top, so it rises over a tall base (parentheses, radicals); the empty cell under
+ * it keeps its bottom 0.17em over the base's baseline (0.46em over the base's bottom, which is
+ * 0.29em under it), so a tall exponent (e^(x/2)) rises instead of hanging below the baseline.
+ * A one-line exponent is placed by the first rule alone: its baseline is the usual 0.4em up.
+ */
 .m-scripts {
-  display: inline-flex;
-  align-items: baseline;
+  display: inline-grid;
+  grid-template-columns: auto auto;
+  grid-template-rows: auto auto;
+}
+
+.m-scripts::after {
+  content: "";
+  grid-area: 2 / 2;
+  height: 0.46em;
 }
 
 .m-scripts > :first-child {
+  grid-area: 1 / 1 / 3 / 2;
+  align-self: end;
   margin-top: 0.14em;
   line-height: 1.1;
 }
 
 .m-sup {
-  align-self: flex-start;
+  grid-area: 1 / 2;
+  align-self: start;
   font-size: max(0.72em, 11px);
   line-height: 1;
   padding-right: 0.05em;
+}
+
+/* With an exponent too, a subscript goes under it, as low as on its own (it takes no room). */
+.m-scripts > .m-sub {
+  grid-area: 2 / 2;
+  align-self: end;
+  margin-top: -1em;
+  position: relative;
+  top: 0.15em;
+  vertical-align: baseline;
 }
 
 /* Italic letters lean right: their exponent steps clear. */
@@ -1738,14 +1802,11 @@ button {
 
   /* Change color and Delete, apart enough that a thumb meant for one doesn't hit the other. */
   .expr-actions {
-    gap: var(--space-2);
-    /* The taller buttons overhang the math's line rather than make it taller. */
-    margin-block: -4px;
-  }
-
-  .expr-actions .icon-button {
-    width: 40px;
-    height: 40px;
+    --action-size: 40px;
+    --action-gap: var(--space-2);
+    /* The taller buttons overhang the math's line rather than make it taller (centered on its
+       axis, a little over its middle, they reach out more at the top). */
+    margin-block: -5px -4px;
   }
 
   .expr-row.selected > .expr-body > .math-field:first-child,

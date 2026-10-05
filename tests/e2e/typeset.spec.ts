@@ -5,11 +5,24 @@ function view(page: Page, index: number) {
   return page.locator('.expr-row').nth(index).locator('.math-view');
 }
 
+/**
+ * Wait for the typeset math's fonts: until they load, rows are laid out with a fallback font, so
+ * boxes measured earlier can still move.
+ */
+async function fontsLoaded(page: Page) {
+  await page.evaluate(async () => {
+    await document.fonts.load('19px "STIX Two Text"', '1');
+    await document.fonts.load('italic 19px "STIX Two Text"', 'x');
+    await document.fonts.ready;
+  });
+}
+
 /** Type a row, then leave it for the next one, so it shows typeset. */
 async function typeRow(page: Page, index: number, text: string) {
   await setExpr(page, index, text);
   await exprInput(page, index).press('Enter');
   await expect(exprInput(page, index + 1)).toBeFocused();
+  await fontsLoaded(page);
 }
 
 /** A point some way across an element (0 = its left edge, 1 = its right edge), at mid-height. */
@@ -82,6 +95,34 @@ test.describe('typeset rows', () => {
     expect(Math.abs((editing?.height ?? 0) - (typeset?.height ?? 0))).toBeLessThan(1);
   });
 
+  test('a tall exponent rises off the baseline instead of hanging below it', async ({ page }) => {
+    await openApp(page);
+    for (const [i, text] of ['y = e^(x/2)', 'y = x^(1/3)'].entries()) {
+      await typeRow(page, i, text);
+      const rise = await view(page, i)
+        .locator('.m-scripts')
+        .evaluate((el) => {
+          const base = el.firstElementChild as HTMLElement;
+          const sup = el.querySelector('.m-sup') as HTMLElement;
+          const em = Number.parseFloat(getComputedStyle(base).fontSize);
+          return (base.getBoundingClientRect().bottom - sup.getBoundingClientRect().bottom) / em;
+        });
+      // The base's box ends 0.29em under its baseline: the exponent ends above the baseline.
+      expect(rise).toBeGreaterThan(0.4);
+    }
+  });
+
+  test('the color mark centers on the math axis of a tall row', async ({ page }) => {
+    await openApp(page);
+    await typeRow(page, 0, 'y = e^(x/2)');
+    const row = page.locator('.expr-row').first();
+    const mark = await row.locator('.expr-swatch').boundingBox();
+    const equals = await view(page, 0).locator('.m-rel').boundingBox();
+    if (!mark || !equals) throw new Error('no boxes');
+    // The '=' is centered on the axis.
+    expect(Math.abs(mark.y + mark.height / 2 - (equals.y + equals.height / 2))).toBeLessThan(3);
+  });
+
   test('a playing slider updates its typeset value in place', async ({ page }) => {
     await openApp(page);
     await typeRow(page, 0, 'a = 1.5');
@@ -117,6 +158,18 @@ test.describe('typeset rows with a mouse', () => {
     await expect(exprInput(page, 0)).toBeFocused();
     expect(await caret(page, 0)).toEqual([12, 12]);
 
+    // A hand that moves a little while pressing: the browser moves the caret back to where the
+    // plain text has the pointer, then the click puts it at the x again.
+    await exprInput(page, 1).focus();
+    at = await across(den.locator('.m-var', { hasText: 'x' }), 0.2);
+    await page.mouse.move(at.x, at.y);
+    await page.mouse.down();
+    await page.waitForTimeout(60);
+    await page.mouse.move(at.x + 2, at.y + 1, { steps: 2 });
+    await page.mouse.up();
+    await expect(exprInput(page, 0)).toBeFocused();
+    expect(await caret(page, 0)).toEqual([7, 7]);
+
     // Between the digits of a number, in an exponent.
     await typeRow(page, 1, 'y = x^123');
     at = await across(view(page, 1).locator('.m-sup .m-num'), 0.5);
@@ -143,6 +196,7 @@ test.describe('typeset rows by touch', () => {
     await page.getByTestId('keypad-hide').tap();
     await exprInput(page, 0).evaluate((el) => el.blur());
     await expect(view(page, 0).locator('.m-frac')).toHaveCount(1);
+    await fontsLoaded(page);
     const at = await across(view(page, 0).locator('.m-numer'), 0.1);
     await page.touchscreen.tap(at.x, at.y);
     await expect(exprInput(page, 0)).toBeFocused();

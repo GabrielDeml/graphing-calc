@@ -14,7 +14,7 @@
 
 import type { RelOp } from '../engine/ast';
 import { isBuiltinFunction, PREFIXABLE_FUNCTIONS } from '../engine/builtinNames';
-import { detectDefinition } from '../engine/definition';
+import { definitionContext, detectDefinition } from '../engine/definition';
 import { type NameContext, type NameKind, splitIdentifier } from '../engine/names';
 import {
   BP_ADD,
@@ -232,21 +232,13 @@ function tokens(source: string, ctx: NameContext): LTok[] {
   return out;
 }
 
-/** The names the row sees: a definition row adds its parameters, or marks its own name. */
-export function rowContext(source: string, names: NameContext): NameContext {
-  const head = detectDefinition(source);
-  if (head?.kind === 'fn') return { vars: names.vars, fns: names.fns, params: head.params };
-  if (head?.kind === 'var') return { vars: names.vars, fns: names.fns, self: head.name };
-  return names;
-}
-
 /**
  * Lays out a row: the engine's reading of it, with source spans and recovery from errors. Never
  * throws. `names` is the document's names table (DocumentEngine.names().ctx); the row's own
  * definition head is applied here, as the engine does.
  */
 export function layoutParse(source: string, names: NameContext): Layout {
-  const ctx = rowContext(source, names);
+  const ctx = definitionContext(detectDefinition(source), names);
   const parser = new LayoutParser(tokens(source, ctx));
   return { source, root: parser.parseRoot() };
 }

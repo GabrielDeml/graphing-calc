@@ -183,6 +183,7 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
       classList={{
         'has-error': !!error(),
         hidden: props.row.hidden,
+        'picker-open': pickerOpen(),
         plots: plots(),
         selected: ui.selectedRowId() === props.row.id,
         traced: ui.tracedRowId() === props.row.id,

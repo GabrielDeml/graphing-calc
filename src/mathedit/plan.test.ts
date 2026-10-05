@@ -12,6 +12,7 @@ import {
   errorLeaves,
   forEachLeaf,
   leafSpan,
+  MAX_PLAN_DEPTH,
   type Plan,
   planShape,
   renderPlan,
@@ -120,7 +121,14 @@ describe('renderPlan: structure', () => {
     expect(s('1/')).toBe('{1/□}');
     expect(s('x^')).toBe('x^{□}');
     expect(s('y = (x+1')).toBe('y   =   (x  +  1');
-    expect(s('y = 1/(x')).toBe('y   =   {1/x}');
+    // An unclosed group keeps its `(` where it would otherwise draw none.
+    expect(s('y = 1/(x')).toBe('y   =   {1/(x}');
+    expect(s('y = sqrt(x+1')).toBe('y   =   √{(x  +  1}');
+    expect(s('x^(2')).toBe('x^{(2}');
+    // Numbers side by side stay apart, as typed (the engine wants an operator between them).
+    expect(s('2 3')).toBe('2   3');
+    expect(s('1.5 2')).toBe('1.5   2');
+    expect(s('y = 2 3x')).toBe('y   =   2   3x');
     expect(s('y == 2')).toBe('y   ‹==›   2');
     expect(s('y = 2$')).toBe('y   =   2‹$›');
     expect(s('x)')).toBe('x‹)›');
@@ -205,8 +213,10 @@ describe('errorLeaves', () => {
   it('moves a mark on structure or nothing to the next leaf', () => {
     // "Expected an expression after '^'": the empty exponent.
     expect(marked('x^', { start: 1, end: 2 })).toEqual(['□']);
-    // "Missing ')'" at an invisible parenthesis.
-    expect(marked('y = sqrt(x', { start: 8, end: 9 })).toEqual(['x']);
+    // An invisible parenthesis.
+    expect(marked('y = sqrt(x) + 1', { start: 10, end: 11 })).toEqual(['+']);
+    // "Missing ')'": an unclosed group shows its `(`.
+    expect(marked('y = sqrt(x', { start: 8, end: 9 })).toEqual(['(']);
     expect(marked('y = ', { start: 2, end: 3 })).toEqual(['=']);
     expect(marked('x + 1', { start: 9, end: 9 })).toEqual(['1']);
   });
@@ -271,7 +281,7 @@ describe('caretStops', () => {
       ],
     ],
     ['√2x', ['‸√2x:0', '√‸2x:1', '√2‸x:1', '√2x‸:1', '√2x‸:0']],
-    ['sqrt(x', ['‸sqrt(x:0', 'sqrt(‸x:1', 'sqrt(x‸:1']],
+    ['sqrt(x', ['‸sqrt(x:0', 'sqrt‸(x:1', 'sqrt(‸x:2', 'sqrt(x‸:2']],
     ['(x', ['‸(x:0', '(‸x:1', '(x‸:1']],
     ['x^', ['‸x^:0', 'x‸^:0', 'x^‸:1', 'x^‸:0']],
     ['2+', ['‸2+:0', '2‸+:0', '2+‸:0']],
@@ -327,18 +337,35 @@ function within(inner: Span, outer: Span): boolean {
   return inner.start >= outer.start && inner.end <= outer.end;
 }
 
+function innerBlocks(b: Box): Block[] {
+  if (b.kind === 'frac') return [b.num, b.den];
+  if (b.kind === 'sup' || b.kind === 'radical' || b.kind === 'fence') return [b.body];
+  return b.kind === 'atom' && b.sub ? [b.sub] : [];
+}
+
+/**
+ * The blocks at `depth` whose text reaches `offset`, found by walking the plan (a block's last
+ * stop may be past spaces after its last box, or its last box may run past its end). `x²` takes
+ * no caret.
+ */
+function blocksAt(block: Block, offset: number, depth: number, out: Block[] = []): Block[] {
+  if (block.depth === depth) {
+    const last = block.boxes[block.boxes.length - 1];
+    const end = Math.max(block.end, last?.span.end ?? 0);
+    if (block.start <= offset && offset <= end) out.push(block);
+    return out;
+  }
+  for (const b of block.boxes) {
+    if (b.kind === 'sup' && b.atomic) continue;
+    for (const c of innerBlocks(b)) blocksAt(c, offset, depth, out);
+  }
+  return out;
+}
+
 /** Boxes lie inside their block (as far as their own text goes) and children inside boxes. */
 function nestingProblem(block: Block): string | null {
   for (const b of block.boxes) {
-    const inner: Block[] =
-      b.kind === 'frac'
-        ? [b.num, b.den]
-        : b.kind === 'sup' || b.kind === 'radical' || b.kind === 'fence'
-          ? [b.body]
-          : b.kind === 'atom' && b.sub
-            ? [b.sub]
-            : [];
-    for (const c of inner) {
+    for (const c of innerBlocks(b)) {
       if (!within({ start: c.start, end: c.end }, b.span)) return `${b.kind}: block outside`;
       if (c.depth !== block.depth + 1) return `${b.kind}: depth`;
       const p = nestingProblem(c);
@@ -374,6 +401,42 @@ describe('long rows', () => {
     expect(caretStops(p).list.length).toBeGreaterThan(10_000);
     expect(() => plan('xy'.repeat(3000))).not.toThrow();
   });
+
+  it('keeps long left chains (`1/x/x…`, `x!!…`) shallow', () => {
+    const maxDepth = (block: Block): number => {
+      let max = block.depth;
+      const visit = (b: Block) => {
+        max = Math.max(max, maxDepth(b));
+      };
+      for (const b of block.boxes) {
+        if (b.kind === 'frac') [b.num, b.den].forEach(visit);
+        else if (b.kind === 'sup' || b.kind === 'radical' || b.kind === 'fence') visit(b.body);
+        else if (b.kind === 'atom' && b.sub) visit(b.sub);
+      }
+      return max;
+    };
+    for (const source of [
+      `${'1/'.repeat(5000)}1`,
+      `y = 1${'/x'.repeat(2000)}`,
+      `y = ${'x/2 '.repeat(2000)}`,
+      `x${')/2'.repeat(2000)}`,
+      `x${'!'.repeat(5000)}`,
+      `${'(x+1)!/'.repeat(1000)}2`,
+    ]) {
+      const p = plan(source);
+      expect(maxDepth(p.root)).toBeLessThanOrEqual(MAX_PLAN_DEPTH + 1);
+      expect(caretStops(p).list.length).toBeGreaterThan(0);
+      let leaves = 0;
+      forEachLeaf(p.root, () => leaves++);
+      expect(leaves).toBeGreaterThan(0);
+      expect(planShape(p).length).toBeGreaterThan(0);
+      expect(errorLeaves(p, { start: source.length, end: source.length }).length).toBe(1);
+    }
+    // A chain of factorials stays one row of atoms.
+    expect(plan(`x${'!'.repeat(5000)}`).root.boxes.length).toBe(5001);
+    // Deep nesting is drawn as text, which still covers the source.
+    expect(s(`1${'/x'.repeat(100)}`)).toMatch(/‹1\/x\/x\/x.*›/);
+  });
 });
 
 describe('properties', () => {
@@ -407,26 +470,34 @@ describe('properties', () => {
     expect(failures.slice(0, 20)).toEqual([]);
   });
 
-  it('caret stops run left to right, each one unique and found again by {offset, depth}', () => {
+  it('caret stops run left to right, each one found again from {offset, depth} alone', () => {
     const failures: string[] = [];
     sources(0xca7e, 10_000).forEach((source, i) => {
       const p = plan(source, CONTEXTS[i % CONTEXTS.length]);
       const { list, at } = caretStops(p);
       if (list.length === 0) failures.push(`${JSON.stringify(source)}: no stops`);
-      const seen = new Set<string>();
       list.forEach((st, k) => {
-        const key = `${st.offset}:${st.depth}`;
-        if (seen.has(key)) failures.push(`${JSON.stringify(source)}: ${key} twice`);
-        seen.add(key);
-        if (at(st.offset, st.depth) !== st) failures.push(`${JSON.stringify(source)}: ${key} lost`);
-        if (st.offset < st.block.start || st.offset > Math.max(st.block.end, st.offset)) {
-          failures.push(`${JSON.stringify(source)}: ${key} outside its block`);
+        const fail = (why: string) =>
+          failures.push(`${JSON.stringify(source)}: ${st.offset}:${st.depth} ${why}`);
+        if (at(st.offset, st.depth) !== st) fail('lost');
+        // The plan's only block at that depth around that offset is the stop's: {offset, depth}
+        // names one place.
+        const found = blocksAt(p.root, st.offset, st.depth);
+        if (found.length !== 1 || found[0] !== st.block) fail(`in ${found.length} blocks`);
+        if (st.offset < 0 || st.offset > source.length) fail('out of range');
+        const { boxes } = st.block;
+        if (st.inside) {
+          const end = st.inside.subStart ?? st.inside.span.end;
+          if (boxes[st.index] !== st.inside) fail('not at the box it is inside');
+          if (st.offset <= st.inside.span.start || st.offset > end) fail('outside its atom');
+        } else {
+          const before = boxes[st.index - 1];
+          const after = boxes[st.index];
+          if (before && st.offset < before.span.end) fail('inside the box before it');
+          if (after && st.offset > after.span.start) fail('inside the box after it');
         }
-        if (st.offset < 0 || st.offset > source.length)
-          failures.push(`${JSON.stringify(source)}: ${key} out of range`);
         const prev = list[k - 1];
-        if (prev && prev.offset > st.offset)
-          failures.push(`${JSON.stringify(source)}: ${key} goes back`);
+        if (prev && prev.offset > st.offset) fail('goes back');
       });
     });
     expect(failures.slice(0, 20)).toEqual([]);

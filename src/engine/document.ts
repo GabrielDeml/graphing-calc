@@ -32,7 +32,7 @@ import {
   compileExpr,
   type UserFunction,
 } from './compile';
-import { type DefinitionHead, detectDefinition } from './definition';
+import { type DefinitionHead, definitionContext, detectDefinition } from './definition';
 import { cyclePath, cyclicComponents, formatCycle, topologicalOrder } from './depgraph';
 import { mathError } from './errors';
 import { EMPTY_CONTEXT, isDefinableName, type NameContext } from './names';
@@ -173,10 +173,7 @@ function analyzeRowUnsafe(
   head: DefinitionHead | null,
   ctx: NameContext,
 ): RowAnalysis {
-  let rowCtx = ctx;
-  if (head?.kind === 'fn') rowCtx = { vars: ctx.vars, fns: ctx.fns, params: head.params };
-  else if (head?.kind === 'var') rowCtx = { vars: ctx.vars, fns: ctx.fns, self: head.name };
-  const parsed = parse(source, rowCtx);
+  const parsed = parse(source, definitionContext(head, ctx));
   if (!parsed.ok) return { key, head, parsed, cls: null, refs: [], unknown: null };
   const nodes = statementNodes(parsed.statement);
   const cls = classify(parsed.statement, head);
