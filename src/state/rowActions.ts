@@ -49,10 +49,10 @@ export function deleteEmptyForward(id: string): boolean {
   return true;
 }
 
-export function focusSibling(id: string, delta: -1 | 1, caret: number): boolean {
+export function focusSibling(id: string, delta: -1 | 1, caret: number, x?: number): boolean {
   const target = doc.rows[position(id) + delta];
   if (!target) return false;
-  focusRow(target.id, caret);
+  focusRow(target.id, caret, undefined, x);
   return true;
 }
 

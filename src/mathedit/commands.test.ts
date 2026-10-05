@@ -12,7 +12,7 @@ import {
   runCommand,
 } from './commands';
 import { layoutParse } from './layout';
-import { forEachLeaf, renderPlan } from './plan';
+import { type Block, forEachLeaf, renderPlan } from './plan';
 
 const OPTS: EditorOptions = { names: EMPTY_CONTEXT };
 
@@ -89,6 +89,30 @@ describe('typing', () => {
     ['x^2‸:0', '!', '(x^2)!‸:0'],
     ['‸1/2:0', '3', '3‸(1/2):0'],
     ['x^2‸:0', 'y', 'x^2y‸:0'],
+    // Right after a structure with an empty last part, typing goes into it (End, a paste, an
+    // IME or a click can leave the caret after the fraction rather than in its denominator).
+    ['y=1/‸:0', '2', 'y=1/2‸:1'],
+    ['y=x^‸:0', '2', 'y=x^2‸:1'],
+    ['x_‸:0', '2', 'x_2‸:1'],
+    // Right after a `)` that closed a denominator's or an exponent's group, `^` and `!` are for
+    // that group, as the text reads.
+    ['1/(x+1)‸:0', '^2', '1/(x+1)^2‸:2'],
+    ['1/(x+1)‸:0', '!', '1/(x+1)!‸:1'],
+    ['x^(2)‸:0', '!', 'x^(2)!‸:1'],
+    // A function's name typed into a denominator or an exponent takes back the parentheses its
+    // first letters needed (`1/si` reads as (1/s)i).
+    ['', 'y=1/sin(x)', 'y=1/sin(x)‸:1'],
+    ['', 'e^sin(x)', 'e^sin(x)‸:1'],
+    ['', 'y=log(x)/log(2)', 'y=log(x)/log(2)‸:1'],
+    ['1/(2si‸):1', 'n', '1/(2sin‸):1'],
+    // A space must not split a part.
+    ['x^2‸3:1', ' ', 'x^(2 ‸3):1'],
+    ['1/2‸3:1', ' ', '1/(2 ‸3):1'],
+    ['a_1‸2:1', ' ', 'a_1‸2:1'],
+    // A function's power is one number or name: what follows is its argument.
+    ['', 'y=sin^2(x)', 'y=sin^2(x)‸:0'],
+    ['', 'y=sin^2x', 'y=sin^2x‸:0'],
+    ['', 'y=sin^(2x)', 'y=sin^(2x)‸:0'],
   ])('%j + %j → %j', (from, keys, expected) => {
     expect(type(from, keys)).toBe(expected);
   });
@@ -102,6 +126,22 @@ describe('typing', () => {
     // Before parentheses, the name takes them.
     expect(type('‸(x)', 'sqrt')).toBe('sqrt(‸x):1');
   });
+
+  it.each([
+    ['', 'sqrt(x)', 'sqrt(x)‸:0'],
+    ['', 'sqrt(x)+1', 'sqrt(x)+1‸:0'],
+    ['', 'cbrt(x)', 'cbrt(x)‸:0'],
+    ['', 'y=sqrt(x)/2', 'y=sqrt(x)/2‸:1'],
+    ['', 'sqrt((x+1)/2)', 'sqrt((x+1)/2)‸:0'],
+    ['', '(sqrt(x))', '(sqrt(x))‸:0'],
+    ['a‸b', '/(x+1)', 'a/(x+1)‸b:0'],
+    ['x‸y', '^(2)', 'x^(2)‸y:0'],
+  ])(
+    'a ( typed into parentheses the editor just opened is theirs: %j + %j → %j',
+    (from, keys, expected) => {
+      expect(type(from, keys)).toBe(expected);
+    },
+  );
 
   it.each([
     ['', '/', '(‸)/:1'],
@@ -149,6 +189,11 @@ describe('typing', () => {
     ['a_1‸:1', ' ', 'a_1‸:0'],
     ['a_‸:1', '+', 'a+‸:0'],
     ['a_‸:1', ' ', 'a‸:0'],
+    // Braces are the editor's: `{` is already there, `}` leaves.
+    ['x_‸:1', '{', 'x_‸:1'],
+    ['x_10‸:1', '}', 'x_10‸:0'],
+    ['x_{10‸}:1', '}', 'x_{10}‸:0'],
+    ['', 'x_{10}', 'x_10‸:0'],
   ])('_ : %j + %j → %j', (from, keys, expected) => {
     expect(type(from, keys)).toBe(expected);
   });
@@ -164,6 +209,20 @@ describe('typing', () => {
     ['x‸', ')', 'x)‸:0'],
     // `(` in a denominator stays in it: the denominator needs its parentheses then.
     ['1/2‸:1', '(', '1/(2(‸)):2'],
+    // In the empty |‸| of the |a| key, what is typed is the bars'.
+    ['|‸|:1', 'x', '|x‸|:1'],
+    ['y=2|‸|:1', 'x+1', 'y=2|x+1‸|:1'],
+    ['1/(2|‸|):2', 'x', '1/(2|x‸|):2'],
+    // At the end of a denominator or an exponent in the editor's parentheses, `)` and `|` are
+    // for the group around it.
+    ['(1/(2x‸):2', ')', '(1/(2x))‸:0'],
+    ['((1/(2x‸)):3', ')', '((1/(2x))‸):1'],
+    ['(x^(2y‸):2', ')', '(x^(2y))‸:0'],
+    ['', '(1/2x)+1', '(1/(2x))+1‸:0'],
+    ['', 'y=sin(x/2+1)+3', 'y=sin(x/(2+1))+3‸:0'],
+    ['', '|x/2+1|', '|x/(2+1)|‸:0'],
+    // With no group around, `|` starts one in the denominator.
+    ['1/(2x‸):1', '|', '1/(2x|‸):2'],
   ])('( ) | : %j + %j → %j', (from, keys, expected) => {
     expect(type(from, keys)).toBe(expected);
   });
@@ -182,6 +241,9 @@ describe('typing', () => {
     // In the middle of an exponent, typing stays in it.
     ['x^‸2:1', '-', 'x^-‸2:1'],
     ['x^2‸3:1', '+', 'x^(2+‸3):1'],
+    // After an operator, a sign is the operand's.
+    ['x^(2*‸):1', '-', 'x^(2*-‸):1'],
+    ['', 'x^2*-1', 'x^(2*-1‸):1'],
   ])('+ - = < > , : %j + %j → %j', (from, keys, expected) => {
     expect(type(from, keys)).toBe(expected);
   });
@@ -239,6 +301,14 @@ describe('pasting and composing', () => {
   it('inserts text as it is', () => {
     expect(run('‸', { type: 'insert', text: 'y = sin(x)/2' })).toBe('y = sin(x)/2‸:0');
     expect(run('y = «x»', { type: 'insert', text: '1/2x' })).toBe('y = 1/2x‸:0');
+    // An empty place at the end takes the caret.
+    expect(run('‸', { type: 'insert', text: 'y=1/' })).toBe('y=1/‸:1');
+  });
+
+  it('reads a caret set from outside into an empty place at its offset', () => {
+    expect(caretAt('y=1/', 4, OPTS)).toEqual({ offset: 4, depth: 1 });
+    expect(caretAt('y=1/', 4, OPTS, 0)).toEqual({ offset: 4, depth: 0 });
+    expect(caretAt('y=1/2', 5, OPTS)).toEqual({ offset: 5, depth: 0 });
   });
 });
 
@@ -381,6 +451,17 @@ describe('moving', () => {
     expect(run('1/‸2:1', { type: 'home' })).toBe('‸1/2:0');
     expect(run('1/‸2:1', { type: 'end' })).toBe('1/2‸:0');
     expect(run('y = (x‸+1:1', { type: 'end' })).toBe('y = (x+1‸:1');
+    // An empty place at the end is the end.
+    expect(run('‸y=1/', { type: 'end' })).toBe('y=1/‸:1');
+    expect(run('‸y=x^', { type: 'end' })).toBe('y=x^‸:1');
+  });
+
+  it('places the caret, taking away an empty exponent it leaves', () => {
+    expect(run('y=x^‸:1', { type: 'place', at: { offset: 0, depth: 0 } })).toBe('‸y=x:0');
+    expect(run('y=1/‸2:1', { type: 'place', at: { offset: 1, depth: 0 } })).toBe('y‸=1/2:0');
+    expect(run('y=1/2‸:1', { type: 'place', at: { offset: 0, depth: 0 }, extend: true })).toBe(
+      '«y=1/2»',
+    );
   });
 
   it.each([
@@ -445,6 +526,9 @@ describe('keypad', () => {
     ['«x+1»', { type: 'function', name: 'sin' }, 'sin(x+1)‸:0'],
     ['1/2‸:1', { type: 'function', name: 'sin' }, '1/(2sin(‸)):2'],
     ['‸', { type: 'wrap', before: '|', after: '|' }, '|‸|:1'],
+    // Kept in the denominator or the exponent the caret is in.
+    ['1/2‸:1', { type: 'wrap', before: '|', after: '|' }, '1/(2|‸|):2'],
+    ['x^2‸:1', { type: 'wrap', before: '|', after: '|' }, 'x^(2|‸|):2'],
     ['y = «x»', { type: 'wrap', before: '|', after: '|' }, 'y = |x|‸:0'],
     ['x‸', { type: 'power', exponent: '2' }, 'x^2‸:0'],
     ['x‸y', { type: 'power', exponent: '2' }, 'x^(2)‸y:0'],
@@ -510,34 +594,87 @@ const COMMANDS: EditorCommand[] = [
   { type: 'clear' },
 ];
 
-function isStop(st: EditorState): boolean {
-  const stops = caretStops(renderPlan(layoutParse(st.text, EMPTY_CONTEXT)));
+function isStop(st: EditorState, opts = OPTS): boolean {
+  const stops = caretStops(renderPlan(layoutParse(st.text, opts.names)));
   return (
     stops.at(st.focus.offset, st.focus.depth) !== undefined &&
     stops.at(st.anchor.offset, st.anchor.depth) !== undefined
   );
 }
 
+/** Names in scope, as a document with sliders a and b and a function f gives them. */
+const NAMED: EditorOptions = { names: ctxOf(['a', 'b'], { f: 1 }) };
+
 describe('invariants', () => {
-  it('every command ends on caret stops of the new text', () => {
-    const rand = mulberry32(0x5e1ec7);
-    const failures: string[] = [];
-    for (const text of validRows(0xed17, 1000)) {
-      const stops = caretStops(renderPlan(layoutParse(text, EMPTY_CONTEXT))).list;
-      const a = pick(rand, stops);
-      const f = rand() < 0.7 ? a : pick(rand, stops);
-      const from: EditorState = { text, anchor: a, focus: f };
-      for (const cmd of COMMANDS) {
-        const r = runCommand(from, cmd, OPTS);
-        if (r && !isStop(r.state)) {
-          failures.push(
-            `${JSON.stringify(text)} ${show(from)} ${JSON.stringify(cmd)} → ${show(r.state)}`,
-          );
+  it.each([
+    ['no names', OPTS],
+    ['sliders and a function', NAMED],
+  ])(
+    'every command ends on caret stops of the new text (%s)',
+    (_, opts) => {
+      const rand = mulberry32(0x5e1ec7);
+      const failures: string[] = [];
+      for (const text of validRows(0xed17, 1000)) {
+        const stops = caretStops(renderPlan(layoutParse(text, opts.names))).list;
+        const a = pick(rand, stops);
+        const f = rand() < 0.7 ? a : pick(rand, stops);
+        const from: EditorState = { text, anchor: a, focus: f };
+        for (const cmd of COMMANDS) {
+          const r = runCommand(from, cmd, opts);
+          if (r && !isStop(r.state, opts)) {
+            failures.push(
+              `${JSON.stringify(text)} ${show(from)} ${JSON.stringify(cmd)} → ${show(r.state)}`,
+            );
+          }
         }
       }
+      expect(failures.slice(0, 10)).toEqual([]);
+    },
+    30_000,
+  );
+
+  it.each([
+    // Common rows, typed key by key as written: the text comes out as typed (so it means what
+    // was typed), parentheses and all.
+    'y=1/(x+1)^2',
+    'y=(x+1)/(x-1)^2',
+    'y=(x+1)/(x-1)',
+    'y=sqrt(x)+1',
+    'y=sqrt(1-x^2)',
+    'y=1/sqrt(x)',
+    'y=sqrt((x+1)/2)',
+    'y=(sqrt(x))^3',
+    'y=1/sin(x)',
+    'y=sin(x)/x',
+    'y=e^(-x)',
+    'y=e^(-x^2)',
+    'y=e^sin(x)',
+    'y=x^sin(x)',
+    'y=log(x)/log(2)',
+    'y=ln(x)/x',
+    'y=1/(1+e^(-x))',
+    'y=1/(x(x+1))',
+    'y=sin(x)^2',
+    'y=sin^2(x)',
+    'y=|x-1|+2',
+    'y=|sin(x)|',
+    'y=x^(1/2)',
+    'y=2^-x',
+    'y=(x^2)!',
+    'y=1/(x+1)!',
+    'y=(x-1)(x+2)',
+    'x^2+y^2=9',
+    'r=1+cos(θ)',
+    '(cos(t),sin(t))',
+    'f(x)=x^2+1',
+  ])('types %j as written', (row) => {
+    expect(parse(row).ok).toBe(true);
+    let st = state('', NAMED);
+    for (const ch of row) {
+      st = (runCommand(st, { type: 'type', text: ch }, NAMED) as { state: EditorState }).state;
     }
-    expect(failures.slice(0, 10)).toEqual([]);
-  }, 30_000);
+    expect(st.text).toBe(row);
+  });
 
   it('types text with no structure characters exactly as typed', () => {
     const rand = mulberry32(0x7e47);
@@ -584,22 +721,49 @@ describe('invariants', () => {
     expect(failures.slice(0, 10)).toEqual([]);
   });
 
-  it('Backspace from the end empties any row', () => {
+  it('types rows the engine reads, without structure keys, exactly as written', () => {
+    // `/ ^ _ **`, a radical's name (it opens its parentheses) and the corrections change what
+    // is typed by design; with the rest, any row comes out as typed, so it means what it says.
+    const rand = mulberry32(0x1234);
     const failures: string[] = [];
-    const rand = mulberry32(0xbac5);
-    for (let i = 0; i < 3000; i++) {
-      const text = randomSource(rand);
-      let st = state(`${text}‸`);
-      let steps = 0;
-      const limit = 4 * text.length + 8;
-      while (st.text !== '' && steps < limit) {
-        st = (runCommand(st, { type: 'backspace' }, OPTS) as { state: EditorState }).state;
-        steps++;
+    let rows = 0;
+    for (let i = 0; i < 20_000 && rows < 3000; i++) {
+      const row = randomSource(rand);
+      if (!parse(row).ok || /[/^_*√∛÷]|sqrt|cbrt|==|=<|=>/.test(row)) continue;
+      rows++;
+      let st = state('');
+      for (const ch of row) {
+        st = (runCommand(st, { type: 'type', text: ch }, OPTS) as { state: EditorState }).state;
       }
-      if (st.text !== '') failures.push(`${JSON.stringify(text)} stuck at ${show(st)}`);
+      if (st.text !== row) failures.push(`${JSON.stringify(row)} → ${JSON.stringify(st.text)}`);
     }
+    expect(rows).toBe(3000);
     expect(failures.slice(0, 10)).toEqual([]);
-  });
+  }, 30_000);
+
+  it.each([
+    ['no names', OPTS],
+    ['sliders and a function', NAMED],
+  ])(
+    'Backspace from the end empties any row (%s)',
+    (_, opts) => {
+      const failures: string[] = [];
+      const rand = mulberry32(0xbac5);
+      for (let i = 0; i < 3000; i++) {
+        const text = randomSource(rand);
+        let st = state(`${text}‸`, opts);
+        let steps = 0;
+        const limit = 4 * text.length + 8;
+        while (st.text !== '' && steps < limit) {
+          st = (runCommand(st, { type: 'backspace' }, opts) as { state: EditorState }).state;
+          steps++;
+        }
+        if (st.text !== '') failures.push(`${JSON.stringify(text)} stuck at ${show(st)}`);
+      }
+      expect(failures.slice(0, 10)).toEqual([]);
+    },
+    30_000,
+  );
 
   it('never throws on junk text and carets', () => {
     const rand = mulberry32(0x1a2b);
@@ -650,8 +814,21 @@ describe('invariants', () => {
         });
         if (/[a-z0-9]/.test(key) && !junk) {
           const after = readSelection(r.state, OPTS);
-          const path = (sel: typeof before) => sel.doc.info.get(sel.focus.block)?.path;
-          if (path(after) !== path(before) || after.doc.text[after.focus.offset - 1] !== key) {
+          // An empty place at the caret's offset takes what is typed there (`1/‸` after the
+          // fraction is its denominator).
+          const isEmpty = (b: Block) => b.boxes.every((x) => x.kind === 'slot');
+          const deeper = before.doc.stops
+            .atOffset(before.focus.offset)
+            .filter((s) => s.depth > before.focus.depth && isEmpty(s.block));
+          const inEmpty =
+            isEmpty(before.focus.block) && before.focus.block !== before.doc.plan.root;
+          const into = (!inEmpty && deeper[deeper.length - 1]) || before.focus;
+          const path = (sel: typeof before, block = sel.focus.block) =>
+            sel.doc.info.get(block)?.path;
+          if (
+            path(after) !== path(before, into.block) ||
+            after.doc.text[after.focus.offset - 1] !== key
+          ) {
             failures.push(`${show(st)} + ${JSON.stringify(key)} → ${show(r.state)}`);
             break;
           }
@@ -660,5 +837,34 @@ describe('invariants', () => {
       }
     }
     expect(failures.slice(0, 10)).toEqual([]);
-  });
+  }, 30_000);
+
+  it('never puts a structure with an empty part in parentheses', () => {
+    // `y=1/` + `2` must not become `y=(1/)2`, whichever stop the caret is at.
+    const rand = mulberry32(0xe5c7);
+    const KEYS = [...'x2', '/', '^', '_', '+', '(', ')', '!', ' ', '|'];
+    const failures: string[] = [];
+    for (let i = 0; i < 1500; i++) {
+      let st = state('');
+      for (let k = 0; k < 10; k++) {
+        const stops = caretStops(renderPlan(layoutParse(st.text, EMPTY_CONTEXT))).list;
+        const at = pick(rand, stops);
+        const from: EditorState = { text: st.text, anchor: at, focus: at };
+        const key = pick(rand, KEYS);
+        const r = runCommand(from, { type: 'type', text: key }, OPTS) as { state: EditorState };
+        // The structure before the caret, wrapped: `(…)` + key.
+        const p = at.offset;
+        const old = st.text;
+        for (let s = 0; s < p; s++) {
+          const part = old.slice(s, p);
+          const wrapped = `${old.slice(0, s)}(${part})${key}${old.slice(p)}`;
+          if (r.state.text === wrapped && /[/÷^]\s*$|[a-z]_\s*$|^\s*[/÷]/.test(part)) {
+            failures.push(`${show(from)} + ${JSON.stringify(key)} → ${show(r.state)}`);
+          }
+        }
+        st = r.state;
+      }
+    }
+    expect(failures.slice(0, 10)).toEqual([]);
+  }, 30_000);
 });

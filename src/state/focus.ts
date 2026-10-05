@@ -23,6 +23,10 @@ export interface RowCaret {
   get(): { offset: number; depth: number } | undefined;
   /** Put the caret, already at its offset, at this depth. */
   set(depth: number): void;
+  /** Where the caret is drawn (client x), when it is. */
+  x(): number | undefined;
+  /** Put the caret at the place nearest this x (client) on the row's line; false if it can't. */
+  placeAtX(x: number): boolean;
 }
 
 const carets = new WeakMap<HTMLInputElement, RowCaret>();
@@ -32,6 +36,11 @@ export function registerRowCaret(el: HTMLInputElement, caret: RowCaret): () => v
   return () => {
     if (carets.get(el) === caret) carets.delete(el);
   };
+}
+
+/** Where a row input's caret is drawn (client x), if it is drawn by its row's editor. */
+export function rowCaretX(el: HTMLInputElement): number | undefined {
+  return carets.get(el)?.x();
 }
 
 /** The row whose expression input has focus, and its caret (undo returns there). */
@@ -48,21 +57,25 @@ export function focusedRow(): { id: string; caret: number; depth?: number } | nu
 
 /**
  * Focus a row's input once it exists (it may have just been inserted), with the caret at an
- * offset (and a depth, in a typeset row; else the shallowest place there).
+ * offset (and a depth, in a typeset row; else the shallowest place there). With `x`, a typeset
+ * row puts the caret where it is drawn nearest that x instead (↑ and ↓ keep the caret's column).
  */
 export function focusRow(
   id: string,
   caret: 'start' | 'end' | number = 'end',
   depth?: number,
+  x?: number,
 ): void {
   const apply = () => {
     const el = inputs.get(id);
     if (!el) return false;
     el.focus({ preventScroll: true });
-    const len = el.value.length;
-    const pos = caret === 'start' ? 0 : caret === 'end' ? len : Math.min(caret, len);
-    el.setSelectionRange(pos, pos);
-    if (depth !== undefined) carets.get(el)?.set(depth);
+    if (x === undefined || !carets.get(el)?.placeAtX(x)) {
+      const len = el.value.length;
+      const pos = caret === 'start' ? 0 : caret === 'end' ? len : Math.min(caret, len);
+      el.setSelectionRange(pos, pos);
+      if (depth !== undefined) carets.get(el)?.set(depth);
+    }
     el.scrollIntoView({ block: 'nearest' });
     return true;
   };

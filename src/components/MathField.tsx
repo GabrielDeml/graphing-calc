@@ -11,17 +11,35 @@ import {
   type Names,
   readSelection,
   runCommand,
+  type Selection,
 } from '../mathedit';
 import { registerRowCaret } from '../state/focus';
 import { type EditTarget, keypad } from '../state/keypad';
 import { type CaretView, MathView, type MathViewHandle, typesetRow } from './MathView';
 
+const PLAIN_KEY = 'graphing-calc:plain';
+
 /**
  * `?plain` in the URL: rows are edited as plain text while focused, as before they were edited
- * in their typeset form (a way out if a browser or keyboard misbehaves with the editor).
+ * in their typeset form (a way out if a browser or keyboard misbehaves with the editor). It is
+ * remembered, so an installed app (no address bar) keeps it once opened that way; `?plain=0`
+ * turns it off.
  */
-export const plainEditing =
-  typeof location !== 'undefined' && new URLSearchParams(location.search).has('plain');
+export const plainEditing = ((): boolean => {
+  if (typeof location === 'undefined') return false;
+  const param = new URLSearchParams(location.search).get('plain');
+  const on = param !== null && param !== '0' && param !== 'false';
+  try {
+    if (param !== null) {
+      if (on) localStorage.setItem(PLAIN_KEY, '1');
+      else localStorage.removeItem(PLAIN_KEY);
+    }
+    return localStorage.getItem(PLAIN_KEY) === '1';
+  } catch {
+    // No storage (private mode, blocked): just this visit.
+    return on;
+  }
+})();
 
 /**
  * ↵ handler for small fields (slider bounds, t/θ ranges): finish editing. The keypad closes too,
@@ -116,6 +134,28 @@ function nativeEdit(
   return { text: splice(s, nextCodePoint(text, s), ''), caret: s };
 }
 
+/**
+ * What an IME committed, as an editor command from the state before it composed: a word or a
+ * number a phone keyboard composed (or one character) goes through the typing rules, like keys;
+ * anything else is text, inserted as it is. Null when the input changed some other way.
+ */
+function committed(from: Selection, value: string): EditorCommand | null {
+  const { text } = from.doc;
+  const head = text.slice(0, from.start);
+  const tail = text.slice(from.end);
+  if (
+    value.length < head.length + tail.length ||
+    !value.startsWith(head) ||
+    !value.endsWith(tail)
+  ) {
+    return null;
+  }
+  const inserted = value.slice(head.length, value.length - tail.length);
+  if (inserted === '') return null;
+  const keys = /^[\p{L}\p{N}]{1,24}$/u.test(inserted) || [...inserted].length === 1;
+  return { type: keys ? 'type' : 'insert', text: inserted };
+}
+
 /** A keypad edit as an editor command. */
 function keypadCommand(op: EditOp): EditorCommand | null {
   switch (op.type) {
@@ -185,9 +225,10 @@ export interface MathFieldProps {
  * deleting), which the editor turns into text splices; only where its result differs from the
  * browser's own edit is that prevented (mobile keyboards keep their state otherwise), and a
  * typed character the browser inserted unasked goes through the typing rules on `input`.
- * Nothing is written during an IME composition. The selection is read again whenever it was
- * moved by something else (select all, a test, undo), and never set while the field takes focus
- * (Playwright's fill() selects, then focuses, then types).
+ * Nothing is written during an IME composition; what it commits goes through the editor from
+ * where it started (a word a phone keyboard composed, by the typing rules). The selection is
+ * read again whenever it was moved by something else (select all, a test, undo), and never set
+ * while the field takes focus (Playwright's fill() selects, then focuses, then types).
  */
 export function MathField(props: MathFieldProps) {
   let input!: HTMLInputElement;
@@ -209,11 +250,17 @@ export function MathField(props: MathFieldProps) {
   /** What the browser's own edit will make, when it is what the editor wants too. */
   let pending: { state: EditorState; kind: EditKind | null } | null = null;
   let composing = false;
-  /** A press on the math being edited: where, and the caret position it is on. */
+  /** The editor's state when an IME started composing (what it commits is applied to it). */
+  let composeFrom: EditorState | null = null;
+  /**
+   * A press on the math being edited: where, the caret position it is on, and (a finger, which
+   * slides a long row sideways) where it last was.
+   */
   let drag: {
     id: number;
     x: number;
     y: number;
+    lastX: number;
     at: Caret;
     mouse: boolean;
     extend: boolean;
@@ -241,7 +288,7 @@ export function MathField(props: MathFieldProps) {
     if (state && given && state.text === text && given.start === s && given.end === e) return state;
     const opts = options();
     if (s === e) {
-      const depth = hint?.offset === s ? hint.depth : 0;
+      const depth = hint?.offset === s ? hint.depth : undefined;
       const c = caretAt(text, s, opts, depth);
       state = { text, anchor: c, focus: c };
     } else {
@@ -286,18 +333,23 @@ export function MathField(props: MathFieldProps) {
     return true;
   };
 
-  /** The caret moved without the editor (select all, a click elsewhere, undo): redraw it. */
+  /**
+   * The caret moved without the editor (select all, a click elsewhere, undo), or the field just
+   * took focus: draw it where it is.
+   */
   const refresh = () => {
     if (!inPlace() || !focused()) return;
     if (composing) {
+      // At the depth the composition started at (or the deepest place there above it).
       const text = input.value;
-      const c = caretAt(text, input.selectionEnd ?? text.length, options());
+      const at = input.selectionEnd ?? text.length;
+      const c = caretAt(text, at, options(), composeFrom?.focus.depth ?? 0);
       showCaret({ text, anchor: c, focus: c });
       return;
     }
     const before = state;
     const st = sync();
-    if (st !== before) showCaret(st);
+    if (st !== before || caret() === null) showCaret(st);
   };
 
   // Undo and other edits from outside change the text under the caret.
@@ -310,6 +362,8 @@ export function MathField(props: MathFieldProps) {
   const onBeforeInput = (e: InputEvent) => {
     if (!inPlace() || e.defaultPrevented || composing || e.isComposing) return;
     pending = null;
+    // An edit the browser makes anyway (some phone keyboards): `input` sees to it.
+    if (!e.cancelable) return;
     let cmd: EditorCommand | null = null;
     if (e.inputType === 'insertText' && e.data && [...e.data].length === 1) {
       cmd = { type: 'type', text: e.data };
@@ -425,12 +479,38 @@ export function MathField(props: MathFieldProps) {
     return true;
   };
 
-  /** Focuses the field (if it isn't) and puts the caret, or extends the selection, at `at`. */
+  /**
+   * Focuses the field (if it isn't) and puts the caret, or extends the selection, at `at`. An
+   * empty exponent the caret leaves goes, as it does with the arrows.
+   */
   const place = (at: Caret, extend: boolean) => {
     if (document.activeElement !== input) input.focus({ preventScroll: true });
     if (document.activeElement !== input) return;
-    const st = sync();
-    show({ text: st.text, anchor: extend ? st.anchor : at, focus: at }, null);
+    run({ type: 'place', at, extend });
+  };
+
+  /** An IME committed: through the editor, from where the composition started. */
+  const commitComposition = () => {
+    const from = composeFrom;
+    composeFrom = null;
+    const value = input.value;
+    const cmd = from ? committed(readSelection(from, options()), value) : null;
+    const result = from && cmd ? runCommand(from, cmd, options()) : null;
+    if (result) {
+      batch(() => {
+        setLive(null);
+        show(result.state, result.edit ?? 'insert');
+      });
+      return;
+    }
+    // Changed some other way: as it is, the caret as deep as where it started.
+    batch(() => {
+      setLive(null);
+      state = null;
+      if (from) hint = { offset: input.selectionStart ?? value.length, depth: from.focus.depth };
+      if (value !== props.value) props.onChange(value);
+    });
+    refresh();
   };
 
   // ---- plain editing ----
@@ -530,6 +610,15 @@ export function MathField(props: MathFieldProps) {
                 state = null;
                 refresh();
               },
+              x: () => {
+                if (!inPlace() || !focused() || !view) return undefined;
+                return view.xOf(readSelection(sync(), options()).focus);
+              },
+              placeAtX: (x) => {
+                if (!inPlace() || !view || document.activeElement !== input) return false;
+                place(view.caretAt(x, view.lineY()), false);
+                return true;
+              },
             }),
           );
         }}
@@ -551,23 +640,19 @@ export function MathField(props: MathFieldProps) {
         onCompositionStart={() => {
           composing = true;
           pending = null;
+          // Read, not set: the input's selection is still the one from before.
+          composeFrom = inPlace() ? sync() : null;
         }}
         onCompositionEnd={() => {
           composing = false;
-          if (!inPlace()) return;
-          // Written now, as it is: what an IME composes is text, not keystrokes.
-          const value = input.value;
-          batch(() => {
-            setLive(null);
-            state = null;
-            if (value !== props.value) props.onChange(value);
-          });
-          refresh();
+          if (inPlace()) commitComposition();
         }}
         onScroll={syncMirror}
         onKeyUp={syncMirror}
         onKeyDown={(e) => {
-          if (inPlace() && !composing && !e.isComposing && moveKey(e)) return;
+          // Keys an IME uses to pick and commit (↑, ↓, Enter) are its own while it composes.
+          if (composing || e.isComposing) return;
+          if (inPlace() && moveKey(e)) return;
           if (props.onKeyDown) props.onKeyDown(e);
           else if (e.key === 'Enter') {
             e.preventDefault();
@@ -577,9 +662,11 @@ export function MathField(props: MathFieldProps) {
         onFocus={() => {
           setFocused(true);
           if (inPlace()) {
-            // Reads the selection, never sets it (see the comment above).
+            // Reads the selection, never sets it (see the comment above); drawn once what
+            // focused the field (a click, ↑ from the row below, undo) has put the caret, so it
+            // doesn't first show, and scroll to, where the input's caret was left.
             document.addEventListener('selectionchange', onSelectionChange);
-            refresh();
+            queueMicrotask(refresh);
           } else if (press) {
             setTimeout(() => {
               if (input.selectionStart === input.selectionEnd) placeCaret();
@@ -593,10 +680,11 @@ export function MathField(props: MathFieldProps) {
           setFocused(false);
           press = null;
           drag = null;
-          state = null;
-          given = null;
+          // The editor's state stays (the caret's depth: back in the denominator when the
+          // focus returns); sync() drops it if the text or the selection change meanwhile.
           pending = null;
           composing = false;
+          composeFrom = null;
           batch(() => {
             setLive(null);
             setCaret(null);
@@ -614,6 +702,7 @@ export function MathField(props: MathFieldProps) {
               id: e.pointerId,
               x: e.clientX,
               y: e.clientY,
+              lastX: e.clientX,
               at: view.caretAt(e.clientX, e.clientY),
               mouse: e.pointerType !== 'touch',
               extend: e.shiftKey && document.activeElement === input,
@@ -638,10 +727,17 @@ export function MathField(props: MathFieldProps) {
               : null;
         }}
         onPointerMove={(e) => {
-          // A mouse or pen drag selects; a finger scrolls the list.
+          // A mouse or pen drag selects; a finger slides a long row being edited sideways (up
+          // and down, it scrolls the list: touch-action in global.css).
           const d = drag;
-          if (!d || e.pointerId !== d.id || !d.mouse || !view) return;
+          if (!d || e.pointerId !== d.id || !view) return;
           if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) <= DRAG_SLOP) return;
+          if (!d.mouse) {
+            if (document.activeElement === input) view.scrollBy(d.lastX - e.clientX);
+            d.lastX = e.clientX;
+            d.moved = true;
+            return;
+          }
           d.moved = true;
           if (document.activeElement !== input) input.focus({ preventScroll: true });
           if (document.activeElement !== input) return;
@@ -665,6 +761,24 @@ export function MathField(props: MathFieldProps) {
         onPointerCancel={() => {
           press = null;
           drag = null;
+        }}
+        onWheel={(e) => {
+          // The math scrolls, not the invisible input under the pointer.
+          if (!inPlace() || !view || document.activeElement !== input) return;
+          const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? input.clientWidth : 1;
+          const sideways = Math.abs(e.deltaX) > Math.abs(e.deltaY);
+          const dx = (sideways ? e.deltaX : e.shiftKey ? e.deltaY : 0) * unit;
+          if (dx === 0) return;
+          e.preventDefault();
+          view.scrollBy(dx);
+        }}
+        onDblClick={(e) => {
+          // The number, name or symbol under the pointer.
+          if (!inPlace() || !view || document.activeElement !== input) return;
+          const word = view.wordAt(e.clientX, e.clientY);
+          if (!word) return;
+          const st = sync();
+          show({ text: st.text, anchor: word.start, focus: word.end }, null);
         }}
         onClick={(e) => {
           if (inPlace()) {

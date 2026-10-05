@@ -13,7 +13,7 @@ import { formatValue } from '../engine/format';
 import type { MathError } from '../engine/types';
 import { analysis, nameContext, steadyRows } from '../state/analysis';
 import { doc, type Row, removeRow, setColor, toggleHidden, updateSource } from '../state/doc';
-import { focusRow, registerRowInput, unregisterRowInput } from '../state/focus';
+import { focusRow, registerRowInput, rowCaretX, unregisterRowInput } from '../state/focus';
 import { offerUndo } from '../state/historyUi';
 import { isCoarsePointer } from '../state/keypad';
 import {
@@ -164,11 +164,12 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
       case 'Delete':
         if (empty && (e.repeat || deleteEmptyForward(props.row.id))) e.preventDefault();
         break;
+      // The caret keeps its column on screen (typeset rows), else its offset.
       case 'ArrowUp':
-        if (focusSibling(props.row.id, -1, caret)) e.preventDefault();
+        if (focusSibling(props.row.id, -1, caret, rowCaretX(el))) e.preventDefault();
         break;
       case 'ArrowDown':
-        if (focusSibling(props.row.id, 1, caret)) e.preventDefault();
+        if (focusSibling(props.row.id, 1, caret, rowCaretX(el))) e.preventDefault();
         break;
       case 'Escape':
         el.blur();

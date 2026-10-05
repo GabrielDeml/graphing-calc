@@ -33,6 +33,11 @@ export interface EditorState {
   anchor: Caret;
   /** The caret: the end of the selection that moves. */
   focus: Caret;
+  /**
+   * Where the caret is right after parentheses the editor just opened by itself (`sqrt` typed:
+   * `sqrt(‸)`): a `(` typed next is that one, not another. Any other command clears it.
+   */
+  opened?: number;
 }
 
 export type EditorCommand =
@@ -54,6 +59,8 @@ export type EditorCommand =
   | { type: 'end'; extend?: boolean }
   | { type: 'up' }
   | { type: 'down' }
+  /** The caret to a place (a click), or the selection's focus there (a drag, Shift+click). */
+  | { type: 'place'; at: Caret; extend?: boolean }
   | { type: 'selectAll' }
   | { type: 'clear' };
 
@@ -106,8 +113,20 @@ export interface EditDoc {
   order: Map<CaretStop, number>;
 }
 
+/** Plans already read (a plan is reused while its text and names stay the same). */
+const analyzed = new WeakMap<Plan, EditDoc>();
+
 /** A plan read for editing: its stops, and where each block sits in the tree. */
 export function analyze(plan: Plan): EditDoc {
+  let doc = analyzed.get(plan);
+  if (!doc) {
+    doc = analyzeOnce(plan);
+    analyzed.set(plan, doc);
+  }
+  return doc;
+}
+
+function analyzeOnce(plan: Plan): EditDoc {
   const info = new Map<Block, BlockInfo>();
   const visit = (block: Block, own: BlockInfo) => {
     info.set(block, own);
@@ -160,14 +179,43 @@ function isEmpty(block: Block): boolean {
   return block.boxes.every((b) => b.kind === 'slot');
 }
 
+/** A block that ends with an empty place: an operand is still to come (`2*‸`, or nothing yet). */
+function awaitsOperand(block: Block): boolean {
+  const last = block.boxes[block.boxes.length - 1];
+  return last === undefined || last.kind === 'slot';
+}
+
+/**
+ * A finished structure the caret can be next to: one with an empty part (`1/‸`) or still open
+ * (`|‸|` reads as a bar opening another) doesn't count, nothing is wrapped around it.
+ */
 function isStructure(box: Box | undefined): boolean {
-  return (
-    box !== undefined &&
-    (box.kind === 'frac' ||
-      box.kind === 'radical' ||
-      box.kind === 'fence' ||
-      (box.kind === 'sup' && !box.atomic))
-  );
+  if (box === undefined || box.unclosed) return false;
+  switch (box.kind) {
+    case 'frac':
+      return !isEmpty(box.num) && !isEmpty(box.den);
+    case 'sup':
+      return !box.atomic && !isEmpty(box.body);
+    case 'radical':
+    case 'fence':
+      return !isEmpty(box.body);
+    default:
+      return false;
+  }
+}
+
+/**
+ * The stop to type at for a caret at `stop`: an empty place at the same offset when there is one
+ * (`y=1/‸` after the fraction is the empty denominator: what is typed there lands in it).
+ */
+function preferEmpty(doc: EditDoc, stop: CaretStop): CaretStop {
+  if (isEmpty(stop.block) && doc.info.get(stop.block)?.part !== 'root') return stop;
+  const same = doc.stops.atOffset(stop.offset);
+  for (let i = same.length - 1; i >= 0; i--) {
+    const st = same[i] as CaretStop;
+    if (st.depth > stop.depth && isEmpty(st.block)) return st;
+  }
+  return stop;
 }
 
 /** Where the boxes a structure is drawn from start: an exponent's include its base. */
@@ -325,6 +373,8 @@ interface Sel {
   /** The innermost block holding both ends. */
   block: Block;
   collapsed: boolean;
+  /** EditorState.opened, while the caret is there. */
+  opened: boolean;
 }
 
 /** A candidate edit: its text, where the caret goes, and whether it landed as intended. */
@@ -367,7 +417,9 @@ class Editor {
       );
     const focus = stopOf(state.focus);
     const anchor = state.anchor ? stopOf(state.anchor) : focus;
-    return this.select(doc, anchor, focus);
+    const sel = this.select(doc, anchor, focus);
+    if (sel.collapsed && state.opened === focus.offset) sel.opened = true;
+    return sel;
   }
 
   private select(doc: EditDoc, anchor: CaretStop, focus: CaretStop): Sel {
@@ -381,6 +433,7 @@ class Editor {
         end: offset,
         block: focus.block,
         collapsed: true,
+        opened: false,
       };
     }
     const chain = (b: Block) => {
@@ -403,6 +456,7 @@ class Editor {
       end: Math.max(start, end),
       block,
       collapsed,
+      opened: false,
     };
   }
 
@@ -445,6 +499,13 @@ class Editor {
     return { state: this.state(sel.anchor, sel.focus, sel.doc.text), edit: null };
   }
 
+  /** A result whose caret is right after parentheses just opened: see EditorState.opened. */
+  private opening(result: EditorResult): EditorResult {
+    const { text, focus } = result.state;
+    if (text[focus.offset - 1] !== '(' || text[focus.offset] !== ')') return result;
+    return { ...result, state: { ...result.state, opened: focus.offset } };
+  }
+
   /** The first candidate that lands as intended, else the last resort, placed by resolveCaret. */
   private first(tries: Try[], fallback: Omit<Try, 'ok'>, edit: EditKind): EditorResult {
     for (const t of tries) {
@@ -480,13 +541,27 @@ class Editor {
       case 'home':
       case 'end': {
         const { list } = sel.doc.stops;
-        const target = (cmd.type === 'home' ? list[0] : list[list.length - 1]) as CaretStop;
+        const last = list[list.length - 1] as CaretStop;
+        // The end of `y=1/` is in its empty denominator: typing goes there.
+        const target = cmd.type === 'home' ? (list[0] as CaretStop) : preferEmpty(sel.doc, last);
         if (cmd.extend) return { state: this.state(sel.anchor, target, sel.doc.text), edit: null };
         return this.moveTo(sel, target);
       }
       case 'up':
       case 'down':
         return this.vertical(sel, cmd.type === 'up' ? -1 : 1);
+      case 'place': {
+        const { doc } = sel;
+        const offset = Number.isFinite(cmd.at?.offset) ? cmd.at.offset : doc.text.length;
+        const depth = Number.isFinite(cmd.at?.depth) ? cmd.at.depth : 0;
+        const target = resolveCaret(
+          doc.stops,
+          Math.min(Math.max(offset, 0), doc.text.length),
+          depth,
+        );
+        if (cmd.extend) return { state: this.state(sel.anchor, target, doc.text), edit: null };
+        return this.moveTo(sel, target);
+      }
       case 'selectAll': {
         const { list } = sel.doc.stops;
         const last = list[list.length - 1] as CaretStop;
@@ -514,8 +589,10 @@ class Editor {
   private insertText(sel: Sel, insert: string): EditorResult {
     const { doc, start, end, block } = sel;
     if (insert === '' && sel.collapsed) return this.same(sel);
-    const text = splice(doc.text, start, end, insert);
-    return this.at(text, start + insert.length, block.depth, sel.collapsed ? 'insert' : 'replace');
+    const next = this.doc(splice(doc.text, start, end, insert));
+    // Pasted `y=1/` leaves the caret in its empty denominator.
+    const stop = preferEmpty(next, resolveCaret(next.stops, start + insert.length, block.depth));
+    return this.to(next, stop, sel.collapsed ? 'insert' : 'replace');
   }
 
   // ---- typing ----
@@ -525,7 +602,9 @@ class Editor {
     if (!sel.collapsed) return this.typeOver(sel, ch);
     const { doc } = sel;
     const { text } = doc;
-    let stop = sel.focus;
+    // Right after a structure with an empty last part, the key goes into that part (its text
+    // would land there anyway): `y=1/` + `2` is `y=1/2`, wherever the caret came from.
+    let stop = preferEmpty(doc, sel.focus);
     const p = stop.offset;
     const prev = text[p - 1];
 
@@ -539,15 +618,28 @@ class Editor {
     const own = doc.info.get(stop.block);
     if ((own?.part === 'sup' || own?.part === 'sub') && this.atBlockEnd(doc, stop)) {
       const empty = isEmpty(stop.block);
+      // A subscript's braces are the editor's to add: `{` is already there, `}` leaves.
+      if (own.part === 'sub' && ch === '{') return this.to(doc, stop, null);
+      // After an operator (`x^(2*‸)`), a sign or a space is the operand's.
+      const awaits = awaitsOperand(stop.block) && !empty;
+      // A function's power (`sin^2‸`) is one number, name or group: what follows it is the
+      // function's argument.
+      const base = own.parent?.boxes[own.index - 1];
+      const power =
+        base?.kind === 'atom' && base.role === 'fn' && !stop.block.parens && !/^[0-9.]$/.test(ch);
       const leaves =
-        ch === ' ' || (own.part === 'sub' ? !isAlnum(ch) : LEAVES_SCRIPT.has(ch) && !empty);
+        own.part === 'sub'
+          ? !isAlnum(ch)
+          : ch === ' '
+            ? !awaits
+            : (LEAVES_SCRIPT.has(ch) || power) && !empty && !awaits;
       if (leaves) {
         if (empty) {
           const removed = this.removeScript(doc, stop.block);
-          if (ch === ' ') return removed;
+          if (ch === ' ' || ch === '}') return removed;
           return this.typeChar(this.read(removed.state), ch);
         }
-        if (ch === ' ') return this.to(doc, this.after(doc, stop.block), null);
+        if (ch === ' ' || ch === '}') return this.to(doc, this.after(doc, stop.block), null);
         stop = this.after(doc, stop.block);
       }
     }
@@ -567,34 +659,58 @@ class Editor {
       case '∛':
         return this.structural(doc, stop, ch, 1, 'radicand');
       case '(':
+        // The parentheses the editor just opened (`sqrt(‸)`, `a/(‸)b`): this is their `(`.
+        if (sel.opened && stop === sel.focus) return this.to(doc, stop, null);
         return this.open(doc, stop);
-      case ')': {
-        const q = stop.offset;
-        if (text[q] === ')' && isSpareClose(text, q)) {
-          return this.to(doc, resolveCaret(doc.stops, q + 1, stop.depth), null);
-        }
-        return this.at(splice(text, q, q, ')'), q + 1, stop.depth, 'insert');
-      }
-      case '|': {
-        const q = stop.offset;
-        if (text[q] === '|' && barTypesOver(text, q)) {
-          return this.to(doc, resolveCaret(doc.stops, q + 1, stop.depth), null);
-        }
-        const next = splice(text, q, q, '|');
-        const depth = barOpens(next, q) ? stop.depth + 1 : stop.depth;
-        return this.at(next, q + 1, depth, 'insert');
-      }
+      case ')':
+      case '|':
+        return this.closer(doc, stop, ch);
       case ' ': {
-        // A space in an empty place would leave it behind, empty.
-        if (isEmpty(stop.block) && own?.part !== 'root') return this.to(doc, stop, null);
-        const q = stop.offset;
-        return this.at(splice(text, q, q, ' '), q + 1, stop.depth, 'insert');
+        const part = doc.info.get(stop.block)?.part;
+        // A space in an empty place would leave it behind, empty (a group's stays in it), and
+        // one in a subscript would split its name.
+        if ((isEmpty(stop.block) && part !== 'root' && part !== 'group') || part === 'sub') {
+          return this.to(doc, stop, null);
+        }
+        // Inside a part of a structure it must not split it (`x^2 3`): checked like any key.
+        if (part === 'root' || part === 'group' || this.atBlockEnd(doc, stop)) {
+          const q = stop.offset;
+          return this.at(splice(text, q, q, ' '), q + 1, stop.depth, 'insert');
+        }
+        break;
       }
       default:
         break;
     }
     const result = this.verified(doc, stop, ch);
     return isLetter(ch) ? this.rootSlot(result) : result;
+  }
+
+  /**
+   * `)` and `|`: over the closer the caret is before when that closes its group, else inserted.
+   * At the end of a denominator or an exponent in the editor's own (unseen) parentheses, the key
+   * is for a group around the structure: `(1/(2x‸)` + `)` is `(1/(2x))`, out of both.
+   */
+  private closer(doc: EditDoc, stop: CaretStop, ch: ')' | '|'): EditorResult {
+    const { text } = doc;
+    const q = stop.offset;
+    if (text[q] === ch && (ch === ')' ? isSpareClose(text, q) : barTypesOver(text, q))) {
+      return this.to(doc, resolveCaret(doc.stops, q + 1, stop.depth), null);
+    }
+    const part = doc.info.get(stop.block)?.part;
+    if (stop.block.parens && (part === 'den' || part === 'sup') && this.atBlockEnd(doc, stop)) {
+      const out = this.after(doc, stop.block);
+      const o = out.offset;
+      // A `)` that isn't spare here closes a group outside; a `|` closes one if open there.
+      const outside =
+        ch === ')' ||
+        (text[o] === '|' && barTypesOver(text, o)) ||
+        !barOpens(splice(text, o, o, '|'), o);
+      if (outside && out !== stop) return this.closer(doc, out, ch);
+    }
+    const next = splice(text, q, q, ch);
+    const depth = ch === '|' && barOpens(next, q) ? stop.depth + 1 : stop.depth;
+    return this.at(next, q + 1, depth, 'insert');
   }
 
   /** Typing with a selection: `/`, `^`, `(` and `|` wrap it; anything else replaces it. */
@@ -653,9 +769,29 @@ class Editor {
     // A character that completes something drawn as one symbol (`sqr` + t, `p` + i, `<` + =)
     // is what it is.
     if (inUnit(this.doc(plain.text), p)) {
-      return this.at(plain.text, plain.offset, depth, 'insert');
+      return (
+        this.unwrapName(doc, block, plain) ?? this.at(plain.text, plain.offset, depth, 'insert')
+      );
     }
     const tries: Try[] = [{ ...plain, ok: lands(0, 0) }];
+    // Right after a `)` that closed a structure's last part, the key may be for that part, as
+    // the text reads (`1/(x+1)` + `!`: the denominator's factorial).
+    const closed = this.closedPart(stop);
+    if (closed) {
+      const path = doc.info.get(closed)?.path;
+      tries.push({
+        ...plain,
+        depth: closed.depth,
+        ok: (d, st) => {
+          const before = d.stops.at(st.offset - n, st.depth);
+          return (
+            d.info.get(st.block)?.path === path &&
+            before?.block === st.block &&
+            d.order.get(before) === (d.order.get(st) ?? 0) - 1
+          );
+        },
+      });
+    }
     const wrapper = this.wrapper(doc, block);
     if (wrapper) {
       const [open, close] = wrapper;
@@ -688,6 +824,55 @@ class Editor {
       });
     }
     return this.first(tries, plain, 'insert');
+  }
+
+  /**
+   * The last part of the structure right before the caret, when it is in parentheses that close
+   * right there (drawn as structure, so the caret can't be inside them after the `)`).
+   */
+  private closedPart(stop: CaretStop): Block | null {
+    if (stop.inside || stop.index === 0) return null;
+    const before = stop.block.boxes[stop.index - 1];
+    if (!before || before.span.end !== stop.offset) return null;
+    let part: Block | undefined;
+    if (before.kind === 'frac') part = before.den;
+    else if (before.kind === 'sup' && !before.atomic) part = before.body;
+    else if (before.kind === 'radical') part = before.body;
+    return part?.parens?.close.end === stop.offset ? part : null;
+  }
+
+  /**
+   * A builtin function's name typed in a part the editor put in parentheses one letter earlier
+   * (`1/(si‸)` + n: `si` read as s·i then): the parentheses go again when the part holds the
+   * same without them (`1/sin‸`).
+   */
+  private unwrapName(
+    doc: EditDoc,
+    block: Block,
+    plain: { text: string; offset: number; depth: number },
+  ): EditorResult | null {
+    const part = doc.info.get(block)?.part;
+    const { parens } = block;
+    if (!parens || (part !== 'num' && part !== 'den' && part !== 'sup')) return null;
+    if (builtinNameStart(plain.text, plain.offset) < 0) return null;
+    const n = plain.text.length - doc.text.length;
+    const { text, map } = removeSpans(plain.text, [
+      parens.open,
+      { start: parens.close.start + n, end: parens.close.end + n },
+    ]);
+    const next = this.doc(text);
+    const st = next.stops.at(map(plain.offset), block.depth);
+    const info = st ? next.info.get(st.block) : undefined;
+    // The same place in the tree, holding the same text.
+    if (
+      !st ||
+      info?.path !== doc.info.get(block)?.path ||
+      st.block.start !== parens.open.start ||
+      blockEnd(st.block) !== blockEnd(block) - 1 + n
+    ) {
+      return null;
+    }
+    return this.to(next, st, 'insert');
   }
 
   /**
@@ -749,13 +934,19 @@ class Editor {
     const own = doc.info.get(block) as BlockInfo;
     const p = stop.offset;
     const depth = block.depth + 1;
-    const ok = (d: EditDoc, st: CaretStop) => {
+    const okIn = (path: string | undefined) => (d: EditDoc, st: CaretStop) => {
       const info = d.info.get(st.block);
       const parent = info?.parent ? d.info.get(info.parent) : undefined;
-      return info?.part === part && parent?.path === own.path;
+      return info?.part === part && parent?.path === path;
     };
+    const ok = okIn(own.path);
     const plain = { text: splice(text, p, p, insert), offset: p + into, depth };
     const tries: Try[] = [{ ...plain, ok }];
+    // `1/(x+1)` + `^`: the exponent of the denominator's group, as the text reads.
+    const closed = this.closedPart(stop);
+    if (closed) {
+      tries.push({ ...plain, depth: closed.depth + 1, ok: okIn(doc.info.get(closed)?.path) });
+    }
     const wrapper = this.wrapper(doc, block);
     if (wrapper) {
       const bs = block.start;
@@ -778,7 +969,7 @@ class Editor {
         ok,
       });
     }
-    return this.first(tries, plain, 'insert');
+    return this.opening(this.first(tries, plain, 'insert'));
   }
 
   /** `_` right after a letter: an empty subscript (in braces if letters or digits follow). */
@@ -851,18 +1042,19 @@ class Editor {
     if (s < 0) return result;
     const name = text.slice(s, q);
     if (name !== 'sqrt' && name !== 'cbrt') return result;
-    return this.at(splice(text, q, q, '()'), q + 1, focus.depth + 1, 'insert');
+    return this.opening(this.at(splice(text, q, q, '()'), q + 1, focus.depth + 1, 'insert'));
   }
 
   // ---- keypad ----
 
+  /** `|a|` and the like: around the selection, or both with the caret between. */
   private wrap(sel: Sel, before: string, after: string): EditorResult {
     const { doc, start, end, block } = sel;
-    const text = splice(doc.text, start, end, before + doc.text.slice(start, end) + after);
     if (!sel.collapsed) {
+      const text = splice(doc.text, start, end, before + doc.text.slice(start, end) + after);
       return this.at(text, end + before.length + after.length, block.depth, 'replace');
     }
-    return this.at(text, start + before.length, block.depth + 1, 'insert');
+    return this.template(sel, before + after, before.length);
   }
 
   /** A function key: `name()` with the caret inside, kept in the caret's block. */
@@ -872,13 +1064,21 @@ class Editor {
       const text = splice(doc.text, start, end, `${name}(${doc.text.slice(start, end)})`);
       return this.at(text, end + name.length + 2, block.depth, 'replace');
     }
-    const stop = sel.focus;
+    return this.opening(this.template(sel, `${name}()`, name.length + 1));
+  }
+
+  /**
+   * A key's template (`sin()`, `||`) at the caret, the caret `into` characters into it. It must
+   * stay in the caret's block (not, say, go after a denominator it was typed at the end of);
+   * else the block goes in parentheses.
+   */
+  private template(sel: Sel, insert: string, into: number): EditorResult {
+    const { doc } = sel;
+    const stop = preferEmpty(doc, sel.focus);
     const own = doc.info.get(stop.block) as BlockInfo;
-    const insert = `${name}()`;
     const p = stop.offset;
     const bs = stop.block.start;
     const be = blockEnd(stop.block);
-    // The call must be in the block (not, say, after a denominator it was typed at the end of).
     const lands = (startShift: number, endShift: number) => (d: EditDoc, st: CaretStop) => {
       for (let b: Block | null = st.block; b; b = d.info.get(b)?.parent ?? null) {
         const info = d.info.get(b);
@@ -889,7 +1089,7 @@ class Editor {
       }
       return false;
     };
-    const plain = { text: splice(doc.text, p, p, insert), offset: p + name.length + 1 };
+    const plain = { text: splice(doc.text, p, p, insert), offset: p + into };
     const depth = stop.block.depth + 1;
     const tries: Try[] = [];
     // The parentheses' block (or a radicand's) is one deeper: try both.
@@ -1300,9 +1500,14 @@ export function readSelection(state: EditorState, opts: EditorOptions): Selectio
   return new Editor(opts).read(state);
 }
 
-/** The caret for a text offset set from outside (a click, a focus, undo): the shallowest stop. */
-export function caretAt(text: string, offset: number, opts: EditorOptions, depth = 0): Caret {
-  const editor = new Editor(opts);
-  const stop = resolveCaret(editor.doc(text).stops, offset, depth);
+/**
+ * The caret for a text offset set from outside (a focus, a test, a paste the editor didn't see):
+ * the stop at `depth` (or the deepest above it); with no depth, the shallowest, unless an empty
+ * place is there (`y=1/‸` is in its denominator).
+ */
+export function caretAt(text: string, offset: number, opts: EditorOptions, depth?: number): Caret {
+  const doc = new Editor(opts).doc(text);
+  const at = resolveCaret(doc.stops, offset, depth ?? 0);
+  const stop = depth === undefined ? preferEmpty(doc, at) : at;
   return { offset: stop.offset, depth: stop.depth };
 }

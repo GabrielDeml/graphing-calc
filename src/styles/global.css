@@ -963,6 +963,8 @@ button {
   user-select: text;
   -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent;
+  /* Up and down, a finger scrolls the list; sideways, the editor slides a long row. */
+  touch-action: pan-y pinch-zoom;
 }
 
 .math-field.typeset .math-mirror {
@@ -1082,19 +1084,31 @@ button {
   }
 }
 
-/* The selection: a soft wash of the row's color under what it covers. */
+/*
+ * The selection: a wash of the row's color under what it covers, with a fine edge, so even one
+ * selected symbol reads on a row already tinted with that color.
+ */
 .m-selection {
+  --selection-color: var(--accent);
+  --selection-mix: 28%;
   position: absolute;
   top: 0;
   left: 0;
   z-index: -1;
   border-radius: 3px;
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  background: color-mix(in srgb, var(--selection-color) var(--selection-mix), transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--selection-color) 55%, transparent);
   pointer-events: none;
 }
 
 .expr-row.plots .m-selection {
-  background: color-mix(in srgb, var(--row-color) 20%, transparent);
+  --selection-color: var(--row-color);
+}
+
+@media (prefers-color-scheme: dark) {
+  .m-selection {
+    --selection-mix: 38%;
+  }
 }
 
 /* The closer an open group will need, while the row is edited: there, but not yet typed. */
@@ -1148,6 +1162,35 @@ button {
   box-shadow: inset 0 0 0 1px var(--hairline-strong);
   white-space: pre;
   line-height: 0.8em;
+}
+
+/*
+ * Forced colors (Windows High Contrast) drop backgrounds and shadows: the caret, the selection
+ * and the empty places being edited are drawn in system colors instead.
+ */
+@media (forced-colors: active) {
+  .m-caret,
+  .expr-row.plots .m-caret {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+
+  .m-selection,
+  .expr-row.plots .m-selection {
+    background: transparent;
+    box-shadow: none;
+    outline: 2px solid Highlight;
+    outline-offset: -1px;
+  }
+
+  .math-view .m-slot {
+    outline: 1px solid CanvasText;
+    outline-offset: -1px;
+  }
+
+  .m-ghost {
+    opacity: 0.6;
+  }
 }
 
 /* The row's error, once it shows: under the symbols it is about. */

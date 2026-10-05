@@ -9,7 +9,10 @@ function math(page: Page, index: number) {
 const caret = (input: Locator) =>
   input.evaluate((el: HTMLInputElement) => [el.selectionStart, el.selectionEnd]);
 
-/** Whether the drawn caret stands inside an element's box. */
+/**
+ * Whether the drawn caret stands inside an element's box. The caret glides between places, so
+ * ask with expect.poll: right after a key it can still be on its way.
+ */
 async function caretIn(page: Page, index: number, selector: string): Promise<boolean> {
   const c = await math(page, index).locator('.m-caret').boundingBox();
   const area = await math(page, index).locator(selector).first().boundingBox();
@@ -36,7 +39,7 @@ test.describe('editing a row in place', () => {
     await expect(frac.locator('.m-denom')).toHaveText('2x');
     // Still in the denominator, before its closing parenthesis.
     expect(await caret(input)).toEqual([7, 7]);
-    expect(await caretIn(page, 0, '.m-denom')).toBe(true);
+    await expect.poll(() => caretIn(page, 0, '.m-denom')).toBe(true);
     await expect.poll(() => countColor(page, RED)).toBeGreaterThan(100);
   });
 
@@ -69,10 +72,10 @@ test.describe('editing a row in place', () => {
     expect(await caret(input)).toEqual([5, 5]);
     await input.press('ArrowUp');
     expect(await caret(input)).toEqual([2, 2]);
-    expect(await caretIn(page, 1, '.m-numer')).toBe(true);
+    await expect.poll(() => caretIn(page, 1, '.m-numer')).toBe(true);
     await input.press('ArrowDown');
     expect(await caret(input)).toEqual([5, 5]);
-    expect(await caretIn(page, 1, '.m-denom')).toBe(true);
+    await expect.poll(() => caretIn(page, 1, '.m-denom')).toBe(true);
     // Into the numerator, then up again: there is nothing above in the row, so the row above.
     await input.press('ArrowUp');
     await input.press('ArrowUp');
@@ -145,6 +148,81 @@ test.describe('editing a row in place', () => {
     await expect(math(page, 1).locator('.m-selection')).toBeVisible();
   });
 
+  test('the caret keeps its place when the field loses focus and gets it back', async ({
+    page,
+  }) => {
+    await openApp(page);
+    const input = exprInput(page, 0);
+    await input.click();
+    await input.pressSequentially('y=1/2', { delay: 30 });
+    await input.evaluate((el: HTMLInputElement) => {
+      el.blur();
+      el.focus();
+    });
+    await input.press('x');
+    await expect(input).toHaveValue('y=1/(2x)');
+    await expect.poll(() => caretIn(page, 0, '.m-denom')).toBe(true);
+  });
+
+  test('after End, what is typed goes into an empty denominator', async ({ page }) => {
+    await openApp(page);
+    const input = exprInput(page, 0);
+    await setExpr(page, 0, 'y=1/');
+    await input.press('Home');
+    await input.press('End');
+    await input.press('2');
+    await expect(input).toHaveValue('y=1/2');
+  });
+
+  test('a click on a long row puts the caret there without scrolling the math', async ({
+    page,
+  }) => {
+    await openApp(page);
+    const long = `y = ${Array.from({ length: 30 }, () => 'x').join(' + ')} + 1`;
+    await setExpr(page, 0, long);
+    await exprInput(page, 1).click();
+    const view = math(page, 0);
+    const third = view.locator('.m-var').nth(3);
+    const box = await third.boundingBox();
+    if (!box) throw new Error('no box');
+    await page.mouse.click(box.x + box.width * 0.8, box.y + box.height / 2);
+    await expect(exprInput(page, 0)).toBeFocused();
+    expect(await caret(exprInput(page, 0))).toEqual([13, 13]);
+    expect(await view.evaluate((el) => el.scrollLeft)).toBe(0);
+    // A wheel or a trackpad slides it sideways; the caret stays where it is in the text.
+    await page.mouse.wheel(400, 0);
+    await expect.poll(() => view.evaluate((el) => el.scrollLeft)).toBeGreaterThan(100);
+    expect(await caret(exprInput(page, 0))).toEqual([13, 13]);
+  });
+
+  test('a double click selects the number or name under it', async ({ page }) => {
+    await openApp(page);
+    await setExpr(page, 0, 'y = 23x + 4');
+    const box = await math(page, 0).locator('.m-num', { hasText: '23' }).boundingBox();
+    if (!box) throw new Error('no box');
+    await page.mouse.dblclick(box.x + box.width / 2, box.y + box.height / 2);
+    expect(await caret(exprInput(page, 0))).toEqual([4, 6]);
+    await expect(math(page, 0).locator('.m-selection')).toBeVisible();
+  });
+
+  test('↑ and ↓ to the next row keep the caret where it is on screen', async ({ page }) => {
+    await openApp(page);
+    await setExpr(page, 0, 'y = 22222x + 3');
+    await setExpr(page, 1, 'y = x');
+    const input = exprInput(page, 1);
+    await input.press('End');
+    // Read once the caret has stopped gliding.
+    await page.waitForTimeout(200);
+    const from = await math(page, 1).locator('.m-caret').boundingBox();
+    await input.press('ArrowUp');
+    await expect(exprInput(page, 0)).toBeFocused();
+    await page.waitForTimeout(200);
+    // Over the end of `y = x`, among the 2s, not at offset 5 of the row above.
+    const to = await math(page, 0).locator('.m-caret').boundingBox();
+    if (!from || !to) throw new Error('no caret');
+    expect(Math.abs(to.x - from.x)).toBeLessThan(12);
+  });
+
   test('pasted text is kept as it is', async ({ page }) => {
     await openApp(page);
     await setExpr(page, 0, 'y = sin(x)/2');
@@ -161,6 +239,8 @@ test.describe('editing a row in place', () => {
     const input = exprInput(page, 0);
     await input.click();
     await input.pressSequentially('y=', { delay: 30 });
+    // A pause ends the typing's undo step.
+    await page.waitForTimeout(1100);
     const cdp = await page.context().newCDPSession(page);
     await cdp.send('Input.imeSetComposition', { text: '1', selectionStart: 1, selectionEnd: 1 });
     await cdp.send('Input.imeSetComposition', { text: '1/', selectionStart: 2, selectionEnd: 2 });
@@ -170,12 +250,27 @@ test.describe('editing a row in place', () => {
     await cdp.send('Input.insertText', { text: '1/2' });
     // As composed: the typing rules are for keystrokes.
     await expect(input).toHaveValue('y=1/2');
+    // Written once: one undo step takes all of it, and nothing in between ('y=1', 'y=1/').
+    await page.keyboard.press('ControlOrMeta+z');
+    await expect(input).toHaveValue('y=');
+    await page.keyboard.press('ControlOrMeta+Shift+z');
+    await expect(input).toHaveValue('y=1/2');
+    await input.press('End');
     await input.press('x');
     await expect(input).toHaveValue('y=1/2x');
     await expect.poll(() => countColor(page, RED)).toBeGreaterThan(100);
-    // One undo step for all of it.
-    await page.keyboard.press('ControlOrMeta+z');
-    await expect(input).toHaveValue('');
+  });
+
+  test('a letter a phone keyboard composes goes through the typing rules', async ({ page }) => {
+    await openApp(page);
+    const input = exprInput(page, 0);
+    await input.click();
+    await input.pressSequentially('y=1/2', { delay: 30 });
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Input.imeSetComposition', { text: 'x', selectionStart: 1, selectionEnd: 1 });
+    await cdp.send('Input.insertText', { text: 'x' });
+    await expect(input).toHaveValue('y=1/(2x)');
+    await expect.poll(() => caretIn(page, 0, '.m-denom')).toBe(true);
   });
 
   test('undo after structural typing brings back the text and the caret', async ({ page }) => {
@@ -191,7 +286,7 @@ test.describe('editing a row in place', () => {
     await expect(input).toHaveValue('y=1/2');
     expect(await caret(input)).toEqual([5, 5]);
     // In the denominator, where the caret was, not after the fraction.
-    expect(await caretIn(page, 0, '.m-denom')).toBe(true);
+    await expect.poll(() => caretIn(page, 0, '.m-denom')).toBe(true);
     await input.press('x');
     await expect(input).toHaveValue('y=1/(2x)');
     await page.keyboard.press('ControlOrMeta+z');
@@ -223,6 +318,14 @@ test.describe('editing a row in place with the keypad', () => {
     }
     await expect(exprInput(page, 0)).toHaveValue('y=x^2+1');
     await expect(math(page, 0).locator('.m-sup')).toHaveText('2');
+  });
+
+  test('|a| puts what follows between its bars', async ({ page }) => {
+    await openApp(page);
+    await exprInput(page, 0).tap();
+    for (const id of ['y', 'eq', 'abs', 'x']) await page.getByTestId(`key-${id}`).first().tap();
+    await expect(exprInput(page, 0)).toHaveValue('y=|x|');
+    await expect(page.locator('.expr-row').first().getByRole('alert')).toHaveCount(0);
   });
 
   test('the caret is drawn in the row, and a tap moves it', async ({ page }) => {

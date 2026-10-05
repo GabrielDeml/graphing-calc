@@ -2,12 +2,12 @@ import { createEffect, createRoot, createSignal, onCleanup, onMount } from 'soli
 import type { Span } from '../engine/types';
 import {
   type AtomBox,
+  analyze,
   type Block,
   type Box,
   type Caret,
   type CaretStop,
   type CaretStops,
-  caretStops,
   createTypesetter,
   errorLeaves,
   type FenceBox,
@@ -72,16 +72,12 @@ function observeSize(e: Element, callback: () => void): () => void {
   };
 }
 
-/** Caret stops of a plan, worked out once per plan (a plan is reused while its text is). */
-const stopsCache = new WeakMap<Plan, CaretStops>();
-
+/**
+ * Caret stops of a plan, worked out once per plan (a plan is reused while its text is), and
+ * shared with the row's editor, which reads the same plans.
+ */
 function stopsOf(plan: Plan): CaretStops {
-  let stops = stopsCache.get(plan);
-  if (!stops) {
-    stops = caretStops(plan);
-    stopsCache.set(plan, stops);
-  }
-  return stops;
+  return analyze(plan).stops;
 }
 
 interface Drawn {
@@ -564,6 +560,30 @@ function hitTest(drawn: Drawn, x: number, y: number): Caret {
   return best ? { offset: best.offset, depth: best.depth } : { offset: 0, depth: 0 };
 }
 
+/** The atom (a number, a name, a symbol) under a point, the smallest if several hold it. */
+function wordAt(drawn: Drawn, x: number, y: number): { start: Caret; end: Caret } | null {
+  const m = new Measure();
+  let best: { box: Box; depth: number } | null = null;
+  let bestArea = Number.POSITIVE_INFINITY;
+  const blocks = [drawn.plan.root];
+  for (let block = blocks.pop(); block; block = blocks.pop()) {
+    for (const box of block.boxes) {
+      blocks.push(...innerBlocks(box));
+      const leaf = box.kind === 'atom' ? drawn.boxEls.get(box)?.[0] : undefined;
+      if (!leaf) continue;
+      const r = m.rect(leaf);
+      if (x < r.left - 1 || x > r.right + 1 || y < r.top - 1 || y > r.bottom + 1) continue;
+      const area = (r.right - r.left) * (r.bottom - r.top);
+      if (area >= bestArea) continue;
+      bestArea = area;
+      best = { box, depth: block.depth };
+    }
+  }
+  if (!best) return null;
+  const { box, depth } = best;
+  return { start: { offset: box.span.start, depth }, end: { offset: box.span.end, depth } };
+}
+
 // ---- the view ----
 
 /** What the editor shows in the view while the row is edited in place. */
@@ -579,6 +599,12 @@ export interface MathViewHandle {
   caretAt(x: number, y: number): Caret;
   /** Where a caret stop of the drawn text is (client x), for moving up and down. */
   xOf(stop: CaretStop): number;
+  /** The middle of the math's first line (client y), to place a caret by x alone. */
+  lineY(): number;
+  /** Scrolls the math sideways (a wheel or a finger on a long row); false if it can't move. */
+  scrollBy(dx: number): boolean;
+  /** The number, name or symbol at a point (client coordinates): its two ends. */
+  wordAt(x: number, y: number): { start: Caret; end: Caret } | null;
 }
 
 export interface MathViewProps {
@@ -625,11 +651,15 @@ export function MathView(props: MathViewProps) {
     );
   };
 
-  /** Places the caret and the selection, and scrolls the caret into view. */
-  const paintCaret = (caret: CaretView | null) => {
+  /**
+   * Places the caret and the selection, and scrolls the caret into view when it moved (or
+   * `reveal`): a row scrolled by hand stays put while it is redrawn.
+   */
+  const paintCaret = (caret: CaretView | null, reveal = false) => {
     if (!drawn || !caret) {
       caretEl.remove();
       selectionEl.remove();
+      lastSeq = -1;
       if (view.scrollLeft !== 0) view.scrollLeft = 0;
       return;
     }
@@ -645,6 +675,7 @@ export function MathView(props: MathViewProps) {
     const focus = resolveCaret(stopsOf(plan), caret.focus.offset, caret.focus.depth);
     const box = caretBox(drawn, focus, m);
     if (!box) return;
+    const moved = caret.seq !== lastSeq;
     if (sel.collapsed) {
       selectionEl.remove();
       if (!caretEl.isConnected) view.append(caretEl);
@@ -660,13 +691,14 @@ export function MathView(props: MathViewProps) {
         selectionEl.style.height = `${r.bottom - r.top}px`;
       }
     }
-    if (caret.seq !== lastSeq) {
+    if (moved) {
       lastSeq = caret.seq;
       // Solid while typing and moving; it blinks again once things settle.
       caretEl.classList.add('m-caret-hold');
       clearTimeout(holdTimer);
       holdTimer = setTimeout(() => caretEl.classList.remove('m-caret-hold'), CARET_HOLD_MS);
     }
+    if (!moved && !reveal) return;
     // Keep the caret in view, with some room on its side.
     const x = box.x - ox;
     const margin = Math.min(24, view.clientWidth / 4);
@@ -700,7 +732,7 @@ export function MathView(props: MathViewProps) {
   onMount(() =>
     onCleanup(
       observeSize(view, () => {
-        if (props.caret && !props.frozen) paintCaret(props.caret);
+        if (props.caret && !props.frozen) paintCaret(props.caret, true);
         measure();
       }),
     ),
@@ -712,7 +744,29 @@ export function MathView(props: MathViewProps) {
 
   props.ref?.({
     caretAt: (x, y) => (drawn ? hitTest(drawn, x, y) : { offset: 0, depth: 0 }),
-    xOf: (stop) => (drawn ? (caretBox(drawn, stop, new Measure())?.x ?? 0) : 0),
+    xOf: (stop) => {
+      if (!drawn) return 0;
+      // The editor's plan of this text may be another object than the one drawn (the shared
+      // typesetter forgets plans while a slider plays): the same place in the drawn one.
+      const at = drawn.struts.has(stop.block)
+        ? stop
+        : resolveCaret(stopsOf(drawn.plan), stop.offset, stop.depth);
+      return caretBox(drawn, at, new Measure())?.x ?? 0;
+    },
+    lineY: () => {
+      const strut = drawn?.struts.get(drawn.plan.root);
+      if (!strut) return view.getBoundingClientRect().top + view.clientHeight / 2;
+      const m = new Measure();
+      return m.rect(strut).top - 0.28 * m.em(strut);
+    },
+    wordAt: (x, y) => (drawn ? wordAt(drawn, x, y) : null),
+    scrollBy: (dx) => {
+      const before = view.scrollLeft;
+      view.scrollLeft = before + dx;
+      if (view.scrollLeft === before) return false;
+      measure();
+      return true;
+    },
   });
 
   return <div class="math-view" aria-hidden="true" ref={view} />;

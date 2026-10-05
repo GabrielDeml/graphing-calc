@@ -31,6 +31,10 @@ test.describe('editing rows', () => {
     await expect(row.getByRole('alert')).toContainText("'k' is not defined");
     await page.getByRole('textbox', { name: 't maximum' }).fill('2pi');
     await expect(row.getByRole('alert')).toHaveCount(0);
+    // At rest, a bound shows typeset, its input over it unseen.
+    await page.getByRole('textbox', { name: 't maximum' }).blur();
+    await expect(page.locator('.range-bound .math-view').last()).toHaveText('2π');
+    await expect(page.getByRole('textbox', { name: 't maximum' })).toHaveCSS('opacity', '0');
   });
 
   test('the slider thumb follows bound changes', async ({ page }) => {
@@ -40,6 +44,12 @@ test.describe('editing rows', () => {
     const max = page.getByRole('textbox', { name: 'c slider maximum' });
     await max.fill('5');
     await expect(range).toHaveJSProperty('value', '5');
+    await max.fill('10');
+    await expect(range).toHaveJSProperty('value', '7');
+    await max.fill('3pi');
+    await max.blur();
+    await expect(page.locator('.slider-max .math-view')).toHaveText('3π');
+    await expect(max).toHaveCSS('opacity', '0');
     await max.fill('10');
     await expect(range).toHaveJSProperty('value', '7');
 

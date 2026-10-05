@@ -96,25 +96,42 @@ Syntax notes:
   - Typing goes on in the denominator or exponent you are in: `1/2x` typed key by key becomes
     `1/(2x)` and `e^2x` becomes `e^(2x)`, with parentheses added only where the math needs them.
     `+`, `-`, `=`, `<`, `>` and `,` at the end of an exponent or subscript leave it first, so
-    `x^2+1` reads as typed; `Space` leaves an exponent or subscript too (elsewhere it is a
-    space). `→` leaves a denominator.
+    `x^2+1` reads as typed (after an operator, `x^(2*-1`, a sign stays in); `Space` leaves an
+    exponent or subscript too (elsewhere it is a space, and inside a fraction's part or an
+    exponent it keeps that part together). `→` leaves a denominator. A function's power is one
+    number or name, so `sin^2(x)` and `sin^2x` read as typed. A function's name typed into a
+    denominator or exponent needs no parentheses (`1/sin(x)`, `e^sin(x)`), and right after a
+    `)` that closes a denominator, `^` and `!` go on it as the text reads: `1/(x+1)^2`.
   - `(` shows its `)` faintly until you type it, or press `→` at the end of the group; `)` and
-    `|` step over a closer that is already there. Typing `sqrt` or `cbrt` opens its parentheses.
-    `=` after `=` is ignored, `=<` and `=>` become `<=` and `>=`, and a dash `—` is a minus.
+    `|` step over a closer that is already there, and at the end of a denominator or exponent
+    they close the group around the fraction (`(1/2x)` typed key by key is `(1/(2x))`). Typing
+    `sqrt` or `cbrt` opens its parentheses, and a `(` typed right after is that one, so
+    `sqrt(x)+1` reads as typed. In a subscript, `{` and `}` are the editor's (`x_{10}` is
+    `x_10`). `=` after `=` is ignored, `=<` and `=>` become `<=` and `>=`, and a dash `—` is a
+    minus.
+  - What you type right after a fraction whose denominator is still empty (`y = 1/`, after `End`
+    or a paste) goes into that denominator.
   - `←` and `→` walk through the math (into a numerator, on into its denominator, then out), `↑`
     and `↓` go between numerator and denominator and in and out of exponents (and on to the row
     above or below when there is nowhere else to go), `Home` and `End` go to the row's start and
     end. With `Shift` they select, and so does dragging the mouse across the math; a selection
-    takes whole fractions and exponents.
+    takes whole fractions and exponents. A double click selects the number or name under it.
+    Moving to the row above or below keeps the caret where it is on screen.
   - `Backspace` at the start of a numerator, denominator, exponent, subscript, radical or
     parentheses takes that structure apart and keeps what it held (`x^‸2` becomes `x2`); right
     after one, it steps inside. Function names, `π`, `<=` and `x²` go as one symbol, and an
-    exponent or subscript left empty goes away when you leave it.
-  - Pasted text, and text from an input method (IME), go in exactly as written.
-  - A long row scrolls sideways to keep the caret in view.
+    exponent or subscript left empty goes away when you move the caret out of it (with the
+    arrows or a click).
+  - Pasted text goes in exactly as written. So does text from an input method (IME), except a
+    word or number a phone keyboard composes (or a single character), which goes through the
+    typing rules like keys.
+  - A long row scrolls sideways to keep the caret in view; a wheel, a trackpad or a finger
+    sliding sideways scrolls it too. The caret stays where it was when the row loses focus and
+    gets it back (the keypad toggle, another window).
   - Adding `?plain` to the app's address (`…/graphing-calc/?plain`) edits rows as plain text
     instead, typeset only once you leave them: a way out if a browser or a keyboard app has
-    trouble with the editor.
+    trouble with the editor. It is remembered (an app installed on a phone keeps it); `?plain=0`
+    turns it off.
 - **Rows:**
   - `Enter` starts a new row. On an empty row it moves on to the next one instead, and on the
     empty row at the end it stays put (the keypad's ↵ puts the keypad away there).

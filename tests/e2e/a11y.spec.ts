@@ -46,6 +46,23 @@ test.describe('accessibility on desktop', () => {
     );
   });
 
+  test('in forced colors, the caret drawn in a row being edited still shows', async ({ page }) => {
+    await page.emulateMedia({ forcedColors: 'active' });
+    await openApp(page);
+    await exprInput(page, 0).click();
+    await exprInput(page, 0).pressSequentially('y=x^', { delay: 30 });
+    const caret = page.locator('.expr-row').first().locator('.m-caret');
+    await expect(caret).toBeVisible();
+    const [ink, page_] = await caret.evaluate((el) => [
+      getComputedStyle(el).backgroundColor,
+      getComputedStyle(document.body).backgroundColor,
+    ]);
+    expect(ink).not.toBe(page_);
+    // The empty exponent too.
+    const slot = page.locator('.expr-row').first().locator('.m-slot');
+    await expect(slot).not.toHaveCSS('outline-style', 'none');
+  });
+
   test('the graph is a labelled group around its picture and controls', async ({ page }) => {
     await openApp(page);
     const graph = page.getByRole('group', { name: /^Graph area\./ });
