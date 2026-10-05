@@ -119,12 +119,25 @@ describe('tokenize: scientific notation with a signed exponent', () => {
     ['2e+3', 0, 4, 'Write 2*10^3. For e + 3, put spaces: 2e + 3'],
     ['3E-12', 0, 5, 'Write 3*10^-12. For E - 12, put spaces: 3E - 12'],
   ])('%s → bad-number', (source, start, end, hint) => {
-    expect(lexError(source)).toEqual({
+    expect(lexError(source)).toMatchObject({
       code: 'bad-number',
       message: "Scientific notation isn't supported",
       span: { start, end },
       hint,
     });
+  });
+
+  it('offers both readings the hint names as fixes', () => {
+    const error = lexError('y = 2.5e-1x');
+    expect(error.quickFix).toEqual({
+      kind: 'replace',
+      span: { start: 4, end: 10 },
+      text: '2.5*10^-1',
+      label: '2.5*10^-1',
+    });
+    expect(error.alternatives).toEqual([
+      { kind: 'replace', span: { start: 4, end: 10 }, text: '2.5e - 1', label: '2.5e - 1' },
+    ]);
   });
 
   it.each(['1e - 3', '1e -3', '1e- 3', '1e-x', '1*e-3', 'e-3', '2e3'])(
@@ -327,6 +340,12 @@ describe('tokenize: errors', () => {
     expect(error.code).toBe('double-equals');
     expect(error.message).toBe('Use a single =');
     expect(error.span).toEqual({ start: 1, end: 3 });
+    expect(error.quickFix).toEqual({
+      kind: 'replace',
+      span: { start: 1, end: 3 },
+      text: '=',
+      label: '=',
+    });
   });
 
   it.each([
@@ -337,6 +356,13 @@ describe('tokenize: errors', () => {
     expect(error.code).toBe('bad-relation');
     expect(error.message).toContain(fixed);
     expect(error.span).toEqual({ start: 1, end: 3 });
+    expect(error.quickFix).toEqual({
+      kind: 'replace',
+      span: { start: 1, end: 3 },
+      text: fixed,
+      label: fixed,
+    });
+    expect(error.alternatives).toBeUndefined();
   });
 
   it('≠ and != are unsupported', () => {

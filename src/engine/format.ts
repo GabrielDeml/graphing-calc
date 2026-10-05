@@ -86,3 +86,16 @@ export function formatCoordinate(v: number, ppu: number): string {
   const decimals = Number.isFinite(raw) ? Math.min(12, Math.max(0, raw)) : 0;
   return trimFixed(toPlainFixed(v, decimals));
 }
+
+/**
+ * A number to show in a sentence or a chip, or to write into a row: `digits` significant digits
+ * (never fewer than its whole part has, so 12345.6 is "12346"), plain ASCII decimals (never
+ * exponent form), trailing zeros trimmed, -0 as "0". "∞" / "-∞" / "undefined" when not finite.
+ */
+export function formatPlain(v: number, digits = 4): string {
+  if (!Number.isFinite(v)) return nonFinite(v);
+  if (v === 0) return '0';
+  const whole = Math.floor(Math.log10(Math.abs(v))) + 1;
+  const decimals = Math.min(12, Math.max(0, Math.max(digits, whole) - whole));
+  return trimFixed(toPlainFixed(v, decimals));
+}

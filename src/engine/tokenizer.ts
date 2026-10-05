@@ -1,4 +1,4 @@
-import { MathSyntaxError, syntaxError } from './errors';
+import { MathSyntaxError, replaceFix, syntaxError } from './errors';
 import type { Token, TokenKind } from './tokens';
 import type { MathError, Span } from './types';
 
@@ -205,14 +205,19 @@ function scan(source: string, tokens: Token[], from = 0): void {
         break;
       case EQUALS:
         if (next === EQUALS) {
-          syntaxError('double-equals', 'Use a single =', { start: i, end: i + 2 });
+          const span = { start: i, end: i + 2 };
+          syntaxError('double-equals', 'Use a single =', span, undefined, [replaceFix(span, '=')]);
         }
         if (next === LESS || next === GREATER) {
           const fixed = next === LESS ? '<=' : '>=';
-          syntaxError('bad-relation', `Write ${fixed} instead of ${source.slice(i, i + 2)}`, {
-            start: i,
-            end: i + 2,
-          });
+          const span = { start: i, end: i + 2 };
+          syntaxError(
+            'bad-relation',
+            `Write ${fixed} instead of ${source.slice(i, i + 2)}`,
+            span,
+            undefined,
+            [replaceFix(span, fixed)],
+          );
         }
         push(tokens, 'rel', '=', i, i + 1);
         break;
@@ -340,7 +345,11 @@ function rejectScientific(source: string, start: number, end: number): void {
   const letter = source[end];
   const spaced = `${mantissa}${letter} ${op} ${digits}`;
   const hint = `Write ${power}. For ${letter} ${op} ${digits}, put spaces: ${spaced}`;
-  syntaxError('bad-number', "Scientific notation isn't supported", { start, end: k }, hint);
+  const span = { start, end: k };
+  syntaxError('bad-number', "Scientific notation isn't supported", span, hint, [
+    replaceFix(span, power),
+    replaceFix(span, spaced),
+  ]);
 }
 
 /**

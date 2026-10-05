@@ -6,6 +6,7 @@
 // edit is done: the edited row's own error still shows after the usual pause.
 
 import { detectDefinition } from '../engine/definition';
+import { sliderFixNames } from '../engine/errors';
 import type { RowResult } from '../engine/types';
 
 /**
@@ -99,9 +100,9 @@ export function steady(
             results.get(r.id)?.status === 'error' &&
             blamed(r.id),
         );
-    } else if (error?.quickFix) {
+    } else if (sliderFixNames(error).length > 0) {
       // Unknown names (in the row, or in its t range): a name the edited row had a moment ago.
-      yes = error.quickFix.names.some((n) => names.has(n));
+      yes = sliderFixNames(error).some((n) => names.has(n));
     } else if (error?.code === 'duplicate') {
       const row = rows.find((r) => r.id === id);
       yes = row !== undefined && names.has(headName(row.source) ?? '');

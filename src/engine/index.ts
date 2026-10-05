@@ -11,7 +11,8 @@ export {
   PREFIXABLE_FUNCTIONS,
 } from './builtinNames';
 export { DocumentEngine } from './document';
-export { formatCoordinate, formatSliderValue, formatValue } from './format';
+export { applyFix, errorFixes, sliderFixNames } from './errors';
+export { formatCoordinate, formatPlain, formatSliderValue, formatValue } from './format';
 export type { NameContext } from './names';
 export {
   BP_ADD,
