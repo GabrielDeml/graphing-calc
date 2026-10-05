@@ -343,7 +343,7 @@ export class GraphController {
    * them shows and the user has not moved the view for a while, frame them (see frameRows).
    */
   frameNew(ids: readonly string[]): void {
-    this.toFrame = ids;
+    this.toFrame = [...(this.toFrame ?? []), ...ids];
     this.invalidate();
   }
 

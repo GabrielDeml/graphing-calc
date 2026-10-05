@@ -370,3 +370,79 @@ describe('names and curves together', () => {
     );
   });
 });
+
+describe('chips', () => {
+  const values = (insight: Insight | null) => (insight?.facts ?? []).flatMap((f) => f.values ?? []);
+
+  it('a centre flies there without pinning the trace: it is not on the curve', () => {
+    for (const source of ['x^2 + y^2 = 9', 'r = 2cos(θ)', '(2cos t + 1, 2sin t)', 'xy = 1']) {
+      const centre = values(insightOf([source])).find((v) => v.name === 'Centre');
+      expect(centre?.at, source).toBeDefined();
+      expect(centre?.offCurve, source).toBe(true);
+    }
+    const [[name, x, y]] = chips(insightOf(['x^2 + y^2 = 9']));
+    expect(name).toBe('Radius');
+    expect(Math.hypot(x, y)).toBeCloseTo(3, 9);
+  });
+
+  it('are named for what they are, never like a color (the color buttons are)', () => {
+    const sources = [
+      'y = 3',
+      'y = 2x + 1',
+      'y = x/3',
+      'y = x^2 - 2',
+      'y = x^3 - x',
+      'y = x^3 + x',
+      'y = 2^x',
+      'y = sin(x)',
+      'x^2 + y^2 = 9',
+      'x^2/9 + y^2/4 = 1',
+      'x^2 - y^2 = 1',
+      'x^2 = y^2',
+      '(x - y)^2 = x + y',
+      'r = 1 + cos(θ)',
+      'r = 1 + 2cos(θ)',
+      'r = cos(3θ)',
+      '(3cos t, 2sin t)',
+      '(t, 2t + 1)',
+      '(cos t, sin(2t))',
+    ];
+    const names = new Set<string>();
+    for (const source of sources) {
+      for (const v of values(insightOf([source]))) {
+        expect(v.name, source).not.toMatch(/red/i);
+        names.add(v.name);
+      }
+    }
+    expect([...names].sort()).toEqual(
+      [
+        'Amplitude',
+        'Axis of symmetry',
+        'Base',
+        'Centre',
+        'Crossing',
+        'Cusp',
+        'End',
+        'Farthest point',
+        'Inflection point',
+        'Line',
+        'Local maximum',
+        'Local minimum',
+        'Midline',
+        'Origin',
+        'Period',
+        'Petal length',
+        'Radius',
+        'Root',
+        'Semi-major axis',
+        'Semi-minor axis',
+        'Slope',
+        'Start',
+        'Vertex',
+        'x-intercept',
+        'y-intercept',
+        'Asymptote',
+      ].sort(),
+    );
+  });
+});

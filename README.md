@@ -27,6 +27,7 @@ scratch in plain TypeScript.
 | `f(x) = x^2`, `g(u, v) = u v` | Functions you can call from other rows: `y = f(x - 1)` |
 | `2^10`, `sqrt(2)` | Shows the value |
 | `y = (x+1)/(x^2+1)`, `sqrt(x)`, `e^(-x^2)` | Shown typeset as you type: a stacked fraction, a radical, a raised exponent (see **Editing math** below) |
+| `y = x^2 - 2`, `x^2 + y^2 = 9`, `r = cos(3θ)` | A quiet line under the row says what the curve is: "Parabola · vertex (0, −2) · roots −1.414, 1.414 · axis x = 0", "Circle · centre (0, 0) · radius 3", "Rose with 3 petals · petal length 1" (see **Insights** below) |
 
 Syntax notes:
 
@@ -50,8 +51,21 @@ Syntax notes:
 ## Using it
 
 - **Graph:** drag to pan, use the wheel or pinch to zoom, double-click to zoom in, and the buttons
-  at the top right zoom or reset the view. With the graph focused, the keyboard works too: arrows
-  pan, `+` and `-` zoom, `0` resets.
+  at the top right zoom in and out, fit and reset the view. With the graph focused, the keyboard
+  works too: arrows pan, `+` and `-` zoom, `0` resets.
+- **Zoom to fit:** the button between zoom out and reset (its icon a curve in a frame) flies to
+  show every curve on the graph, with some room around and the same scale on both axes. A
+  closed curve (a circle, a rose, a parametric loop) and points are shown whole; a curve without
+  end such as `y = x^3 - x` is shown by what is worth seeing of it over the x in view (where it
+  crosses the axes, turns and ends), not by how high it climbs there, and `y = 1/x` without
+  the far reaches of its pole. Pressed again before anything changes, it stays put; with nothing
+  on the graph it goes home like reset.
+- **Framing new curves:** a curve that appears out of sight, such as `y = x + 100` pasted or typed
+  in one go, makes the graph glide over to it (along with what was in view, unless that is much
+  farther away). Only when a row first draws a curve, and only when none of it shows: never for
+  a slider moving, for an edit to a curve that already drew (`y = x + 1` on its way to
+  `y = x + 100` stays where you put the view), for a curve brought back by undo, or within two
+  seconds of you moving the view yourself.
 - **Trace:** hover a curve to see its coordinates, in a pill with the curve's color; its row in the
   list lights up faintly. On touch, tap a curve to pin the trace; with a mouse, click the selected
   curve (the first click on a curve selects it). Near a point of interest the
@@ -82,6 +96,30 @@ Syntax notes:
   extrema first and then crossings of the axes (zoomed out on `sin(x)`, its extrema go, then its
   roots), until you zoom in. While you type in the selected row, its rings stay, faded, until the
   new ones are found.
+- **Insights:** a moment after a row settles, a quiet line fades in under it saying what its
+  curve is, and nothing it can't check: every model is fitted on a few samples and then held to
+  the curve at many more, near and far.
+  - `y = f(x)` (and `x = f(y)`): an exact polynomial up to degree 4 (a horizontal or vertical
+    line, a line with its slope and intercepts, a parabola with its vertex, roots and axis, a
+    cubic or quartic with its roots and turning points), an exponential `a·bˣ + c` (its base,
+    asymptote and intercept), a periodic function (its period, from the arguments of its `sin`,
+    `cos`, `tan`… and checked as f(x + P) = f(x), its amplitude and midline; "Sine wave" when it
+    is one). Otherwise the selected row counts what is in view ("In view: 3 roots, 2 turning
+    points", or its vertical asymptotes, such as `x = 0` for `y = 1/x`).
+  - An implicit equation: a circle (centre, radius), an ellipse (centre, semi-axes, tilt), a
+    hyperbola (centre, vertices, asymptotes), a parabola (vertex, axis), a line, two lines.
+  - `r = f(θ)`: a circle, a cardioid, a limaçon (with an inner loop, dimpled or convex), a rose
+    with its number of petals, an Archimedean spiral; only when the θ range draws it whole.
+  - A parametric curve: a segment, a circle or an ellipse, else whether it is closed.
+  - A slider, a variable or a function: "Used by ● y = a sin(x)", the rows that use it.
+  - The selected row also says where it meets the other curves: "meets ● y = x/3 at 3 points"
+    (exactly for two polynomials, otherwise counted in view).
+  - Values at a point are chips: click or tap one ("Vertex (0, −2)") and the graph flies there
+    and pins the trace on it; a circle's centre is flown to without a pin. Numbers have four
+    significant digits and multiples of π read as such (`2π`).
+  - The line dims while you type a change and updates once you pause; a row with an error, or a
+    hidden curve, has none. While a slider plays, the lines that depend on it keep up a few times
+    a second. Values (`2^10`) keep showing `= 1024` instead.
 - **Typeset math:** rows you aren't editing show their math typeset, as in a textbook: stacked
   fractions, raised exponents (and `x²` typed with a superscript), subscripts, square and cube
   roots under a radical sign, parentheses and `|x|` bars that grow around a fraction, function
@@ -225,7 +263,8 @@ Syntax notes:
   `≥`, `√` and superscripts from STIX Two Math), bundled with the app so it works offline: letters
   in italic, digits, operators and function names upright; radical signs and tall parentheses are
   drawn to fit. With reduced motion turned on in the system,
-  transitions, the zoom animation and the points of interest's bloom are skipped.
+  transitions, the zoom animation (and the flights to fit, frame or follow a chip) and the
+  points of interest's bloom are skipped.
 - **Math keypad:** on touch devices, tapping a row opens the built-in keypad, which has three pages:
   numbers, functions and letters. The keyboard key on the letters page switches that row to the
   device keyboard, and the keyboard button in the header switches modes for good. Tapping the
@@ -256,7 +295,8 @@ pnpm icons        # regenerate PWA icons from public/logo.svg
 ```
 src/engine/       math language: tokenizer, parser, classifier, compiler, document engine (pure TS)
 src/plot/         geometry: viewport, ticks, adaptive samplers, marching squares, points of
-                  interest, the trace's tangent lines (pure TS)
+                  interest, the trace's tangent lines, exact fits and what they say about a
+                  curve (insights), where a curve is (bounds, for fitting and framing) (pure TS)
 src/keypad/       on-screen keypad layouts and text-editing logic (pure TS)
 src/mathedit/     typeset rows: a tolerant parse that reads text exactly as the engine does,
                   the render plan (boxes, spacing, error marks), caret stops, the editing
