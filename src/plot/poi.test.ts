@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Fn1, Fn2, PlotItem } from '../engine/types';
-import { findPois, type Poi, type PoiCurve, type PoiKind } from './poi';
+import { findPois, type Poi, type PoiCensus, type PoiCurve, type PoiKind } from './poi';
 import { buildRowGeometry } from './scene';
 import type { Viewport } from './types';
 
@@ -324,6 +324,42 @@ describe('findPois: density', () => {
     expect(ofKind(list, 'root')).toHaveLength(3);
     expect(ofKind(list, 'max')).toHaveLength(1);
     expect(ofKind(list, 'min')).toHaveLength(1);
+  });
+
+  it('counts everything found in view, shown or not', () => {
+    // Zoomed out twice on sin x, the extrema are left out; the census still has them.
+    const out2: Viewport = { ...view, ppuX: 20, ppuY: 20 };
+    const census: PoiCensus = { kinds: {}, meets: new Map() };
+    const list = findPois(
+      curve('t', fx(Math.sin), out2),
+      [
+        curve(
+          'o',
+          fx((x) => x / 3),
+          out2,
+        ),
+      ],
+      out2,
+      { census },
+    );
+    expect(ofKind(list, 'max')).toHaveLength(0);
+    // x in [-20, 20]: 13 roots, 12 extrema, 3 crossings.
+    expect(census.kinds.root).toBe(13);
+    expect((census.kinds.max ?? 0) + (census.kinds.min ?? 0)).toBe(12);
+    expect(census.kinds.yIntercept).toBe(1);
+    expect(census.meets.get('o')).toBe(3);
+    // Nothing in view: no kinds at all.
+    const none: PoiCensus = { kinds: {}, meets: new Map() };
+    findPois(
+      curve(
+        't',
+        fx((x) => x * x + 50),
+      ),
+      [],
+      view,
+      { census: none },
+    );
+    expect(none.kinds).toEqual({});
   });
 
   it('caps the number of points', () => {

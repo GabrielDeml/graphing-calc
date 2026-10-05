@@ -52,6 +52,18 @@ export interface PoiOptions {
   maxPois?: number;
   /** Evaluation budget for the whole search (default 60000). */
   maxEvals?: number;
+  /** Filled with what the search found in view, before any is left out (see PoiCensus). */
+  census?: PoiCensus;
+}
+
+/**
+ * How many points of each kind a search found in view, and at how many it met each other curve
+ * (by id), before kinds were left out to keep the graph readable: the insight line counts them.
+ * A kind is missing when none was found in view, or there were too many to find them all.
+ */
+export interface PoiCensus {
+  kinds: Partial<Record<PoiKind, number>>;
+  meets: Map<string, number>;
 }
 
 const DEFAULT_MAX_POIS = 20;
@@ -846,7 +858,14 @@ export function findPois(
         points.push({ x, y, kind, with: other });
       }
     }
-    if (points.length > 0) classes.push({ kind, other, points });
+    if (points.length === 0) return;
+    classes.push({ kind, other, points });
+    const census = opts.census;
+    if (census) {
+      const n = spots(points, view).length;
+      if (other === null) census.kinds[kind] = n;
+      else census.meets.set(other, n);
+    }
   };
 
   const plot = target.plot;
