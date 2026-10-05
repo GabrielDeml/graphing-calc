@@ -137,6 +137,65 @@ describe('polyTurningPoints', () => {
   });
 });
 
+describe('multiple roots of fitted polynomials', () => {
+  // Fitted, coefficients carry rounding: near a root of multiplicity m the polynomial is noise
+  // over about ε^(1/m), and seems to cross zero there again and again.
+  it.each([
+    ['(x − 1)²(x + 2)', (x: number) => (x - 1) ** 2 * (x + 2), [-2, 1], [-1, 1]],
+    ['x³ − 3x + 2', (x: number) => x ** 3 - 3 * x + 2, [-2, 1], [-1, 1]],
+    ['(x − 1)⁴', (x: number) => (x - 1) ** 4, [1], [1]],
+    [
+      'x⁴ − 4x³ + 6x² − 4x + 1',
+      (x: number) => x ** 4 - 4 * x ** 3 + 6 * x * x - 4 * x + 1,
+      [1],
+      [1],
+    ],
+    ['(x − 3)⁴', (x: number) => (x - 3) ** 4, [3], [3]],
+    ['(x − 0.5)³', (x: number) => (x - 0.5) ** 3, [0.5], []],
+    ['(x − 1)³', (x: number) => (x - 1) ** 3, [1], []],
+    ['(x − 0.001)³', (x: number) => (x - 0.001) ** 3, [0.001], []],
+    ['(x² − 1)²', (x: number) => (x * x - 1) ** 2, [-1, 1], [-1, 0, 1]],
+    ['(x − 1)²(x + 1)²', (x: number) => (x - 1) ** 2 * (x + 1) ** 2, [-1, 1], [-1, 0, 1]],
+    ['(x − 1)²(x + 2)²', (x: number) => (x - 1) ** 2 * (x + 2) ** 2, [-2, 1], [-2, -0.5, 1]],
+    ['(x − 1)³(x + 2)', (x: number) => (x - 1) ** 3 * (x + 2), [-2, 1], [-1.25]],
+    ['(x − 100)³', (x: number) => (x - 100) ** 3, [100], []],
+    ['(1000x − 1)²(x + 1)', (x: number) => (1000 * x - 1) ** 2 * (x + 1), [-1, 0.001], null],
+  ])('%s: each root once', (_, f, roots, turns) => {
+    const c = polyFit(f);
+    expect(c).not.toBeNull();
+    close(polyRoots(c as number[]), roots, 7);
+    if (turns) close(polyTurningPoints(c as number[]), turns, 7);
+  });
+
+  it('keeps roots apart that are apart', () => {
+    close(polyRoots(polyFit((x) => (x - 1) * (x - 1.001)) as number[]), [1, 1.001], 9);
+    close(polyRoots(polyFit((x) => (x - 1) ** 2 * (x - 1.001)) as number[]), [1, 1.001], 7);
+    close(
+      polyRoots(polyFit((x) => (x - 1) * (x - 2) * (x - 3) * (x - 4)) as number[]),
+      [1, 2, 3, 4],
+    );
+  });
+
+  it('never more than the degree, whatever the noise', () => {
+    for (let i = 0; i < 300; i++) {
+      // Coefficients of (x − r)^m (x − s)^(n − m), each off by a few ulps.
+      const r = Math.round(Math.sin(i) * 80) / 8;
+      const s = Math.round(Math.cos(i * 1.7) * 80) / 8;
+      const m = 1 + (i % 3);
+      const n = Math.min(4, m + 1 + (i % 2));
+      let c = [1];
+      for (let k = 0; k < n; k++) {
+        const root = k < m ? r : s;
+        c = [...c.map((v) => -root * v), 0].map((v, j) => v + (c[j - 1] ?? 0));
+      }
+      const noisy = c.map((v, j) => v * (1 + (((i * 7 + j * 13) % 5) - 2) * 2.2e-16));
+      const roots = polyRoots(noisy);
+      expect(roots.length).toBeLessThanOrEqual(r === s ? 1 : 2);
+      expect(roots.length).toBeGreaterThanOrEqual(1);
+    }
+  });
+});
+
 describe('expFit', () => {
   it.each([
     ['2^x', (x: number) => 2 ** x, { a: 1, base: 2, c: 0 }],

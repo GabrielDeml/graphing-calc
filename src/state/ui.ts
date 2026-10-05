@@ -1,4 +1,4 @@
-import { createEffect, createRoot, createSignal, on } from 'solid-js';
+import { batch, createEffect, createRoot, createSignal, on } from 'solid-js';
 import { doc } from './doc';
 import { SIDEBAR_DEFAULT } from './layout';
 import { savedState } from './persist';
@@ -94,10 +94,14 @@ export const ui = createRoot(() => {
     flight,
     /**
      * Fly the graph to a point of a row's curve (GraphView acts on it), and pin the trace there
-     * unless the point is off the curve (a circle's centre).
+     * unless the point is off the curve (a circle's centre). The row becomes the selected one, as
+     * a tap on its curve makes it (a pressed button doesn't take the focus everywhere).
      */
     flyTo: (rowId: string, x: number, y: number, pin: boolean) =>
-      setFlight((f) => ({ rowId, x, y, pin, seq: (f?.seq ?? 0) + 1 })),
+      batch(() => {
+        setSelectedRowId(rowId);
+        setFlight((f) => ({ rowId, x, y, pin, seq: (f?.seq ?? 0) + 1 }));
+      }),
   };
 });
 

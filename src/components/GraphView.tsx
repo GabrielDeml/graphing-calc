@@ -212,9 +212,11 @@ export function GraphView() {
       setPoiSet(pois.length > 0 && rowId !== null ? { rowId, pois, view, stale } : null);
       // What the row's insight line counts in view.
       if (census && rowId !== null) {
-        const { kinds: counts, meets, plot } = census;
+        const { kinds: counts, meets, plot, others, values } = census;
         insightSources.setCensus(rowId, {
           plot,
+          others,
+          values,
           facts: { bounds: viewBounds(view), counts, meets },
         });
       }

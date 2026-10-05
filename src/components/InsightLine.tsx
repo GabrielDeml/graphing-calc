@@ -19,7 +19,7 @@ import {
 } from '../plot/insights';
 import { analysis, engine } from '../state/analysis';
 import { doc } from '../state/doc';
-import { insightSources } from '../state/insight';
+import { censusHolds, insightSources } from '../state/insight';
 import { palette } from '../state/theme';
 import { ui } from '../state/ui';
 import { InlineMath } from './InlineMath';
@@ -35,12 +35,13 @@ const CLOSE_MS = 160;
  * What the line is read from. 'closed': nothing to say (no math, an error showing, a hidden
  * curve); 'pending': broken for a moment while it is typed in, so the line waits, dimmed.
  * `ident` is what the row is (its plot, or the name it defines): a new one fades a new line in,
- * while the same one with new values (a slider moving) only updates the line.
+ * while the same one with new values (a slider moving) only updates the line. `waiting`: what
+ * the graph counted in view no longer holds (the values moved), and a new count is to come.
  */
 type Reading =
   | 'closed'
   | 'pending'
-  | { ident: unknown; input: InsightInput; values: readonly number[] };
+  | { ident: unknown; input: InsightInput; values: readonly number[]; waiting: boolean };
 
 /**
  * One quiet line under a row that says what its curve is (src/plot/insights.ts): "Parabola ·
@@ -66,13 +67,17 @@ export function InsightLine(props: {
       const id = props.rowId;
       const input: InsightInput = { kind: res.kind, plot: res.plot };
       const values: number[] = [];
-      if (res.definedName && !res.plot) {
-        input.usedBy = insightSources.usersOf(res.definedName, id);
-      }
+      let waiting = false;
+      // A slider, a variable or a function (one that plots too, f(x) = x²): the rows using it.
+      if (res.definedName) input.usedBy = insightSources.usersOf(res.definedName, id);
       if (res.plot) {
         const a = analysis();
-        const valuesOf = (deps: ReadonlySet<string>) => {
-          for (const dep of deps) values.push(a.values.get(dep) ?? Number.NaN);
+        const deps: string[] = [];
+        const valuesOf = (names: ReadonlySet<string>) => {
+          for (const dep of names) {
+            deps.push(dep);
+            values.push(a.values.get(dep) ?? Number.NaN);
+          }
         };
         valuesOf(res.deps);
         if (ui.selectedRowId() === id) {
@@ -84,11 +89,18 @@ export function InsightLine(props: {
             valuesOf(r.deps);
           }
           input.others = others;
+          // What the graph counted in view, while it holds (a slider moving makes it wait).
           const census = insightSources.census(id);
-          input.inView = census?.plot === res.plot ? census.facts : null;
+          const plots = others.map((o) => o.plot);
+          if (census && censusHolds(census, res.plot, plots, deps, a.values)) {
+            input.inView = census.facts;
+          } else {
+            input.inView = null;
+            waiting = census?.plot === res.plot;
+          }
         }
       }
-      return { ident: res.plot ?? `${res.kind} ${res.definedName ?? ''}`, input, values };
+      return { ident: res.plot ?? `${res.kind} ${res.definedName ?? ''}`, input, values, waiting };
     },
     'closed',
     { equals: sameReading },
@@ -101,6 +113,12 @@ export function InsightLine(props: {
   const [shown, setShown] = createSignal<Insight | null>(null);
   const [closing, setClosing] = createSignal(false);
   let closeTimer: ReturnType<typeof setTimeout> | undefined;
+  /**
+   * The row came with its math already settled (a reload, an undo, a slider made for it): its
+   * line is there at once, as the row is, rather than opening under it a moment later and
+   * pushing the list down. Only that first line: one that opens later opens.
+   */
+  const [instant, setInstant] = createSignal(false);
   createEffect(() => {
     const next = insight();
     clearTimeout(closeTimer);
@@ -110,18 +128,29 @@ export function InsightLine(props: {
     } else if (untrack(shown)) {
       setClosing(true);
       closeTimer = setTimeout(() => {
-        setShown(null);
-        setClosing(false);
+        batch(() => {
+          setShown(null);
+          setClosing(false);
+          setInstant(false);
+        });
       }, CLOSE_MS);
-    }
+    } else setInstant(false);
   });
   let line: HTMLParagraphElement | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let lastRun = Number.NEGATIVE_INFINITY;
+  /** What the line last read… */
   let lastIdent: unknown;
+  /** …and what it waits to read, once it settles. */
+  let pendingIdent: unknown;
+  /** The reading as it is now: a timer reads this, not the one it was set for. */
+  let latest: Reading = 'closed';
 
-  const read = (r: Exclude<Reading, string>, fresh: boolean) => {
+  const read = (fresh: boolean) => {
+    const r = latest;
     timer = undefined;
+    pendingIdent = undefined;
+    if (typeof r === 'string') return;
     lastRun = performance.now();
     lastIdent = r.ident;
     let next: Insight | null = null;
@@ -131,6 +160,11 @@ export function InsightLine(props: {
       next = rowInsight({ ...r.input, trigArgs });
     } catch (err) {
       console.warn('Failed to read the curve of row', props.rowId, err);
+    }
+    // Nothing to say until the graph counts again (a slider moving): the line waits, dimmed.
+    if (!next && r.waiting && untrack(insight)) {
+      setDim(true);
+      return;
     }
     const shownBefore = untrack(shown) !== null && !untrack(closing);
     batch(() => {
@@ -145,44 +179,51 @@ export function InsightLine(props: {
     }
   };
 
-  /**
-   * The row came with its math already settled (a reload, an undo, a slider made for it): its
-   * line is there at once, as the row is, rather than opening under it a moment later and
-   * pushing the list down.
-   */
-  const [instant, setInstant] = createSignal(false);
   let mounting = true;
   createEffect(
     on(reading, (r) => {
       const atMount = mounting;
       mounting = false;
-      clearTimeout(timer);
-      if (r === 'closed') {
+      latest = r;
+      if (r === 'closed' || r === 'pending') {
+        clearTimeout(timer);
+        timer = undefined;
+        pendingIdent = undefined;
+        if (r === 'pending') {
+          setDim(untrack(insight) !== null);
+          return;
+        }
         lastIdent = undefined;
         batch(() => {
           setDim(false);
-          setInstant(false);
           setInsight(null);
         });
         return;
       }
-      if (atMount && r !== 'pending') {
+      if (atMount) {
         setInstant(true);
-        read(r, false);
-        return;
-      }
-      if (r === 'pending') {
-        setDim(untrack(insight) !== null);
+        read(false);
         return;
       }
       if (r.ident === lastIdent) {
-        timer = setTimeout(
-          () => read(r, false),
+        // The same curve with new values (a slider moving): read at most every THROTTLE_MS. A
+        // read already due takes the latest values.
+        if (pendingIdent !== undefined) {
+          clearTimeout(timer);
+          timer = undefined;
+          pendingIdent = undefined;
+        }
+        timer ??= setTimeout(
+          () => read(false),
           Math.max(0, lastRun + THROTTLE_MS - performance.now()),
         );
-      } else {
+      } else if (r.ident !== pendingIdent) {
+        // Something new: read once it has stayed for SETTLE_MS, however its values move meanwhile
+        // (a row typed in while a slider it uses plays).
+        clearTimeout(timer);
+        pendingIdent = r.ident;
         setDim(untrack(insight) !== null);
-        timer = setTimeout(() => read(r, true), SETTLE_MS);
+        timer = setTimeout(() => read(true), SETTLE_MS);
       }
     }),
   );
@@ -191,6 +232,22 @@ export function InsightLine(props: {
     clearTimeout(timer);
     clearTimeout(closeTimer);
   });
+
+  /** A line longer than the row fades out at its end (and its start, once scrolled along). */
+  const measure = () => {
+    if (!line) return;
+    const overflow = line.scrollWidth > line.clientWidth + 1;
+    line.classList.toggle('overflowing', overflow);
+    line.classList.toggle('scrolled', overflow && line.scrollLeft > 0);
+  };
+  createEffect(on(shown, measure));
+  const watch = (el: HTMLParagraphElement) => {
+    line = el;
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    onCleanup(() => ro.disconnect());
+  };
 
   return (
     <Show when={shown()}>
@@ -201,7 +258,18 @@ export function InsightLine(props: {
           aria-hidden={closing() || undefined}
           inert={closing() || undefined}
         >
-          <p class="expr-insight-line" ref={line} data-testid="insight">
+          <p
+            class="expr-insight-line"
+            ref={watch}
+            data-testid="insight"
+            onScroll={measure}
+            onFocusOut={(e) => {
+              // A chip focused past the end scrolled the line along; it starts over after.
+              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                e.currentTarget.scrollLeft = 0;
+              }
+            }}
+          >
             <Show when={s().title}>{(title) => <span class="insight-title">{title()}</span>}</Show>
             {/* By place, so a line updated in place (a slider moving) keeps its nodes. */}
             <Index each={s().facts}>
@@ -246,8 +314,6 @@ function Fact(props: {
     ...(props.fact.values ?? []).map((value) => ({ value })),
     ...(props.fact.rows ?? []).map((row) => ({ row })),
   ];
-  // Lines break only between items, each kept with its comma, and the label with the first one
-  // (a chip is a box, which lines break around even at a no-break space).
   return (
     <span class="insight-fact">
       <Show when={items().length === 0}>{label()}</Show>
@@ -255,19 +321,18 @@ function Fact(props: {
         {(item, j) => (
           <>
             {j > 0 ? ' ' : ''}
-            <span class="insight-keep">
-              {j === 0 && label() !== '' ? `${label()}\u00a0` : ''}
-              <Show when={item().value} fallback={<RowRef id={item().row ?? ''} />}>
-                {(value) => (
-                  <Value value={value()} rowId={props.rowId} onMouseDown={props.onMouseDown} />
-                )}
-              </Show>
-              {j < items().length - 1 ? ',' : ''}
-            </span>
+            {j === 0 && label() !== '' ? `${label()}\u00a0` : ''}
+            <Show when={item().value} fallback={<RowRef id={item().row ?? ''} />}>
+              {(value) => (
+                <Value value={value()} rowId={props.rowId} onMouseDown={props.onMouseDown} />
+              )}
+            </Show>
+            {j < items().length - 1 ? ',' : ''}
           </>
         )}
       </Index>
-      <Show when={props.fact.tail}>{(tail) => `\u00a0${tail()}`}</Show>
+      {/* (An expression, not a <Show> callback: that would keep the first tail it was given.) */}
+      {props.fact.tail ? `\u00a0${props.fact.tail}` : ''}
     </span>
   );
 }
@@ -295,6 +360,9 @@ function Value(props: {
   );
 }
 
+/** A row named in a line is cut short past this many characters. */
+const ROW_REF_MAX = 24;
+
 /** Another row, as its color and its math ("● y = x/3"). */
 function RowRef(props: { id: string }) {
   const row = () => doc.rows.find((r) => r.id === props.id);
@@ -304,7 +372,7 @@ function RowRef(props: { id: string }) {
   };
   return (
     <span class="insight-row" classList={{ colored: !!color() }} style={{ '--ref-color': color() }}>
-      <InlineMath text={row()?.source.trim() ?? ''} />
+      <InlineMath text={row()?.source.trim() ?? ''} max={ROW_REF_MAX} />
     </span>
   );
 }
@@ -314,6 +382,7 @@ function sameReading(a: Reading, b: Reading): boolean {
   const [p, q] = [a.input, b.input];
   return (
     a.ident === b.ident &&
+    a.waiting === b.waiting &&
     p.kind === q.kind &&
     p.plot === q.plot &&
     p.inView === q.inView &&

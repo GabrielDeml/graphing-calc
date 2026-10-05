@@ -152,8 +152,8 @@ function bisect(c: readonly number[], a0: number, b0: number): number {
 }
 
 /**
- * The distinct real roots of a polynomial, ascending. A root where the curve only touches zero
- * (x², a double root) counts once.
+ * The distinct real roots of a polynomial, ascending (never more than its degree). A root where
+ * the curve only touches zero (x², a double root) or flattens through it ((x − 1)³) counts once.
  */
 export function polyRoots(c0: readonly number[]): number[] {
   const c = snap(c0);
@@ -162,14 +162,14 @@ export function polyRoots(c0: readonly number[]): number[] {
   if (n === 1) return [-c[0] / c[1]];
   if (n === 2) {
     const [cc, b, a] = c;
+    // Touching zero at its vertex, to rounding: a double root.
+    const vertex = -b / (2 * a);
+    if (Math.abs(polyEval(c, vertex)) <= polyNoise(c, vertex)) return [vertex];
     const disc = b * b - 4 * a * cc;
-    const tol = 1e-12 * (b * b + Math.abs(4 * a * cc));
-    if (disc < -tol) return [];
-    if (disc <= tol) return [-b / (2 * a)];
+    if (!(disc > 0)) return [];
     // The stable pair: no cancellation between -b and the root of the discriminant.
     const q = -0.5 * (b + Math.sign(b || 1) * Math.sqrt(disc));
-    const roots = [q / a, cc / q];
-    return dedupe(roots.sort((p, r) => p - r));
+    return [q / a, cc / q].sort((p, r) => p - r);
   }
   // Between consecutive turning points p is monotonic: one sign change at most.
   const crit = polyRoots(polyDerivative(c));
@@ -187,20 +187,73 @@ export function polyRoots(c0: readonly number[]): number[] {
   }
   if (polyEval(c, bound) === 0) roots.push(bound);
   // A turning point on the axis: a root of even multiplicity.
-  for (const x of crit) {
-    if (Math.abs(polyEval(c, x)) <= 1e-10 * polyScale(c, x)) roots.push(x);
-  }
-  return dedupe(roots.sort((p, r) => p - r));
-}
-
-/** Sorted values without near-duplicates (a root found twice). */
-function dedupe(sorted: readonly number[]): number[] {
-  const out: number[] = [];
-  for (const v of sorted) {
-    const last = out.at(-1);
-    if (last === undefined || Math.abs(v - last) > 1e-9 * (1 + Math.abs(v))) out.push(v);
+  const flat = crit.filter((x) => Math.abs(polyEval(c, x)) <= polyNoise(c, x));
+  roots.push(...flat);
+  const out = merged(
+    c,
+    roots.sort((p, r) => p - r),
+    flat,
+  );
+  // (Rounding could only ever add roots: a polynomial has no more than its degree.)
+  while (out.length > n) {
+    let k = 0;
+    for (let i = 1; i + 1 < out.length; i++) if (out[i + 1] - out[i] < out[k + 1] - out[k]) k = i;
+    out.splice(k, 2, 0.5 * (out[k] + out[k + 1]));
   }
   return out;
+}
+
+/** How much rounding is allowed for, as a multiple of what it amounts to (see polyNoise). */
+const ROUNDING = 1e-14;
+/** How far out polynomials are fitted. */
+const REACH = Math.max(...FIT_U.map(Math.abs));
+
+/**
+ * How far p(u) may be off from rounding alone: in evaluating it, and in its coefficients, which a
+ * fit (polyFit) gets to within about ε of its size over FIT_U, an error that grows as |u|ᵏ beyond.
+ */
+function polyNoise(c: readonly number[], u: number): number {
+  const r = Math.abs(u) / REACH;
+  let grown = 0;
+  for (let k = 0, rk = 1; k < c.length; k++, rk *= r) grown += rk;
+  return ROUNDING * (polyScale(c, u) + polyScale(c, REACH) * grown);
+}
+
+/**
+ * Sorted roots, each found once. Near a root of multiplicity m, p is lost in rounding over a
+ * span of about ε^(1/m) (fitted, (x − 3)⁴ is noise over 3 ± 0.0007), where it seems to cross
+ * zero again and again. Roots with nothing but rounding
+ * between them are one: the turning point among them (`flat`, found as a root of p', which is
+ * far less spread out) when there is one, else their middle.
+ */
+function merged(
+  c: readonly number[],
+  sorted: readonly number[],
+  flat: readonly number[],
+): number[] {
+  const zero = (u: number) => Math.abs(polyEval(c, u)) <= polyNoise(c, u);
+  const groups: number[][] = [];
+  for (const x of sorted) {
+    const group = groups.at(-1);
+    const last = group?.at(-1);
+    const same =
+      last !== undefined &&
+      (x - last <= 1e-9 * (1 + Math.abs(x)) ||
+        [0.25, 0.5, 0.75].every((t) => zero(last + t * (x - last))));
+    if (group && same) group.push(x);
+    else groups.push([x]);
+  }
+  return groups.map((g) => {
+    const [lo, hi] = [g[0], g[g.length - 1]];
+    const mid = 0.5 * (lo + hi);
+    let best: number | null = null;
+    for (const x of flat) {
+      if (x >= lo && x <= hi && (best === null || Math.abs(x - mid) < Math.abs(best - mid))) {
+        best = x;
+      }
+    }
+    return best ?? mid;
+  });
 }
 
 /** Where p turns (a local maximum or minimum): roots of p' where p' changes sign. */

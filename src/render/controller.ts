@@ -46,9 +46,14 @@ export interface TraceHit {
   poi?: Poi;
 }
 
-/** What a search for points of interest counted in view (PoiCensus), on which plot of its row. */
+/**
+ * What a search for points of interest counted in view (PoiCensus), and what it searched: its
+ * row's plot, the other curves' and the values they were drawn with.
+ */
 export interface RowCensus extends PoiCensus {
   plot: PlotItem;
+  others: readonly PlotItem[];
+  values: ReadonlyMap<string, number>;
 }
 
 export interface TraceOptions {
@@ -657,7 +662,13 @@ export class GraphController {
       geometry: this.geometries.get(r.id) as RowGeometry,
     });
     let pois: Poi[] = [];
-    const census: RowCensus = { kinds: {}, meets: new Map(), plot: row.plot };
+    const census: RowCensus = {
+      kinds: {},
+      meets: new Map(),
+      plot: row.plot,
+      others: others.map((r) => r.plot),
+      values: this.values,
+    };
     try {
       pois = findPois(curve(row), others.map(curve), this.view, { census });
     } catch (err) {

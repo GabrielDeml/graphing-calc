@@ -121,6 +121,18 @@ describe('y = f(x)', () => {
     expect(said([source])).toBe(text);
   });
 
+  it.each([
+    ['y = x^3 - 3x + 2', 'Cubic · roots −2, 1 · turning points (−1, 4), (1, 0)'],
+    ['y = (x - 1)^2 (x + 2)', 'Cubic · roots −2, 1 · turning points (−1, 4), (1, 0)'],
+    ['y = (x - 1)^4', 'Quartic · root 1 · turning point (1, 0)'],
+    ['y = x^4 - 4x^3 + 6x^2 - 4x + 1', 'Quartic · root 1 · turning point (1, 0)'],
+    ['y = (x - 0.5)^3', 'Cubic · root 0.5 · inflection point (0.5, 0)'],
+    ['y = (x^2 - 1)^2', 'Quartic · roots −1, 1 · turning points (−1, 0), (0, 1), (1, 0)'],
+    ['y = (x - 1)^2 (x + 1)^2', 'Quartic · roots −1, 1 · turning points (−1, 0), (0, 1), (1, 0)'],
+  ])('%s: a multiple root once', (source, text) => {
+    expect(said([source])).toBe(text);
+  });
+
   it('a polynomial through sliders reads their values', () => {
     expect(said(['a = 2', 'b = -4', 'y = a x^2 + b'])).toBe(
       'Parabola · vertex (0, −4) · roots −1.414, 1.414 · axis x = 0',
@@ -342,7 +354,12 @@ describe('parametric curves', () => {
 describe('names and curves together', () => {
   it('a slider, a variable or a function: the rows that use it', () => {
     expect(said(['y = a x + 1', 'k = 2a', 'a = 2'])).toBe('Used by y = a x + 1, k = 2a');
-    expect(said(['y = f(x - 1)', 'f(x) = x^2'])).toBe('Used by y = f(x - 1)');
+    // A function of one variable is drawn too: its curve, after the rows that use it.
+    expect(said(['y = f(x - 1)', 'f(x) = x^2'])).toBe(
+      'Parabola · used by y = f(x - 1) · vertex (0, 0) · root 0 · axis x = 0',
+    );
+    expect(said(['y = g(x, 2)', 'g(u, v) = u v'])).toBe('Used by y = g(x, 2)');
+    expect(said(['f(x) = sqrt(x) + x^5'])).toBeNull();
     expect(said(['y = a', 'y = 2a', 'y = 3a', 'y = 4a', 'y = 5a', 'a = 1'])).toBe(
       'Used by y = a, y = 2a, y = 3a +2 more',
     );
@@ -352,10 +369,41 @@ describe('names and curves together', () => {
   it('the selected curve: where it meets the others, exactly for polynomials', () => {
     const sources = ['y = x/3', 'y = x^2', 'y = -1', 'y = x^2 + 0'];
     expect(said(sources, selected(sources))).toBe(
-      'Parabola · vertex (0, 0) · root 0 · axis x = 0 · meets y = x/3 at 2 points · same curve as y = x^2',
+      'Parabola · vertex (0, 0) · root 0 · axis x = 0 · same curve as y = x^2 · meets y = x/3 at 2 points',
     );
     const cubic = ['y = x', 'y = x^3'];
     expect(said(cubic, selected(cubic))).toContain('meets y = x at 3 points');
+    // Touching counts once.
+    const tangent = ['y = 3x - 2', 'y = x^3'];
+    expect(said(tangent, selected(tangent))).toContain('meets y = 3x - 2 at 2 points');
+  });
+
+  it('never meets a curve at more points than the degrees allow', () => {
+    const sources = ['y = 0', 'y = f(x - 1)', 'y = 1', 'f(x) = (x - 1)^2 (x + 1)^2'];
+    const text = said(sources, selected(sources)) ?? '';
+    expect(text).toContain('meets y = 0 at 2 points');
+    expect(text).toContain('meets y = f(x - 1) at 3 points');
+    expect(text).toContain('meets y = 1 at 3 points');
+    for (const m of text.matchAll(/at (\d+) points/g)) expect(Number(m[1])).toBeLessThanOrEqual(4);
+  });
+
+  it('exact meetings first, in list order; past three, how many more', () => {
+    const sources = ['x^2 + y^2 = 9', 'y = 1', 'y = 2', 'y = -x', 'y = 5 - x', 'y = x'];
+    const inView: InViewFacts = {
+      bounds: { xmin: -10, xmax: 10, ymin: -10, ymax: 10 },
+      counts: {},
+      meets: new Map([['r0', 2]]),
+    };
+    expect(said(sources, selected(sources, inView))).toBe(
+      'Line · slope 1 · through (0, 0) · meets y = 1 at 1 point · meets y = 2 at 1 point · ' +
+        'meets y = -x at 1 point · meets 2 more curves',
+    );
+    // One more is named rather than counted.
+    const five = sources.filter((s) => s !== 'y = 5 - x');
+    expect(said(five, selected(five, inView))).toBe(
+      'Line · slope 1 · through (0, 0) · meets y = 1 at 1 point · meets y = 2 at 1 point · ' +
+        'meets y = -x at 1 point · meets x^2 + y^2 = 9 at 2 points in view',
+    );
   });
 
   it('and in view, for the others', () => {

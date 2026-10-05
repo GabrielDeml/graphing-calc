@@ -3,10 +3,36 @@ import type { PlotItem } from '../engine/types';
 import type { InViewFacts } from '../plot/insights';
 import { analysis, engine } from './analysis';
 
-/** What the graph counted in view for a row (its points of interest), and on which of its plots. */
+/**
+ * What the graph counted in view for a row (its points of interest), and what it counted them
+ * on: the row's plot, the other curves' and the values all were drawn with.
+ */
 export interface RowCensus {
   plot: PlotItem;
+  others: readonly PlotItem[];
+  values: ReadonlyMap<string, number>;
   facts: InViewFacts;
+}
+
+/**
+ * Whether a count still holds for a row as it is now: the same plots, drawn with the same values
+ * (a slider moving keeps the plots, so the values tell). `deps` are the names the row and the
+ * others read.
+ */
+export function censusHolds(
+  census: RowCensus,
+  plot: PlotItem,
+  others: readonly PlotItem[],
+  deps: Iterable<string>,
+  values: ReadonlyMap<string, number>,
+): boolean {
+  if (census.plot !== plot || census.others.length !== others.length) return false;
+  if (!others.every((p) => census.others.includes(p))) return false;
+  for (const dep of deps) {
+    const [a, b] = [census.values.get(dep), values.get(dep)];
+    if (!(a === b || (Number.isNaN(a) && Number.isNaN(b)))) return false;
+  }
+  return true;
 }
 
 /**

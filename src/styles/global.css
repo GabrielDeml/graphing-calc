@@ -899,7 +899,9 @@ button {
 
 /*
  * What a row's curve is, in one quiet line under it (InsightLine): it opens like the error line
- * once the row settles, dims while the row is typed in, and fades a new reading in.
+ * once the row settles, dims while the row is typed in, and fades a new reading in. One line,
+ * always: what doesn't fit fades out at its end, so a row keeps its height whatever the line says
+ * (a slider playing, the row selected).
  */
 .expr-insight {
   display: grid;
@@ -924,10 +926,35 @@ button {
   min-height: 0;
   overflow: hidden;
   margin: 0;
-  padding: 0 2px 3px;
+  /* Room above and below a chip for its focus ring, which the line would clip. */
+  padding: 2px 2px 3px;
   color: var(--text-3);
   font-size: 12.5px;
   line-height: 22px;
+  white-space: nowrap;
+}
+
+.expr-insight-line.overflowing {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+}
+
+/* Scrolled along to a chip focused from the keyboard. */
+.expr-insight-line.overflowing.scrolled {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 20px,
+    #000 calc(100% - 28px),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 20px,
+    #000 calc(100% - 28px),
+    transparent
+  );
 }
 
 .expr-insight-line.fresh {
@@ -941,10 +968,6 @@ button {
 
 .insight-sep {
   color: var(--text-4);
-}
-
-.insight-keep {
-  white-space: nowrap;
 }
 
 /* Numbers in the math's face, with tabular figures: a value a slider moves doesn't jiggle. */
@@ -977,10 +1000,14 @@ button {
   color: var(--text-1);
 }
 
-/* Another row, by its color and its math: "used by ● y = a x". */
+/* Its ring hugs it, inside the room the line keeps for it. */
+.insight-chip:focus-visible {
+  outline-offset: 0;
+}
+
+/* Another row, by its color and its math: "used by ● y = a x" (a long one cut short). */
 .insight-row {
   color: var(--text-2);
-  white-space: nowrap;
 }
 
 .insight-row.colored::before {
@@ -2246,11 +2273,17 @@ button {
     height: 40px;
   }
 
-  /* An insight's chips reach out invisibly, above and below the line. */
-  .insight-chip::after {
-    content: "";
-    position: absolute;
-    inset: -8px -2px;
+  /* An insight's chips are big enough for a thumb, and apart (its line is taller for them). */
+  .expr-insight-line {
+    line-height: 30px;
+  }
+
+  .insight-chip {
+    min-width: 28px;
+    margin: 0 1px;
+    padding: 0 6px;
+    line-height: 26px;
+    text-align: center;
   }
 
   /* Change color and Delete, apart enough that a thumb meant for one doesn't hit the other. */

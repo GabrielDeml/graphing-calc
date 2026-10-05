@@ -171,15 +171,16 @@ const rootWords = (e: Explicit) =>
 /** Where u = 0. */
 const interceptWords = (e: Explicit) => (e.axis === 'x' ? 'y-intercept' : 'x-intercept');
 
+/** Values as shown, each once (two roots closer than four digits tell apart read as one). */
+function distinct(values: InsightValue[]): InsightValue[] {
+  return values.filter((v, i) => values.findIndex((w) => w.text === v.text) === i);
+}
+
 function rootsFact(e: Explicit, roots: readonly number[]): InsightFact[] {
   if (roots.length === 0) return [];
   const [name, one, many] = rootWords(e);
-  return [
-    {
-      label: roots.length === 1 ? one : many,
-      values: roots.map((r) => ({ text: num(r), name, at: pt(e, r, 0) })),
-    },
-  ];
+  const values = distinct(roots.map((r) => ({ text: num(r), name, at: pt(e, r, 0) })));
+  return [{ label: values.length === 1 ? one : many, values }];
 }
 
 function polynomialInsight(e: Explicit, c: readonly number[]): Insight {
@@ -234,21 +235,23 @@ function polynomialInsight(e: Explicit, c: readonly number[]): Insight {
     return { title: 'Parabola', facts };
   }
   facts.push(...rootsFact(e, polyRoots(c)));
-  const turns = polyTurningPoints(c);
   const second = polyDerivative(polyDerivative(c));
+  const turns = distinct(
+    polyTurningPoints(c).map((u) => {
+      const at = pt(e, u, p(u));
+      const name =
+        e.axis === 'y'
+          ? 'Turning point'
+          : polyEval(second, u) < 0
+            ? 'Local maximum'
+            : 'Local minimum';
+      return { text: pointText(at), name, at };
+    }),
+  );
   if (turns.length > 0) {
     facts.push({
       label: turns.length === 1 ? 'turning point' : 'turning points',
-      values: turns.map((u) => {
-        const at = pt(e, u, p(u));
-        const name =
-          e.axis === 'y'
-            ? 'Turning point'
-            : polyEval(second, u) < 0
-              ? 'Local maximum'
-              : 'Local minimum';
-        return { text: pointText(at), name, at };
-      }),
+      values: turns,
     });
   } else if (d === 3) {
     // A cubic that never turns still bends one way and then the other, once.
@@ -865,14 +868,19 @@ function usedByFact(users: readonly string[] | undefined): InsightFact[] {
   ];
 }
 
-/** Where the selected curve meets the others: exactly for two polynomials, else in view. */
+/**
+ * Where the selected curve meets the others: exactly for two polynomials, else in view. The
+ * exact ones first, so a count found in view later (the graph searches once the row settles)
+ * adds to the line rather than changing it; past MAX_MEETS, how many more.
+ */
 function meetsFacts(input: InsightInput): InsightFact[] {
   const plot = input.plot;
   if (!plot || !input.others) return [];
   const own = isExplicitPlot(plot) ? polyFit(plot.f) : null;
-  const facts: InsightFact[] = [];
+  const same: InsightFact[] = [];
+  const exact: InsightFact[] = [];
+  const inView: InsightFact[] = [];
   for (const other of input.others) {
-    if (facts.length >= MAX_MEETS) break;
     const theirs =
       own && isExplicitPlot(other.plot) && other.plot.kind === plot.kind
         ? polyFit(other.plot.f)
@@ -884,24 +892,32 @@ function meetsFacts(input: InsightInput): InsightFact[] {
       );
       const scale = Math.max(...own.map(Math.abs), ...theirs.map(Math.abs));
       if (diff.every((v) => Math.abs(v) <= 1e-12 * scale)) {
-        facts.push({ label: 'same curve as', rows: [other.id] });
+        same.push({ label: 'same curve as', rows: [other.id] });
         continue;
       }
+      // Each point once, however the curves meet there (touching, crossing flat).
       const n = polyRoots(diff).length;
       if (n > 0)
-        facts.push({ label: 'meets', rows: [other.id], tail: `at ${count(n, 'point', 'points')}` });
+        exact.push({ label: 'meets', rows: [other.id], tail: `at ${count(n, 'point', 'points')}` });
       continue;
     }
     const n = input.inView?.meets.get(other.id);
     if (n) {
-      facts.push({
+      inView.push({
         label: 'meets',
         rows: [other.id],
         tail: `at ${count(n, 'point', 'points')} in view`,
       });
     }
   }
-  return facts;
+  const meets = [...exact, ...inView];
+  if (meets.length <= MAX_MEETS + 1) return [...same, ...meets];
+  const more = meets.length - MAX_MEETS;
+  return [
+    ...same,
+    ...meets.slice(0, MAX_MEETS),
+    { label: `meets ${count(more, 'more curve', 'more curves')}` },
+  ];
 }
 
 type ExplicitPlot = Extract<PlotItem, { kind: 'explicitY' | 'explicitX' }>;
@@ -910,45 +926,52 @@ function isExplicitPlot(plot: PlotItem): plot is ExplicitPlot {
   return (plot.kind === 'explicitY' || plot.kind === 'explicitX') && !plot.ineq;
 }
 
+/** What a row's curve is (null for none, or nothing to say). */
+function curveInsight(input: InsightInput): Insight | null {
+  const plot = input.plot;
+  switch (plot?.kind) {
+    case 'explicitY':
+    case 'explicitX':
+      if (!isExplicitPlot(plot)) return null;
+      return explicitInsight({ f: plot.f, axis: plot.kind === 'explicitY' ? 'x' : 'y' }, input);
+    case 'implicit':
+      return plot.ineq ? null : implicitInsight(plot.F);
+    case 'polar':
+      return polarInsight(plot.r, plot.thetaMin(), plot.thetaMax(), input.trigArgs);
+    case 'parametric':
+      return parametricInsight(plot.fx, plot.fy, plot.tMin(), plot.tMax(), input.trigArgs);
+    default:
+      return null;
+  }
+}
+
 /** What to say about a row, or null for nothing. */
 export function rowInsight(input: InsightInput): Insight | null {
-  const { kind, plot } = input;
-  let insight: Insight | null = null;
+  const { kind } = input;
+  let used: InsightFact[] = [];
   switch (kind) {
     case 'slider':
-    case 'varDef':
-    case 'funcDef': {
+    case 'varDef': {
       const facts = usedByFact(input.usedBy);
       return facts.length > 0 ? { facts } : null;
     }
+    case 'funcDef':
+      // A function of one variable is drawn too (f(x) = x²): its curve, after its users.
+      used = usedByFact(input.usedBy);
+      break;
     case 'explicitY':
     case 'explicitX':
-      if (plot && isExplicitPlot(plot)) {
-        insight = explicitInsight(
-          { f: plot.f, axis: plot.kind === 'explicitY' ? 'x' : 'y' },
-          input,
-        );
-      }
-      break;
     case 'implicit':
-      if (plot?.kind === 'implicit' && !plot.ineq) insight = implicitInsight(plot.F);
-      break;
     case 'polar':
-      if (plot?.kind === 'polar') {
-        insight = polarInsight(plot.r, plot.thetaMin(), plot.thetaMax(), input.trigArgs);
-      }
-      break;
     case 'parametric':
-      if (plot?.kind === 'parametric') {
-        insight = parametricInsight(plot.fx, plot.fy, plot.tMin(), plot.tMax(), input.trigArgs);
-      }
       break;
     default:
       return null;
   }
-  const meets = meetsFacts(input);
-  if (meets.length === 0) return insight;
-  return { title: insight?.title, facts: [...(insight?.facts ?? []), ...meets] };
+  const insight = curveInsight(input);
+  const facts = [...used, ...(insight?.facts ?? []), ...meetsFacts(input)];
+  if (facts.length === 0) return insight?.title ? { title: insight.title, facts } : null;
+  return { title: insight?.title, facts };
 }
 
 /**
