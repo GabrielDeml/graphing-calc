@@ -22,6 +22,7 @@ scratch in plain TypeScript.
 | `r = 1 + cos θ` (or `theta`) | Polar curve |
 | `(1, 2)`, `(1, 2), (3, 4)` | Points |
 | `a = 2` | Slider with a play button and editable min, max and step |
+| `y = m x + b` | Letters nothing defines become sliders (`m = 1`, `b = 1`) by themselves, undoable |
 | `k = 2a + 1` | Derived variable, shows its value |
 | `f(x) = x^2`, `g(u, v) = u v` | Functions you can call from other rows: `y = f(x - 1)` |
 | `2^10`, `sqrt(2)` | Shows the value |
@@ -43,7 +44,8 @@ Syntax notes:
   - `sqrt cbrt abs exp ln log floor ceil round sign min max mod gcd lcm`
 - **Variable names:** a name with more than one letter may not contain `x` or `y` (so `ax = 1`
   stays the line a·x = 1). Subscripts always work: `a_1`, `v_{max}`, `x_0`.
-- **Unknown names:** an unknown name such as `m` in `y = m x` offers a one-tap "Add slider".
+- **Unknown names:** an unknown name such as `m` in `y = m x` becomes a slider `m = 1` once you
+  press `Enter` or leave the row (see **Sliders made for you** below).
 
 ## Using it
 
@@ -56,7 +58,11 @@ Syntax notes:
   grows. Where curves cross, the trace stays on the selected one. To scrub along a curve on
   touch, drag the pinned trace's dot, or press and hold on a curve for a moment (the dot grows)
   and then drag; any other drag pans, and a tap next to the pinned dot is still a tap. `Esc`
-  lets go of a pinned trace along with the selection.
+  lets go of a pinned trace along with the selection. On a pinned point of a curve `y = f(x)` (or
+  `x = f(y)`), two buttons over the coordinates add a row below the curve's: **Tangent here** adds
+  the tangent line there, as `y = 2.828(x - 1.414)`, and **Keep point** adds the point, as
+  `(1.414, 0)`, written the way the pill shows the numbers (no tangent at a corner like `|x|` at
+  0).
 - **The selected curve:** the selected row's curve is drawn on top, a little bolder, with a soft
   halo. Clicking or tapping a curve selects its row (it scrolls into view and pulses briefly)
   without opening it for editing, so no keypad pops up; a click a little away from every curve
@@ -147,7 +153,9 @@ Syntax notes:
     curves are red, blue and green wherever they sit in the list (then purple, orange and teal).
     Rows that draw nothing (sliders, values such as `k = 2a + 1`, empty rows) don't take a color,
     and a curve turned into one gives its color back.
-  - Errors show as one line under the row after a pause in typing, with the mistake underlined.
+  - Errors show as one line under the row after a pause in typing, with the mistake underlined
+    (letters nothing defines, in the row you are typing in, are offered as sliders instead: see
+    **Sliders made for you**).
   - Half-typed math doesn't make the graph flicker: while the row you are typing in is broken
     for a moment (`y = x^` on the way to `y = x^2`), its curve stays as a faint ghost and its
     color dot, slider or value stay in place. Curves it breaks along the way (retyping a slider
@@ -155,6 +163,30 @@ Syntax notes:
 - **Sliders:** drag the thumb (its value shows above it, except under the row's own text, which
   shows it too) or press play. The min and max under the
   track's ends are fields you can edit; the step field appears while the row is being edited.
+  Typing a value past a bound that is a plain number moves the bound out to it.
+- **Sliders made for you:** letters a row uses that nothing defines (`m` and `b` in
+  `y = m x + b`) become sliders `m = 1` and `b = 1` right below it when you press `Enter` (the new
+  row for your next expression comes after them), when you leave the row, or when you pause
+  typing for a moment and the caret isn't on a name. The new rows pulse once, and a toast says
+  "Added sliders m, b" with an Undo button; `Ctrl+Z` undoes them too, in one step, and the row
+  keeps its caret. Meanwhile, the letters are offered quietly as an "Add sliders: m, b" chip under
+  the row (no error), which adds them at once. A pause never makes a slider of a letter that may
+  be on its way to a function (`s` before `sin`; leaving the row or `Enter` does), a name followed
+  by `(` (`f(x)`, a function still to define) is never made one, and nor is a name in a slider's
+  bounds or a t range. Sliders you undo or delete aren't made again for that row; it says the name
+  is not defined instead, with the chip. A slider made this way that you type a value into
+  beyond its range takes a round range around it instead of just widening (`a = 50` gives
+  0 to 100, `a = -3` gives -10 to 0), until you set its bounds yourself.
+- **Completions:** typing the first two or more letters of a function's name (a built-in one or
+  one you defined, such as `area(r)`) shows the rest of it faintly after the caret, with its
+  parenthesis: `si` shows `n(`. `Tab` or `→` (the keypad's `→` too) takes it; anything else
+  carries on as usual, so the suggestion never gets typed by itself. Letters that already read
+  as names (`ex` is e·x, `ab` with sliders a and b) are left alone.
+- **Fixes:** when an error's hint names a rewrite, the rewrite is offered as a chip on the error
+  line: `x2` → `x^2` or `2x`, `=<` → `<=`, `==` → `=`, `2e3` → `2*10^3`, `sin^-1(x)` →
+  `asin(x)`, `a = x^2` → `a(x) = x^2`, `log_2(x)` → `log(x)/log(2)`. Click it, or press `Tab`
+  in a row you have typed in to take the first one (and the sliders chip the same way); `Tab`
+  moves on as usual otherwise. A fix is one undo step, and the caret stays where it was.
 - **Undo:** `Ctrl+Z` (`⌘Z` on a Mac) undoes and `Ctrl+Shift+Z` (`⌘⇧Z`) or `Ctrl+Y` redoes, from
   anywhere in the app. Typing undoes in bursts, and deleting is a burst of its own, so text
   deleted or typed over right after it was typed comes back. A slider drag is one step, arrow
@@ -162,8 +194,8 @@ Syntax notes:
   leaves it where it is). Undo puts the caret back where the change was (in the denominator it
   was in, not after the fraction); a change made outside
   the rows (delete, a color, New graph) is scrolled into view. Phones have no undo key yet: **New
-  graph**, and deleting a row by touch, show an Undo button for a few seconds instead (it waits
-  while you point at it or it has focus).
+  graph**, deleting a row by touch and sliders made for you show an Undo button for a few seconds
+  instead (it waits while you point at it or it has focus).
 - **Saved automatically:** the expression list, the view and the panel layout (including the
   list's width) are kept in the browser and come back on the next visit (sliders come back
   paused), and so is the keypad mode once you pick one with the header's keyboard button. Nothing
@@ -210,15 +242,16 @@ pnpm icons        # regenerate PWA icons from public/logo.svg
 ```
 src/engine/       math language: tokenizer, parser, classifier, compiler, document engine (pure TS)
 src/plot/         geometry: viewport, ticks, adaptive samplers, marching squares, points of
-                  interest (pure TS)
+                  interest, the trace's tangent lines (pure TS)
 src/keypad/       on-screen keypad layouts and text-editing logic (pure TS)
 src/mathedit/     typeset rows: a tolerant parse that reads text exactly as the engine does,
-                  the render plan (boxes, spacing, error marks), caret stops and the editing
-                  commands, which splice the text and check where it landed (pure TS)
+                  the render plan (boxes, spacing, error marks), caret stops, the editing
+                  commands, which splice the text and check where it landed, and the
+                  completions of function names (pure TS)
 src/render/       canvas drawing and the render loop
 src/interaction/  pan / zoom / pinch gestures
-src/state/        Solid stores and signals; the undo history core, the autosave format and what
-                  stays steady while typing are plain TS
+src/state/        Solid stores and signals; the undo history core, the autosave format, what
+                  stays steady while typing and which unknown names become sliders are plain TS
 src/components/   UI
 tests/e2e/        Playwright specs
 ```
