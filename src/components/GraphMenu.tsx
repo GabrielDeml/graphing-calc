@@ -4,8 +4,9 @@ import { focusRow } from '../state/focus';
 import { offerUndo } from '../state/historyUi';
 import { isCoarsePointer } from '../state/keypad';
 import { ui } from '../state/ui';
+import { Icon } from './icons';
 
-/** The header's ⋯ menu: a menu button with document-level actions. */
+/** The header's More options (⋯) menu: a menu button with document-level actions. */
 export function GraphMenu() {
   const [open, setOpen] = createSignal(false);
   let button!: HTMLButtonElement;
@@ -86,7 +87,7 @@ export function GraphMenu() {
           }
         }}
       >
-        ⋯
+        <Icon name="more" />
       </button>
       <Show when={open()}>
         <div
@@ -105,6 +106,7 @@ export function GraphMenu() {
             aria-disabled={isBlank()}
             onClick={newGraph}
           >
+            <Icon name="new-graph" size={16} />
             New graph
           </button>
         </div>

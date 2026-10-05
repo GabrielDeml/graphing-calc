@@ -41,6 +41,17 @@ test.describe('PWA', () => {
     await openApp(page);
     await setExpr(page, 0, 'y = sin(x)');
     await expect.poll(() => countColor(page, RED)).toBeGreaterThan(200);
+    // The bundled math font comes from the precache too (a failed load would be a console error).
+    await expect
+      .poll(() =>
+        page.evaluate(async () => {
+          await document.fonts.ready;
+          return [...document.fonts].some(
+            (f) => f.family.replace(/"/g, '') === 'STIX Math Letters' && f.status === 'loaded',
+          );
+        }),
+      )
+      .toBe(true);
     await context.setOffline(false);
   });
 

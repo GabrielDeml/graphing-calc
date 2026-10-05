@@ -1,5 +1,6 @@
 import { onCleanup, Show } from 'solid-js';
 import { toast } from '../state/toast';
+import { Icon } from './icons';
 
 /**
  * One toast: a short message, maybe one action (Undo, Reload), and a close button. It is
@@ -58,7 +59,7 @@ export function ToastCard(props: {
         hold();
       }}
     >
-      <span>{props.message}</span>
+      <span class="toast-message">{props.message}</span>
       <Show when={props.actionLabel}>
         {(label) => (
           <button
@@ -76,7 +77,7 @@ export function ToastCard(props: {
         aria-label="Dismiss"
         onClick={() => run(() => props.onDismiss())}
       >
-        ×
+        <Icon name="close" size={16} />
       </button>
     </div>
   );

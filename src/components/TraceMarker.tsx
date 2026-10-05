@@ -13,18 +13,22 @@ export function TraceMarker(props: { hit: TraceHit | null }) {
           <div
             class="trace"
             classList={{
-              'flip-x': hit().sx > hit().viewWidth - 170,
-              'flip-y': hit().sy < 44,
+              'flip-x': hit().sx > hit().viewWidth - 180,
+              'flip-y': hit().sy < 48,
             }}
             style={{
               transform: `translate(${hit().sx}px, ${hit().sy}px)`,
-              '--swatch': hit().color,
+              '--trace-color': hit().color,
             }}
             data-testid="trace"
           >
             <span class="trace-dot" />
-            <span class="trace-label" role="status">
-              {label()}
+            {/* The status holds only "(x, y)"; what the point is will sit beside it. */}
+            <span class="trace-pill">
+              <span class="trace-swatch" />
+              <span class="trace-label" role="status">
+                {label()}
+              </span>
             </span>
           </div>
         );

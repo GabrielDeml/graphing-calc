@@ -40,7 +40,11 @@ export default function App() {
     <div
       class="app"
       classList={{ 'sidebar-collapsed': !ui.sidebarOpen(), 'keypad-open': keypadVisible() }}
-      style={{ '--graph-row': panelRows().graph, '--panel-row': panelRows().panel }}
+      style={{
+        '--graph-row': panelRows().graph,
+        '--panel-row': panelRows().panel,
+        '--sidebar-w': `${ui.sidebarWidth()}px`,
+      }}
       data-panel={ui.panelSnap()}
     >
       <ExpressionPanel />

@@ -108,6 +108,13 @@ describe('action column', () => {
       { type: 'edit', op: { type: 'right' } },
       { type: 'enter' },
     ]);
+    // Drawn as icons: fonts render these glyphs unevenly (⌫ is missing from some).
+    expect(ACTION_COLUMN.map((k) => k.icon)).toEqual([
+      'backspace',
+      'arrow-left',
+      'arrow-right',
+      'enter',
+    ]);
   });
 });
 
@@ -251,6 +258,9 @@ describe("'abc' page", () => {
     expect(native.action).toEqual({ type: 'native' });
     expect(native.ariaLabel).toBe('Use device keyboard');
     expect(native.label).toBe('⌨');
+    expect(native.icon).toBe('keyboard');
+    expect(byId(lower, 'shift').icon).toBe('shift');
+    expect(byId(upper, 'shift').icon).toBe('shift');
   });
 
   it('shift uppercases letters and changes nothing else but the shift key', () => {

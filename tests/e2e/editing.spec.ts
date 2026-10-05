@@ -81,6 +81,23 @@ test.describe('editing rows', () => {
     await expect.poll(() => input.inputValue()).not.toBe(held);
   });
 
+  test('a dragged slider shows its value over the thumb', async ({ page }) => {
+    await openApp(page);
+    await setExpr(page, 0, 'a = 0');
+    const range = page.getByTestId('slider-a');
+    const box = await range.boundingBox();
+    if (!box) throw new Error('no slider box');
+    const bubble = page.locator('.slider-bubble');
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.75, box.y + box.height / 2, { steps: 4 });
+    await expect(bubble).toBeVisible();
+    const value = (await exprInput(page, 0).inputValue()).split('=')[1].trim();
+    await expect(bubble).toHaveText(value);
+    await page.mouse.up();
+    await expect(bubble).toHaveCount(0);
+  });
+
   test('moving a playing slider continues from the new value', async ({ page }) => {
     await openApp(page);
     await setExpr(page, 0, 'a = 0');

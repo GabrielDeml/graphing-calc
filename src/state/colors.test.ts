@@ -1,13 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { type ColorUse, colorChanges, PALETTE_NAMES, PALETTE_SIZE, pickColor } from './colors';
+import {
+  type ColorUse,
+  colorChanges,
+  PALETTE_DARK,
+  PALETTE_LIGHT,
+  PALETTE_NAMES,
+  PALETTE_SIZE,
+  pickColor,
+} from './colors';
 
-const [RED, BLUE, GREEN, PURPLE, ORANGE, BLACK] = [0, 1, 2, 3, 4, 5];
+const [RED, BLUE, GREEN, PURPLE, ORANGE, TEAL] = [0, 1, 2, 3, 4, 5];
 
 describe('pickColor', () => {
   it('curves typed one after another get red, blue, green…', () => {
     const used: number[] = [];
     for (let i = 0; i < PALETTE_SIZE; i++) used.push(pickColor(used));
-    expect(used).toEqual([RED, BLUE, GREEN, PURPLE, ORANGE, BLACK]);
+    expect(used).toEqual([RED, BLUE, GREEN, PURPLE, ORANGE, TEAL]);
     expect(PALETTE_NAMES[used[0]]).toBe('Red');
   });
 
@@ -23,10 +31,10 @@ describe('pickColor', () => {
     expect(pickColor([BLUE, GREEN])).toBe(RED);
     expect(pickColor([RED, BLUE, GREEN])).toBe(PURPLE);
     // Every color taken once: round again from red.
-    expect(pickColor([RED, BLUE, GREEN, PURPLE, ORANGE, BLACK])).toBe(RED);
+    expect(pickColor([RED, BLUE, GREEN, PURPLE, ORANGE, TEAL])).toBe(RED);
     // Two reds and one of everything else.
-    expect(pickColor([RED, RED, BLUE, GREEN, PURPLE, ORANGE, BLACK])).toBe(BLUE);
-    expect(pickColor([BLACK, BLACK, RED, BLUE, GREEN, PURPLE, ORANGE, RED])).toBe(BLUE);
+    expect(pickColor([RED, RED, BLUE, GREEN, PURPLE, ORANGE, TEAL])).toBe(BLUE);
+    expect(pickColor([TEAL, TEAL, RED, BLUE, GREEN, PURPLE, ORANGE, RED])).toBe(BLUE);
   });
 
   it('ignores out-of-range entries (rows without a color)', () => {
@@ -96,5 +104,31 @@ describe('colorChanges', () => {
         { colorIndex: BLUE, use: 'broken' },
       ]),
     ).toEqual([]);
+  });
+});
+
+describe('palettes', () => {
+  it('pair every light color with a dark one and its own name', () => {
+    expect(PALETTE_DARK).toHaveLength(PALETTE_SIZE);
+    expect(PALETTE_NAMES).toHaveLength(PALETTE_SIZE);
+    expect(new Set(PALETTE_NAMES).size).toBe(PALETTE_SIZE);
+    expect(PALETTE_NAMES[TEAL]).toBe('Teal');
+  });
+
+  const rgb = (hex: string) => [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16));
+
+  // Curves are told apart by color, on screen and in the e2e suite, which counts pixels within
+  // 40 per channel of a color.
+  it.each([
+    ['light', PALETTE_LIGHT],
+    ['dark', PALETTE_DARK],
+  ])('keeps the %s colors more than 40 apart in some channel', (_, palette) => {
+    for (let i = 0; i < palette.length; i++) {
+      for (let j = i + 1; j < palette.length; j++) {
+        const [a, b] = [rgb(palette[i]), rgb(palette[j])];
+        const apart = Math.max(...a.map((v, k) => Math.abs(v - b[k])));
+        expect(apart, `${PALETTE_NAMES[i]} / ${PALETTE_NAMES[j]}`).toBeGreaterThan(40);
+      }
+    }
   });
 });

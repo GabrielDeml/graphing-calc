@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { SIDEBAR_MAX, SIDEBAR_MIN } from './layout';
 import {
   decode,
   encode,
@@ -30,6 +31,7 @@ const state: SavedState = {
   view: { cx: 1.5, cy: -2, ppuX: 80, ppuY: 80 },
   keypad: true,
   sidebarOpen: false,
+  sidebarWidth: 456,
   panelSnap: 'full',
 };
 
@@ -109,8 +111,23 @@ describe('validate', () => {
     for (const view of bad) {
       expect(validate({ version: 1, rows: [], view })?.view).toBeNull();
     }
-    const v = validate({ version: 1, rows: [], keypad: 'on', sidebarOpen: 1, panelSnap: 'tall' });
+    const v = validate({
+      version: 1,
+      rows: [],
+      keypad: 'on',
+      sidebarOpen: 1,
+      sidebarWidth: '400px',
+      panelSnap: 'tall',
+    });
     expect(v).toEqual({ rows: [], view: null });
+  });
+
+  it('keeps a sidebar width within bounds', () => {
+    expect(validate({ version: 1, rows: [], sidebarWidth: 20 })?.sidebarWidth).toBe(SIDEBAR_MIN);
+    expect(validate({ version: 1, rows: [], sidebarWidth: 1e9 })?.sidebarWidth).toBe(SIDEBAR_MAX);
+    expect(validate({ version: 1, rows: [], sidebarWidth: Number.NaN })?.sidebarWidth).toBe(
+      undefined,
+    );
   });
 
   it('accepts every panel snap', () => {

@@ -21,7 +21,7 @@ scratch in plain TypeScript.
 | `(cos t, sin t)` | Parametric curve; the t range can be edited below the row |
 | `r = 1 + cos θ` (or `theta`) | Polar curve |
 | `(1, 2)`, `(1, 2), (3, 4)` | Points |
-| `a = 2` | Slider with play button and editable min/max/step |
+| `a = 2` | Slider with a play button and editable min, max and step |
 | `k = 2a + 1` | Derived variable, shows its value |
 | `f(x) = x^2`, `g(u, v) = u v` | Functions you can call from other rows: `y = f(x - 1)` |
 | `2^10`, `sqrt(2)` | Shows the value |
@@ -47,39 +47,54 @@ Syntax notes:
 ## Using it
 
 - **Graph:** drag to pan, use the wheel or pinch to zoom, double-click to zoom in, and the buttons
-  zoom or reset the view. With the graph focused, the keyboard works too: arrows pan, `+` and `-`
-  zoom, `0` resets.
-- **Trace:** hover a curve to see coordinates. On touch, tap a curve to pin the trace.
+  at the top right zoom or reset the view. With the graph focused, the keyboard works too: arrows
+  pan, `+` and `-` zoom, `0` resets.
+- **Trace:** hover a curve to see its coordinates, in a pill with the curve's color. On touch, tap
+  a curve to pin the trace.
 - **Rows:**
   - `Enter` starts a new row. On an empty row it moves on to the next one instead, and on the
     empty row at the end it stays put (the keypad's ↵ puts the keypad away there).
   - `Backspace` on an empty row deletes it (on the empty row at the end it just moves up).
   - `↑` and `↓` move between rows.
-  - Tap the color dot to show or hide a curve.
+  - Tap a curve's color dot to hide it (the dot turns hollow and the row fades) or show it again.
+  - The row you are working on is selected: a bar and a faint wash in its color, which stay when
+    you click the graph, until `Esc`, a tap on empty graph, or deleting the row.
+  - Pointing at a row (or selecting it) shows its color and delete buttons at its right end. On
+    touch, they show on the selected row.
   - A curve gets its color when it first draws: the least-used one, red first, so the first three
-    curves are red, blue and green wherever they sit in the list. Rows that draw nothing (sliders,
-    values such as `k = 2a + 1`, empty rows) don't take a color, and a curve turned into one
-    gives its color back.
+    curves are red, blue and green wherever they sit in the list (then purple, orange and teal).
+    Rows that draw nothing (sliders, values such as `k = 2a + 1`, empty rows) don't take a color,
+    and a curve turned into one gives its color back.
+  - Errors show as one line under the row after a pause in typing, with the mistake underlined.
+- **Sliders:** drag the thumb (its value shows above it) or press play. The min and max under the
+  track's ends are fields you can edit; the step field appears while the row is being edited.
 - **Undo:** `Ctrl+Z` (`⌘Z` on a Mac) undoes and `Ctrl+Shift+Z` (`⌘⇧Z`) or `Ctrl+Y` redoes, from
   anywhere in the app. Typing undoes in bursts, and deleting is a burst of its own, so text
   deleted or typed over right after it was typed comes back. A slider drag is one step, arrow
   keys on a slider undo like typing, and a playing slider adds none (undoing something else
   leaves it where it is). Undo puts the caret back where the change was; a change made outside
-  the rows (×, a color, New graph) is scrolled into view. Phones have no undo key yet: **New
+  the rows (delete, a color, New graph) is scrolled into view. Phones have no undo key yet: **New
   graph** shows an Undo button for a few seconds instead (it waits while you point at it or it
   has focus).
-- **Saved automatically:** the expression list, the view and the panel layout are kept in the
-  browser and come back on the next visit (sliders come back paused), and so is the keypad mode
-  once you pick one with ⌨. Nothing is stored until you change something. **New graph** in the
-  header's ⋯ menu starts over, at the home view. With the app open in two windows, each one
-  picks up the list the other saves (each keeps its own view). A list hidden with « stays hidden
-  on wide screens only; phones always show it. Data saved by a newer version of the app is never
-  overwritten by an older one.
+- **Saved automatically:** the expression list, the view and the panel layout (including the
+  list's width) are kept in the browser and come back on the next visit (sliders come back
+  paused), and so is the keypad mode once you pick one with the header's keyboard button. Nothing
+  is stored until you change something. **New graph** in the header's More options (⋯) menu
+  starts over, at the home view. With the app open in two windows, each one picks up the list the
+  other saves (each keeps its own view). A hidden list stays hidden on wide screens only; phones
+  always show it. Data saved by a newer version of the app is never overwritten by an older one.
+- **Layout:** on a wide screen the list sits beside the graph. Drag its right edge to resize it
+  (or focus the edge and use the arrow keys, `Home` and `End`); double-click the edge for the
+  default width. The sidebar button in the list's header hides it, and the same button at the top
+  of the graph's controls brings it back.
+- **Look:** follows the system's light or dark setting. Math is set in STIX Two Text, bundled with
+  the app so it works offline: letters in italic, digits and operators upright. With reduced
+  motion turned on in the system, transitions and the zoom animation are skipped.
 - **Math keypad:** on touch devices, tapping a row opens the built-in keypad, which has three pages:
-  numbers, functions and letters. The ⌨ key on the letters page switches that row to the device
-  keyboard, and the ⌨ button in the header switches modes for good. Tapping the graph or ⌄ hides
-  the keypad; on a phone held sideways, the list and keypad sit beside the graph. On desktop the
-  keypad is off by default and can be turned on from the header.
+  numbers, functions and letters. The keyboard key on the letters page switches that row to the
+  device keyboard, and the keyboard button in the header switches modes for good. Tapping the
+  graph or the chevron hides the keypad; on a phone held sideways, the list and keypad sit beside
+  the graph. On desktop the keypad is off by default and can be turned on from the header.
 
 ## Development
 

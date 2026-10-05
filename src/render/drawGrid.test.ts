@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Viewport } from '../plot/types';
-import { drawGrid, labelStride } from './drawGrid';
+import { drawGrid, labelStride, minorGridAlpha } from './drawGrid';
 import type { Theme } from './theme';
 
 const theme: Theme = {
@@ -60,6 +60,31 @@ function assertReadable(labels: Label[], width: number) {
     expect(gap).toBeGreaterThan(0);
   }
 }
+
+describe('minorGridAlpha', () => {
+  it('hides dense minor lines and shows sparse ones in full', () => {
+    expect(minorGridAlpha(4)).toBe(0);
+    expect(minorGridAlpha(8)).toBe(0);
+    expect(minorGridAlpha(24)).toBe(1);
+    expect(minorGridAlpha(60)).toBe(1);
+  });
+
+  it('fades in between, never decreasing as the lines spread', () => {
+    let last = 0;
+    for (let px = 8; px <= 24; px += 0.5) {
+      const a = minorGridAlpha(px);
+      expect(a).toBeGreaterThanOrEqual(last);
+      expect(a).toBeLessThanOrEqual(1);
+      last = a;
+    }
+    expect(minorGridAlpha(16)).toBeCloseTo(0.5);
+  });
+
+  it('draws nothing for unusable spacings', () => {
+    expect(minorGridAlpha(Number.NaN)).toBe(0);
+    expect(minorGridAlpha(-5)).toBe(0);
+  });
+});
 
 describe('labelStride', () => {
   it('labels every tick when they fit', () => {

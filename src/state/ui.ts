@@ -1,16 +1,19 @@
 import { createEffect, createRoot, createSignal } from 'solid-js';
 import { doc } from './doc';
+import { SIDEBAR_DEFAULT } from './layout';
 import { savedState } from './persist';
 
 export type PanelSnap = 'collapsed' | 'half' | 'full';
 
 /**
- * Layout state: desktop sidebar visibility and the mobile expression panel's snap height (both
- * restored from the last session), plus the selected row and requests to the graph's view.
+ * Layout state: desktop sidebar visibility and width and the mobile expression panel's snap height
+ * (all restored from the last session), plus the selected row and requests to the graph's view.
  */
 export const ui = createRoot(() => {
   const saved = savedState();
   const [sidebarOpen, setSidebarOpen] = createSignal(saved?.sidebarOpen ?? true);
+  /** Desktop sidebar width (CSS px), set by dragging its edge. */
+  const [sidebarWidth, setSidebarWidth] = createSignal(saved?.sidebarWidth ?? SIDEBAR_DEFAULT);
   const [panelSnap, setPanelSnap] = createSignal<PanelSnap>(saved?.panelSnap ?? 'half');
   /** Explicit panel height while the mobile handle is being dragged. */
   const [panelDragPx, setPanelDragPx] = createSignal<number | null>(null);
@@ -29,6 +32,8 @@ export const ui = createRoot(() => {
   return {
     sidebarOpen,
     setSidebarOpen,
+    sidebarWidth,
+    setSidebarWidth,
     panelSnap,
     setPanelSnap,
     panelDragPx,

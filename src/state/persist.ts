@@ -8,6 +8,7 @@
 
 import type { ViewCenter } from '../plot/types';
 import { PALETTE_SIZE } from './colors';
+import { clampSidebarWidth } from './layout';
 import type { PanelSnap } from './ui';
 
 /**
@@ -34,6 +35,8 @@ export interface SavedState {
   /** Keypad mode; absent means the device default. */
   keypad?: boolean;
   sidebarOpen?: boolean;
+  /** Desktop sidebar width in CSS px; absent means the default. */
+  sidebarWidth?: number;
   panelSnap?: PanelSnap;
 }
 
@@ -126,6 +129,7 @@ export function validate(data: unknown): SavedState | null {
   const state: SavedState = { rows, view: validateView(data.view) };
   if (typeof data.keypad === 'boolean') state.keypad = data.keypad;
   if (typeof data.sidebarOpen === 'boolean') state.sidebarOpen = data.sidebarOpen;
+  if (finite(data.sidebarWidth)) state.sidebarWidth = clampSidebarWidth(data.sidebarWidth);
   if (typeof data.panelSnap === 'string' && SNAPS.includes(data.panelSnap)) {
     state.panelSnap = data.panelSnap as PanelSnap;
   }

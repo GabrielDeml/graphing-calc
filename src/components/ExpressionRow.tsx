@@ -7,8 +7,10 @@ import {
   onCleanup,
   Show,
   Switch,
+  untrack,
 } from 'solid-js';
 import { formatValue } from '../engine/format';
+import type { MathError } from '../engine/types';
 import { analysis } from '../state/analysis';
 import { doc, type Row, removeRow, setColor, toggleHidden, updateSource } from '../state/doc';
 import { focusRow, registerRowInput, unregisterRowInput } from '../state/focus';
@@ -21,11 +23,14 @@ import {
 } from '../state/rowActions';
 import { ui } from '../state/ui';
 import { ColorPicker } from './ColorPicker';
+import { Icon } from './icons';
 import { blurActive, MathField } from './MathField';
 import { RangeControl } from './RangeControl';
 import { SliderControl } from './SliderControl';
 
 const ERROR_DELAY_MS = 500;
+/** How long a fixed error's line takes to close (--dur-2 in global.css). */
+const ERROR_CLOSE_MS = 160;
 
 export function ExpressionRow(props: { row: Row; index: number; palette: readonly string[] }) {
   const result = createMemo(() => analysis().byId.get(props.row.id));
@@ -51,6 +56,26 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
   const error = () => (errorVisible() ? result()?.error : undefined);
   const color = () => props.palette[props.row.colorIndex] ?? props.palette[0];
   const plots = () => result()?.status === 'ok' && !!result()?.plot;
+
+  // The error line keeps showing a fixed error while it closes (no longer an alert by then).
+  const [shownError, setShownError] = createSignal<MathError | undefined>();
+  const [closing, setClosing] = createSignal(false);
+  let closeTimer: ReturnType<typeof setTimeout> | undefined;
+  createEffect(() => {
+    const err = error();
+    clearTimeout(closeTimer);
+    if (err) {
+      setShownError(err);
+      setClosing(false);
+    } else if (untrack(shownError)) {
+      setClosing(true);
+      closeTimer = setTimeout(() => {
+        setShownError(undefined);
+        setClosing(false);
+      }, ERROR_CLOSE_MS);
+    }
+  });
+  onCleanup(() => clearTimeout(closeTimer));
   const rangeVariable = (): 't' | 'θ' | null => {
     const kind = result()?.kind;
     return kind === 'parametric' ? 't' : kind === 'polar' ? 'θ' : null;
@@ -99,32 +124,25 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
       classList={{
         'has-error': !!error(),
         hidden: props.row.hidden,
+        plots: plots(),
         selected: ui.selectedRowId() === props.row.id,
       }}
+      style={{ '--row-color': props.row.colorIndex >= 0 ? color() : undefined }}
       data-row-id={props.row.id}
       data-kind={result()?.kind ?? ''}
       onFocusIn={() => ui.setSelectedRowId(props.row.id)}
     >
-      <div class="expr-gutter">
-        <span class="expr-index">{props.index + 1}</span>
-        <Switch>
-          <Match when={error()}>
-            <span class="expr-warning" role="img" aria-label="Error">
-              ⚠
-            </span>
-          </Match>
-          <Match when={plots()}>
-            <button
-              type="button"
-              class="expr-swatch"
-              classList={{ off: props.row.hidden }}
-              style={{ '--swatch': color() }}
-              aria-label={props.row.hidden ? 'Show curve' : 'Hide curve'}
-              aria-pressed={!props.row.hidden}
-              onClick={() => toggleHidden(props.row.id)}
-            />
-          </Match>
-        </Switch>
+      <div class="expr-mark">
+        <Show when={plots()}>
+          <button
+            type="button"
+            class="expr-swatch"
+            classList={{ off: props.row.hidden }}
+            aria-label={props.row.hidden ? 'Show curve' : 'Hide curve'}
+            aria-pressed={!props.row.hidden}
+            onClick={() => toggleHidden(props.row.id)}
+          />
+        </Show>
       </div>
 
       <div class="expr-body">
@@ -158,24 +176,36 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
           {(v) => <RangeControl row={props.row} variable={v()} showInvalid={!!error()} />}
         </Show>
 
-        <Show when={error()}>
+        <Show when={shownError()}>
           {(err) => (
-            <div class="expr-error" role="alert">
-              <span>{err().message}</span>
-              <Show when={err().hint}>
-                <span class="expr-hint">{err().hint}</span>
-              </Show>
-              <Show when={err().quickFix}>
-                {(fix) => (
-                  <button
-                    type="button"
-                    class="quick-fix"
-                    onClick={() => addSliders(props.row.id, fix().names)}
-                  >
-                    Add slider{fix().names.length > 1 ? 's' : ''}: {fix().names.join(', ')}
-                  </button>
-                )}
-              </Show>
+            <div
+              class="expr-error"
+              classList={{ closing: closing() }}
+              role={closing() ? undefined : 'alert'}
+              aria-hidden={closing() || undefined}
+              inert={closing() || undefined}
+            >
+              <div class="expr-error-line">
+                <span class="expr-error-icon" role="img" aria-label="Error">
+                  <Icon name="alert" size={15} />
+                </span>
+                <span>{err().message}</span>
+                <Show when={err().hint}>
+                  <span class="expr-hint">{err().hint}</span>
+                </Show>
+                <Show when={err().quickFix}>
+                  {(fix) => (
+                    <button
+                      type="button"
+                      class="quick-fix"
+                      onClick={() => addSliders(props.row.id, fix().names)}
+                    >
+                      <Icon name="plus" size={13} />
+                      Add slider{fix().names.length > 1 ? 's' : ''}: {fix().names.join(', ')}
+                    </button>
+                  )}
+                </Show>
+              </div>
             </div>
           )}
         </Show>
@@ -207,11 +237,10 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
             aria-label="Change color"
             aria-haspopup="true"
             aria-expanded={pickerOpen()}
-            style={{ '--swatch': color() }}
             ref={colorButton}
             onClick={() => setPickerOpen((o) => !o)}
           >
-            <span class="dot" />
+            <Icon name="palette" size={16} />
           </button>
         </Show>
         <button
@@ -220,7 +249,7 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
           aria-label={`Delete expression ${props.index + 1}`}
           onClick={remove}
         >
-          ×
+          <Icon name="close" size={16} />
         </button>
         <Show when={pickerOpen()}>
           <ColorPicker

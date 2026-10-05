@@ -1,10 +1,15 @@
-import { onCleanup, onMount } from 'solid-js';
+import { createSignal, onCleanup, onMount } from 'solid-js';
 import { doc } from '../state/doc';
 import { focusRow, revealRow } from '../state/focus';
 import { keypad } from '../state/keypad';
+import { clampSidebarWidth, SIDEBAR_DEFAULT, SIDEBAR_MIN, sidebarMaxWidth } from '../state/layout';
 import { mobileQuery, type PanelSnap, ui } from '../state/ui';
 import { ExpressionList } from './ExpressionList';
 import { GraphMenu } from './GraphMenu';
+import { Icon } from './icons';
+
+/** Arrow keys on the sidebar's edge resize it by this much (Shift: four times as much). */
+const RESIZE_STEP_PX = 16;
 
 const SNAPS: readonly PanelSnap[] = ['collapsed', 'half', 'full'];
 
@@ -103,7 +108,7 @@ export function ExpressionPanel() {
         <h1 class="panel-title">Graph</h1>
         <div class="panel-tools">
           <button type="button" class="icon-button" aria-label="Add expression" onClick={addRow}>
-            +
+            <Icon name="plus" />
           </button>
           <button
             type="button"
@@ -116,7 +121,7 @@ export function ExpressionPanel() {
             onPointerDown={(e) => e.preventDefault()}
             onClick={toggleKeypad}
           >
-            ⌨
+            <Icon name="keyboard" />
           </button>
           <GraphMenu />
           <button
@@ -125,13 +130,83 @@ export function ExpressionPanel() {
             aria-label="Hide expression list"
             onClick={() => ui.setSidebarOpen(false)}
           >
-            «
+            <Icon name="sidebar-hide" />
           </button>
         </div>
       </header>
       <div class="panel-scroll" ref={scroller}>
         <ExpressionList />
       </div>
+      <SidebarResizer />
     </section>
+  );
+}
+
+/**
+ * The sidebar's right edge (desktop): drag it, or focus it and use the arrow keys, to resize the
+ * list; double-click puts the default width back.
+ */
+function SidebarResizer() {
+  const [dragging, setDragging] = createSignal(false);
+  const [windowWidth, setWindowWidth] = createSignal(window.innerWidth);
+  onMount(() => {
+    const resize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', resize);
+    onCleanup(() => window.removeEventListener('resize', resize));
+  });
+  const set = (px: number) => ui.setSidebarWidth(clampSidebarWidth(px, windowWidth()));
+  /** The width the layout shows (the saved one can be wider than a small window allows). */
+  const shown = () => clampSidebarWidth(ui.sidebarWidth(), windowWidth());
+
+  const onPointerDown = (e: PointerEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const el = e.currentTarget as HTMLElement;
+    el.setPointerCapture(e.pointerId);
+    const startX = e.clientX;
+    const startW = shown();
+    const app = el.closest('.app');
+    setDragging(true);
+    app?.classList.add('resizing');
+    const move = (ev: PointerEvent) => set(startW + ev.clientX - startX);
+    const up = () => {
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerup', up);
+      el.removeEventListener('pointercancel', up);
+      app?.classList.remove('resizing');
+      setDragging(false);
+    };
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+  };
+
+  const onKeyDown = (e: KeyboardEvent) => {
+    const step = e.shiftKey ? 4 * RESIZE_STEP_PX : RESIZE_STEP_PX;
+    if (e.key === 'ArrowLeft') set(shown() - step);
+    else if (e.key === 'ArrowRight') set(shown() + step);
+    else if (e.key === 'Home') set(SIDEBAR_MIN);
+    else if (e.key === 'End') set(sidebarMaxWidth(windowWidth()));
+    else return;
+    e.preventDefault();
+  };
+
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: a focusable splitter has no native element.
+    <div
+      class="sidebar-resizer"
+      classList={{ dragging: dragging() }}
+      role="separator"
+      tabindex="0"
+      aria-orientation="vertical"
+      aria-label="Resize expression list"
+      aria-valuemin={SIDEBAR_MIN}
+      aria-valuemax={sidebarMaxWidth(windowWidth())}
+      aria-valuenow={shown()}
+      data-testid="sidebar-resizer"
+      onPointerDown={onPointerDown}
+      onKeyDown={onKeyDown}
+      onDblClick={() => ui.setSidebarWidth(SIDEBAR_DEFAULT)}
+    />
   );
 }

@@ -119,29 +119,22 @@ export function GraphView() {
     });
   });
 
+  // A labelled group: it holds buttons and the trace's live region, which an img would hide.
+  // The picture itself is the canvas.
   return (
+    // biome-ignore lint/a11y/useSemanticElements: a focusable pan/zoom surface, not a form fieldset.
     <div
       class="graph"
       ref={container}
       tabindex="0"
-      role="img"
+      role="group"
       aria-roledescription="graph"
       aria-label="Graph area. Arrow keys pan, plus and minus zoom, 0 resets the view."
       data-testid="graph"
     >
-      <canvas ref={canvas} class="graph-canvas" />
+      <canvas ref={canvas} class="graph-canvas" role="img" aria-label="Graph of the expressions" />
       <TraceMarker hit={trace()} />
       <Show when={controller()}>{(c) => <GraphControls controller={c()} />}</Show>
-      <Show when={!ui.sidebarOpen()}>
-        <button
-          type="button"
-          class="icon-button show-sidebar"
-          aria-label="Show expression list"
-          onClick={() => ui.setSidebarOpen(true)}
-        >
-          »
-        </button>
-      </Show>
       <Show when={debug}>
         <div class="debug-overlay" ref={debugEl} />
       </Show>

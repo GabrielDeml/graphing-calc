@@ -54,6 +54,7 @@ function current(): SavedState {
     })),
     view,
     sidebarOpen: ui.sidebarOpen(),
+    sidebarWidth: ui.sidebarWidth(),
     panelSnap: ui.panelSnap(),
   };
   // Only a mode picked with ⌨ is saved; otherwise the device default applies on the next visit.

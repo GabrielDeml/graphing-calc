@@ -4,6 +4,7 @@ import { getPage, type KeyAction, type KeyDef, PAGE_ORDER, type PageId } from '.
 import { doc } from '../state/doc';
 import { focusRow, revealRow } from '../state/focus';
 import { type EditTarget, keypad } from '../state/keypad';
+import { Icon } from './icons';
 import { revealCaret } from './MathField';
 
 const REPEAT_DELAY_MS = 400;
@@ -142,7 +143,7 @@ function Key(props: { def: KeyDef }) {
         else if (!handled) runAction(props.def.action);
       }}
     >
-      {props.def.label}
+      {props.def.icon ? <Icon name={props.def.icon} size={20} /> : props.def.label}
     </button>
   );
 }
@@ -175,7 +176,7 @@ export function MathKeypad() {
           onPointerDown={(e) => e.preventDefault()}
           onClick={() => keypad.setOpen(false)}
         >
-          ⌄
+          <Icon name="chevron-down" size={20} />
         </button>
       </div>
       <div class="keypad-grid" style={{ '--cols': String(page().columns) }}>

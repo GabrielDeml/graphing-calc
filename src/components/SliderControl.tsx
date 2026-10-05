@@ -1,8 +1,9 @@
-import { createEffect, createMemo, untrack } from 'solid-js';
+import { createEffect, createMemo, createSignal, Show, untrack } from 'solid-js';
 import { formatSliderValue, formatValue } from '../engine/format';
 import { analysis, evalNumber } from '../state/analysis';
 import { endUndoStep, type Row, setSliderField, setSliderPlaying } from '../state/doc';
 import { setSliderValue } from '../state/rowActions';
+import { Icon } from './icons';
 import { blurActive, MathField } from './MathField';
 
 export function SliderControl(props: { row: Row; name: string; value: number }) {
@@ -52,6 +53,15 @@ export function SliderControl(props: { row: Row; name: string; value: number }) 
     range.value = String(props.value);
   });
 
+  /** Where the value sits on the track, 0 to 1 (the fill and the bubble end there). */
+  const fraction = () => {
+    if (!valid()) return 0;
+    const f = (props.value - min()) / (max() - min());
+    return Number.isFinite(f) ? Math.min(1, Math.max(0, f)) : 0;
+  };
+  /** A pointer is dragging the thumb: the value shows above it. */
+  const [dragging, setDragging] = createSignal(false);
+
   return (
     <div class="slider" classList={{ invalid: !valid() }}>
       <button
@@ -61,39 +71,51 @@ export function SliderControl(props: { row: Row; name: string; value: number }) 
         aria-pressed={props.row.slider.playing}
         onClick={() => setSliderPlaying(props.row.id, !props.row.slider.playing)}
       >
-        {props.row.slider.playing ? '❚❚' : '▶'}
+        <Icon name={props.row.slider.playing ? 'pause' : 'play'} size={14} />
       </button>
       <MathField
-        class="slider-bound"
+        class="slider-bound slider-min"
         value={props.row.slider.min}
         onChange={(t) => setSliderField(props.row.id, 'min', t)}
         onEnter={blurActive}
         ariaLabel={`${props.name} slider minimum`}
       />
-      <input
-        ref={range}
-        class="slider-range"
-        type="range"
-        disabled={!valid()}
-        aria-label={`${props.name} value`}
-        aria-valuetext={formatValue(props.value)}
-        data-testid={`slider-${props.name}`}
-        onKeyDown={() => {
-          byKey = true;
-        }}
-        onPointerDown={() => {
-          byKey = false;
-        }}
-        onInput={(e) =>
-          setSliderValue(props.row.id, e.currentTarget.valueAsNumber, byKey ? 'key' : 'drag')
-        }
-        // Fires when a drag ends: the next move is a new undo step.
-        onChange={() => {
-          if (!byKey) endUndoStep();
-        }}
-      />
+      <div class="slider-track" style={{ '--frac': String(fraction()) }}>
+        <input
+          ref={range}
+          class="slider-range"
+          type="range"
+          disabled={!valid()}
+          aria-label={`${props.name} value`}
+          aria-valuetext={formatValue(props.value)}
+          data-testid={`slider-${props.name}`}
+          onKeyDown={() => {
+            byKey = true;
+          }}
+          onPointerDown={() => {
+            byKey = false;
+            setDragging(true);
+          }}
+          onPointerUp={() => setDragging(false)}
+          onPointerCancel={() => setDragging(false)}
+          onLostPointerCapture={() => setDragging(false)}
+          onInput={(e) =>
+            setSliderValue(props.row.id, e.currentTarget.valueAsNumber, byKey ? 'key' : 'drag')
+          }
+          // Fires when a drag ends: the next move is a new undo step.
+          onChange={() => {
+            setDragging(false);
+            if (!byKey) endUndoStep();
+          }}
+        />
+        <Show when={dragging() && valid()}>
+          <span class="slider-bubble" aria-hidden="true">
+            {formatValue(props.value)}
+          </span>
+        </Show>
+      </div>
       <MathField
-        class="slider-bound"
+        class="slider-bound slider-max"
         value={props.row.slider.max}
         onChange={(t) => setSliderField(props.row.id, 'max', t)}
         onEnter={blurActive}

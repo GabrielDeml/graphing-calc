@@ -36,6 +36,9 @@ export interface TraceHit {
   viewHeight: number;
 }
 
+const reducedMotion =
+  typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
+
 const IDLE_MS = 150;
 /** Typing switches to interactive quality after a frame slower than this… */
 const HEAVY_FRAME_MS = 16;
@@ -151,10 +154,15 @@ export class GraphController {
     this.applyView(v, interactive);
   }
 
-  /** Animate to a target view (zoom buttons, home). */
+  /** Animate to a target view (zoom buttons, home); a jump when motion is reduced. */
   animateTo(target: Viewport, ms = 180): void {
     cancelAnimationFrame(this.animation);
     this.isHome = false;
+    if (reducedMotion?.matches) {
+      this.cancelAnimation();
+      this.applyView(target);
+      return;
+    }
     const from = this.view;
     const start = performance.now();
     this.animTarget = target;

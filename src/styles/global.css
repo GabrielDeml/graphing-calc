@@ -1,66 +1,139 @@
+/* ---------- Tokens ---------- */
+
 :root {
   color-scheme: light dark;
-  --bg: #ffffff;
-  --fg: #1d1f24;
-  --muted: #6b7280;
-  --panel-bg: #ffffff;
-  --row-border: #e5e7eb;
-  --row-active: #f3f7fc;
-  --gutter-bg: #f4f5f7;
-  --accent: #2d70b3;
-  --error: #d93025;
-  --error-bg: #fdecea;
-  --button-hover: rgba(0, 0, 0, 0.06);
-  --key-bg: #f1f3f5;
-  --key-op-bg: #e3e7ec;
-  --key-fn-bg: #e9edf3;
-  --key-action-bg: #d9dee6;
-  --key-primary-bg: #2d70b3;
-  --key-primary-fg: #ffffff;
-  --keypad-bg: #dfe3e8;
-  --shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 4px 12px rgba(0, 0, 0, 0.08);
 
+  /* Surfaces: the app itself (the list), raised (graph, popovers), sunken (wells, chips). */
+  --surface-0: #fbfbfc;
+  --surface-1: #ffffff;
+  --surface-2: #f4f5f7;
+  --hairline: rgba(15, 23, 42, 0.08);
+  --hairline-strong: rgba(15, 23, 42, 0.14);
+  --hover: rgba(15, 23, 42, 0.045);
+  --press: rgba(15, 23, 42, 0.08);
+
+  /* Text tiers: content, secondary, quiet. */
+  --text-1: #111318;
+  --text-2: #4a4f5a;
+  --text-3: #8b919c;
+
+  /*
+   * UI accent (focus rings, toggled chrome, actions): an indigo that is none of the curve
+   * colors. Focus inside a row uses the row's own color instead (--row-color).
+   */
+  --accent: #5b5bd6;
+  --accent-soft: rgba(91, 91, 214, 0.12);
+  --accent-ink: #ffffff;
+  --danger: #d4343c;
+
+  --radius-1: 8px;
+  --radius-2: 12px;
+  --radius-3: 16px;
+  --radius-pill: 999px;
+
+  /* Elevations: resting controls, floating chrome, popovers and toasts. */
+  --elev-1: 0 0 0 1px var(--hairline), 0 1px 2px rgba(15, 23, 42, 0.05);
+  --elev-2:
+    0 0 0 1px var(--hairline), 0 1px 2px rgba(15, 23, 42, 0.04),
+    0 6px 16px -4px rgba(15, 23, 42, 0.12);
+  --elev-3:
+    0 0 0 1px var(--hairline), 0 2px 6px rgba(15, 23, 42, 0.05),
+    0 16px 40px -8px rgba(15, 23, 42, 0.2);
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-1: 90ms;
+  --dur-2: 160ms;
+  --dur-3: 240ms;
+
+  /* Canvas colors (read by src/render/theme.ts). */
   --graph-bg: #ffffff;
-  --grid-minor: #f0f1f3;
-  --grid-major: #d9dce1;
-  --axis: #3a3d44;
-  --graph-label: #3a3d44;
+  --grid-minor: #eff1f4;
+  --grid-major: #e2e5ea;
+  /* Within e2e tolerance (20 per channel) of the #3a3d44 smoke.spec.ts counts. */
+  --axis: #484c55;
+  --graph-label: #7b818c;
+
+  /* Keypad (its restyle comes later; these only follow the surfaces). */
+  --keypad-bg: #e9ebef;
+  --key-bg: #ffffff;
+  --key-op-bg: #f6f7f9;
+  --key-fn-bg: #f6f7f9;
+  --key-action-bg: #dcdfe5;
+  --key-primary-bg: var(--accent);
+  --key-primary-fg: var(--accent-ink);
+  --key-shadow: 0 1px 0 rgba(15, 23, 42, 0.12);
+  --thumb-bg: #ffffff;
 
   --panel-collapsed: 104px;
   --keypad-key-h: 46px;
   --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* Math: STIX Two Text (fonts.css); ≤ ≥ √ and the like fall through to the next fonts. */
+  --math:
+    "STIX Math Letters", "STIX Two Text", "STIX Two Math", "Cambria Math", Cambria,
+    "Times New Roman", serif;
   --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
   font-family: var(--font);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #16181d;
-    --fg: #e6e8ec;
-    --muted: #9aa0ab;
-    --panel-bg: #1c1f25;
-    --row-border: #2c3038;
-    --row-active: #222833;
-    --gutter-bg: #23272e;
-    --accent: #5ea4f0;
-    --error: #ff6b5f;
-    --error-bg: #3a2220;
-    --button-hover: rgba(255, 255, 255, 0.08);
-    --key-bg: #2a2e36;
-    --key-op-bg: #343944;
-    --key-fn-bg: #30353f;
-    --key-action-bg: #3d434f;
-    --key-primary-bg: #3d82c8;
-    --keypad-bg: #15171c;
-    --shadow: 0 1px 3px rgba(0, 0, 0, 0.5), 0 4px 12px rgba(0, 0, 0, 0.4);
+    --surface-0: #0f1115;
+    --surface-1: #16181d;
+    --surface-2: #121418;
+    --hairline: rgba(255, 255, 255, 0.07);
+    --hairline-strong: rgba(255, 255, 255, 0.13);
+    --hover: rgba(255, 255, 255, 0.05);
+    --press: rgba(255, 255, 255, 0.09);
+
+    --text-1: #e9ebef;
+    --text-2: #a8adb7;
+    --text-3: #6c727d;
+
+    --accent: #8d8ef2;
+    --accent-soft: rgba(141, 142, 242, 0.16);
+    --accent-ink: #0f1115;
+    --danger: #ff6b6b;
+
+    --elev-1: 0 0 0 1px var(--hairline), 0 1px 2px rgba(0, 0, 0, 0.4);
+    --elev-2:
+      0 0 0 1px var(--hairline), 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 20px -4px rgba(0, 0, 0, 0.5);
+    --elev-3:
+      0 0 0 1px var(--hairline-strong), 0 2px 6px rgba(0, 0, 0, 0.3),
+      0 20px 48px -8px rgba(0, 0, 0, 0.6);
 
     --graph-bg: #16181d;
-    --grid-minor: #1f2228;
-    --grid-major: #30343c;
-    --axis: #9aa0ab;
-    --graph-label: #c3c7cf;
+    --grid-minor: #1c1f25;
+    --grid-major: #262a31;
+    --axis: #80868f;
+    --graph-label: #7d838e;
+
+    --keypad-bg: #0b0c0f;
+    --key-bg: #22252b;
+    --key-op-bg: #1a1c21;
+    --key-fn-bg: #1a1c21;
+    --key-action-bg: #2b2f36;
+    --key-shadow: 0 1px 0 rgba(0, 0, 0, 0.5);
+    --thumb-bg: #d5d8de;
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-1: 0ms;
+    --dur-2: 0ms;
+    --dur-3: 0ms;
+  }
+}
+
+/* ---------- Base ---------- */
 
 *,
 *::before,
@@ -76,35 +149,52 @@ body,
 }
 
 body {
-  background: var(--bg);
-  color: var(--fg);
+  background: var(--surface-0);
+  color: var(--text-1);
+  font-size: 14px;
+  line-height: 1.4;
   overscroll-behavior: none;
   overflow: hidden;
   -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 button {
   font: inherit;
   color: inherit;
+  cursor: pointer;
+}
+
+.icon {
+  display: block;
+  flex: none;
 }
 
 .icon-button {
   display: inline-grid;
   place-items: center;
-  min-width: 36px;
-  height: 36px;
-  padding: 0 8px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-1);
   background: transparent;
-  font-size: 18px;
+  color: var(--text-2);
   line-height: 1;
-  cursor: pointer;
   touch-action: manipulation;
+  transition:
+    background-color var(--dur-1) var(--ease-out),
+    color var(--dur-1) var(--ease-out);
 }
 
 .icon-button:hover {
-  background: var(--button-hover);
+  background: var(--hover);
+  color: var(--text-1);
+}
+
+.icon-button:active {
+  background: var(--press);
 }
 
 .icon-button.active {
@@ -113,17 +203,28 @@ button {
 
 :focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  outline-offset: 2px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 /* ---------- Layout ---------- */
 
 .app {
+  /* The sidebar's width, leaving the graph room in a narrow window (--sidebar-w is set inline). */
+  --sidebar-col: min(var(--sidebar-w, 400px), calc(100vw - 360px));
   display: grid;
   height: 100dvh;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
   /* Desktop: sidebar (list over keypad) beside the graph. */
-  grid-template-columns: 360px minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-col) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr) auto;
   grid-template-areas:
     "panel graph"
@@ -131,8 +232,9 @@ button {
 }
 
 /*
- * Hiding the list is a desktop choice (« only shows there). A narrower window ignores a saved
- * one: the phone layouts have no » to bring the list back, nor another way to type.
+ * Hiding the list is a desktop choice (the sidebar button only shows there). A narrower window
+ * ignores a saved one: the phone layouts have no way to bring the list back, nor another way to
+ * type.
  */
 @media (min-width: 768px) {
   .app.sidebar-collapsed {
@@ -147,11 +249,12 @@ button {
 
 .panel {
   grid-area: panel;
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--panel-bg);
-  border-right: 1px solid var(--row-border);
+  background: var(--surface-0);
+  border-right: 1px solid var(--hairline);
 }
 
 .graph {
@@ -164,6 +267,11 @@ button {
   user-select: none;
   -webkit-user-select: none;
   background: var(--graph-bg);
+  cursor: grab;
+}
+
+.graph:active {
+  cursor: grabbing;
 }
 
 .graph:focus-visible {
@@ -204,8 +312,8 @@ button {
 
   .panel {
     border-right: none;
-    border-top: 1px solid var(--row-border);
-    box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.06);
+    border-top: 1px solid var(--hairline);
+    box-shadow: 0 -10px 24px -16px rgba(15, 23, 42, 0.18);
   }
 
   .panel-header {
@@ -223,8 +331,57 @@ button {
   }
 
   .graph-controls {
-    top: 8px;
-    right: 8px;
+    top: 10px;
+    right: 10px;
+  }
+}
+
+/* Drag the list's edge to resize it (desktop). */
+.sidebar-resizer {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .sidebar-resizer {
+    display: block;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: -4px;
+    z-index: 6;
+    width: 8px;
+    cursor: col-resize;
+    touch-action: none;
+  }
+
+  .sidebar-resizer::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 3px;
+    width: 2px;
+    background: transparent;
+    transition: background-color var(--dur-2) var(--ease-out);
+  }
+
+  .sidebar-resizer:hover::after,
+  .sidebar-resizer.dragging::after {
+    background: var(--hairline-strong);
+  }
+
+  .sidebar-resizer:focus-visible {
+    outline: none;
+  }
+
+  .sidebar-resizer:focus-visible::after {
+    background: var(--accent);
+  }
+
+  .app.resizing,
+  .app.resizing * {
+    cursor: col-resize;
+    user-select: none;
   }
 }
 
@@ -234,30 +391,32 @@ button {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 6px 6px 6px 14px;
-  border-bottom: 1px solid var(--row-border);
+  gap: var(--space-1);
+  min-height: 48px;
+  padding: 6px var(--space-2) 6px var(--space-4);
+  border-bottom: 1px solid var(--hairline);
   flex: none;
 }
 
 .panel-grip {
   display: none;
   position: absolute;
-  top: 4px;
+  top: 5px;
   left: 50%;
-  width: 36px;
+  width: 32px;
   height: 4px;
-  margin-left: -18px;
-  border-radius: 2px;
-  background: var(--row-border);
+  margin-left: -16px;
+  border-radius: var(--radius-pill);
+  background: var(--hairline-strong);
 }
 
 .panel-title {
   flex: 1;
   margin: 0;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.005em;
+  color: var(--text-1);
 }
 
 .panel-tools {
@@ -271,37 +430,60 @@ button {
 
 .menu {
   position: absolute;
-  top: calc(100% + 4px);
+  top: calc(100% + 6px);
   right: 0;
   z-index: 10;
   display: flex;
   flex-direction: column;
-  min-width: 160px;
-  padding: 4px;
-  border-radius: 10px;
-  background: var(--panel-bg);
-  box-shadow: var(--shadow);
+  min-width: 184px;
+  padding: var(--space-1);
+  border-radius: var(--radius-2);
+  background: var(--surface-1);
+  box-shadow: var(--elev-3);
+  transform-origin: top right;
+  animation: pop-in var(--dur-2) var(--ease-out);
 }
 
 .menu-item {
-  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 10px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-1);
   background: transparent;
-  font-size: 14px;
+  color: var(--text-1);
+  font-size: 13.5px;
   text-align: left;
   white-space: nowrap;
-  cursor: pointer;
+}
+
+.menu-item .icon {
+  color: var(--text-2);
 }
 
 .menu-item:hover,
 .menu-item:focus {
-  background: var(--button-hover);
+  background: var(--hover);
+  outline: none;
 }
 
-.menu-item[aria-disabled="true"] {
-  color: var(--muted);
+.menu-item:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.menu-item[aria-disabled="true"],
+.menu-item[aria-disabled="true"] .icon {
+  color: var(--text-3);
   cursor: default;
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-4px);
+  }
 }
 
 .panel-scroll {
@@ -311,6 +493,7 @@ button {
   overscroll-behavior: contain;
   /* Scroll the list, but never pinch-zoom the whole (fixed-height) app from it. */
   touch-action: pan-y;
+  padding-bottom: var(--space-6);
 }
 
 .expr-list {
@@ -319,137 +502,225 @@ button {
   padding: 0;
 }
 
+/*
+ * A row: its color mark, then the math and whatever goes under it (slider, range, error, value).
+ * --row-color is the curve's color, set inline when the row has one; the focus chrome inside the
+ * row uses it.
+ */
 .expr-row {
+  --row-color: var(--text-3);
+  --row-bg: var(--surface-0);
   position: relative;
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) auto;
-  border-bottom: 1px solid var(--row-border);
+  grid-template-columns: 40px minmax(0, 1fr);
+  padding: var(--space-2) var(--space-3) var(--space-2) 0;
+  background: var(--row-bg);
+  border-bottom: 1px solid var(--hairline);
+  transition: background-color var(--dur-2) var(--ease-out);
 }
 
-.expr-row:focus-within {
-  background: var(--row-active);
+/* The selected row: a bar and a faint wash, in its own color. */
+.expr-row.selected {
+  --row-bg: color-mix(in srgb, var(--row-color) 6%, var(--surface-0));
+  box-shadow: inset 2px 0 0 var(--row-color);
 }
 
-.expr-row:focus-within .expr-gutter {
-  box-shadow: inset 3px 0 0 var(--accent);
-}
-
-.expr-gutter {
+.expr-mark {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 0;
-  background: var(--gutter-bg);
-  color: var(--muted);
-  font-size: 11px;
+  justify-content: center;
+  padding-top: 2px;
 }
 
-.expr-index {
-  line-height: 1;
-}
-
+/* The color mark: shows and hides the curve; hollow while hidden. */
 .expr-swatch {
-  width: 22px;
-  height: 22px;
+  position: relative;
+  width: 28px;
+  height: 28px;
   padding: 0;
+  border: none;
   border-radius: 50%;
-  border: 3px solid var(--swatch);
-  background: var(--swatch);
-  cursor: pointer;
+  background: transparent;
   touch-action: manipulation;
 }
 
-.expr-swatch.off {
+.expr-swatch::after {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border-radius: 50%;
+  background: var(--row-color);
+  box-shadow: inset 0 0 0 2px var(--row-color);
+  transition:
+    background-color var(--dur-2) var(--ease-out),
+    transform var(--dur-2) var(--ease-out);
+}
+
+.expr-swatch:hover::after {
+  transform: scale(1.18);
+}
+
+.expr-swatch.off::after {
   background: transparent;
 }
 
-.expr-warning {
-  font-size: 18px;
-  line-height: 22px;
-  color: var(--error);
+.expr-swatch:focus-visible {
+  outline-color: var(--row-color);
+  outline-offset: 0;
 }
 
 .expr-body {
   min-width: 0;
-  padding: 6px 4px 6px 10px;
 }
 
+/* Hidden curves recede. */
+.expr-row.hidden .expr-body > .math-field .math-input {
+  color: var(--text-3);
+}
+
+/*
+ * Change color and delete: they overlay the end of the math instead of taking a column, fading it
+ * out beneath them. Shown on hover and on the selected row, which also keeps the math clear of
+ * them while it is being edited.
+ */
 .expr-actions {
-  position: relative;
+  position: absolute;
+  top: 10px;
+  right: var(--space-2);
   display: flex;
-  align-items: flex-start;
-  padding: 4px 4px 0 0;
+  gap: 2px;
+  padding-left: var(--space-5);
+  background: linear-gradient(to right, transparent, var(--row-bg) 20px);
   opacity: 0;
-  transition: opacity 0.12s;
+  transition: opacity var(--dur-1) var(--ease-out);
 }
 
 .expr-row:hover .expr-actions,
-.expr-row:focus-within .expr-actions {
+.expr-row:focus-within .expr-actions,
+.expr-row.selected .expr-actions {
   opacity: 1;
 }
 
+.expr-row.selected > .expr-body > .math-field:first-child,
+.expr-row:focus-within > .expr-body > .math-field:first-child {
+  margin-right: 30px;
+}
+
+.expr-row.plots.selected > .expr-body > .math-field:first-child,
+.expr-row.plots:focus-within > .expr-body > .math-field:first-child {
+  margin-right: 60px;
+}
+
+/* Touch: no hover, so only the selected row has its actions (and nothing invisible is tappable). */
 @media (hover: none) {
-  .expr-actions {
-    opacity: 1;
+  .expr-row:not(.selected):not(:focus-within) .expr-actions {
+    opacity: 0;
+    pointer-events: none;
   }
 }
 
 .expr-actions .icon-button {
-  min-width: 32px;
-  height: 32px;
-  color: var(--muted);
+  width: 28px;
+  height: 28px;
+  color: var(--text-3);
 }
 
-.expr-color .dot {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--swatch);
+.expr-actions .icon-button:hover,
+.expr-actions .icon-button[aria-expanded="true"] {
+  color: var(--text-1);
 }
 
+.expr-color .icon {
+  color: var(--row-color);
+}
+
+.expr-row :focus-visible {
+  outline-color: var(--row-color);
+}
+
+/* A row's error: one quiet line that opens and closes smoothly instead of shoving the list. */
 .expr-error {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 8px;
-  margin-top: 4px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  background: var(--error-bg);
-  color: var(--error);
-  font-size: 13px;
+  display: grid;
+  grid-template-rows: 1fr;
+  animation: reveal var(--dur-2) var(--ease-out);
+}
+
+.expr-error.closing {
+  animation: conceal var(--dur-2) var(--ease-out) forwards;
+}
+
+.expr-error-line {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  /* Under the mark column too, so the icon sits below the color mark and the text lines up with
+     the math. */
+  margin-left: -40px;
+  padding: 1px 2px 3px 42px;
+  color: var(--danger);
+  font-size: 12.5px;
+  line-height: 18px;
+}
+
+.expr-error-icon {
+  position: absolute;
+  top: 2px;
+  left: 13px;
 }
 
 .expr-hint {
-  color: var(--muted);
+  margin-left: 6px;
+  color: var(--text-3);
+}
+
+@keyframes reveal {
+  from {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+}
+
+@keyframes conceal {
+  to {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
 }
 
 .quick-fix {
-  padding: 3px 10px;
-  border: 1px solid currentColor;
-  border-radius: 999px;
-  background: transparent;
+  display: inline-flex;
+  vertical-align: middle;
+  margin: 2px 0 2px 8px;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 10px 0 7px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--surface-1);
+  box-shadow: var(--elev-1);
+  color: var(--text-1);
   font-size: 12px;
-  cursor: pointer;
+  font-weight: 500;
+  transition: background-color var(--dur-1) var(--ease-out);
+}
+
+.quick-fix:hover {
+  background: var(--surface-2);
+}
+
+.quick-fix .icon {
+  color: var(--text-2);
 }
 
 .expr-value {
   display: block;
-  margin-top: 2px;
-  font-family: var(--mono);
-  font-size: 14px;
-  color: var(--muted);
+  padding: 0 2px;
+  font-family: var(--math);
+  font-size: 17px;
+  line-height: 24px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
   text-align: right;
-}
-
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
 }
 
 .color-picker {
@@ -457,29 +728,45 @@ button {
   border: none;
   min-inline-size: 0;
   position: absolute;
-  top: 36px;
-  right: 4px;
+  top: 34px;
+  right: 0;
   z-index: 10;
   display: grid;
-  grid-template-columns: repeat(3, 32px);
-  gap: 6px;
-  padding: 8px;
-  border-radius: 10px;
-  background: var(--panel-bg);
-  box-shadow: var(--shadow);
+  grid-template-columns: repeat(3, 26px);
+  gap: 10px;
+  padding: var(--space-3);
+  border-radius: var(--radius-3);
+  background: var(--surface-1);
+  box-shadow: var(--elev-3);
+  transform-origin: top right;
+  animation: pop-in var(--dur-2) var(--ease-out);
+  /* Scrolled into view while it pops in, i.e. while still scaled down: leave room to grow. */
+  scroll-margin: 12px;
 }
 
 .color-choice {
-  width: 32px;
-  height: 32px;
-  border: 2px solid transparent;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
   border-radius: 50%;
   background: var(--swatch);
-  cursor: pointer;
+  transition: transform var(--dur-1) var(--ease-out);
+}
+
+.color-choice:hover {
+  transform: scale(1.1);
 }
 
 .color-choice[aria-pressed="true"] {
-  border-color: var(--fg);
+  box-shadow:
+    0 0 0 2px var(--surface-1),
+    0 0 0 3.5px var(--swatch);
+}
+
+.color-choice:focus-visible {
+  outline-color: var(--swatch);
+  outline-offset: 3px;
 }
 
 /* ---------- Math fields ---------- */
@@ -489,14 +776,20 @@ button {
   min-width: 0;
 }
 
+/*
+ * The input and its error mirror must lay text out identically (same font, size, spacing and
+ * padding), or the wavy underline drifts from the characters it marks.
+ */
 .math-input,
 .math-mirror {
-  font-family: var(--mono);
+  font-family: var(--math);
   /* 16px+ prevents iOS from zooming into the field on focus. */
-  font-size: 17px;
+  font-size: 19px;
   line-height: 24px;
   padding: 4px 2px;
   letter-spacing: 0;
+  font-kerning: normal;
+  font-variant-ligatures: none;
 }
 
 .math-input {
@@ -505,14 +798,14 @@ button {
   width: 100%;
   border: none;
   background: transparent;
-  color: var(--fg);
+  color: var(--text-1);
   outline: none;
-  caret-color: var(--accent);
+  caret-color: var(--row-color, var(--accent));
 }
 
 .math-input::placeholder {
-  color: var(--muted);
-  opacity: 0.7;
+  color: var(--text-3);
+  opacity: 1;
 }
 
 .math-mirror {
@@ -525,12 +818,13 @@ button {
 }
 
 .math-mirror-error {
-  text-decoration: underline wavy var(--error);
+  text-decoration: underline wavy var(--danger);
   text-decoration-skip-ink: none;
-  text-underline-offset: 4px;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 5px;
 }
 
-/* Small fields (slider bounds, parameter ranges). */
+/* Small fields (slider bounds, parameter ranges): quiet until pointed at or edited. */
 .slider-bound,
 .range-bound {
   width: 64px;
@@ -541,64 +835,237 @@ button {
 .range-bound .math-input,
 .slider-bound .math-mirror,
 .range-bound .math-mirror {
-  font-size: 16px;
-  padding: 2px 4px;
-  border-radius: 4px;
-  text-align: center;
+  font-size: 15px;
+  line-height: 20px;
+  padding: 2px 6px;
+  border-radius: 6px;
 }
 
 .slider-bound .math-input,
 .range-bound .math-input {
-  background: var(--gutter-bg);
+  color: var(--text-2);
+  transition:
+    background-color var(--dur-1) var(--ease-out),
+    box-shadow var(--dur-1) var(--ease-out);
+}
+
+.slider-bound .math-input:hover,
+.range-bound .math-input:hover {
+  background: var(--hover);
+}
+
+.slider-bound .math-input:focus,
+.range-bound .math-input:focus {
+  background: var(--surface-1);
+  box-shadow: inset 0 0 0 1px var(--hairline-strong);
+  color: var(--text-1);
 }
 
 .slider-bound .math-input[aria-invalid="true"],
 .range-bound .math-input[aria-invalid="true"] {
-  box-shadow: inset 0 0 0 1px var(--error);
+  box-shadow: inset 0 0 0 1px var(--danger);
+}
+
+/* Phones zoom into fields under 16px. */
+@media (pointer: coarse) {
+  .slider-bound .math-input,
+  .range-bound .math-input,
+  .slider-bound .math-mirror,
+  .range-bound .math-mirror {
+    font-size: 16px;
+  }
 }
 
 /* ---------- Slider ---------- */
 
+/*
+ * Play, then a full-width track with the bounds under its ends. The DOM order (play, min, track,
+ * max, step) is the reading and tab order; the grid places them.
+ */
 .slider {
   display: grid;
-  grid-template-columns: auto 56px minmax(60px, 1fr) 56px;
+  grid-template-columns: 28px minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas:
+    "play track track"
+    ". min max"
+    ". step step";
+  column-gap: var(--space-2);
   align-items: center;
-  gap: 6px;
-  margin-top: 4px;
+  padding-right: 2px;
 }
 
-.slider .slider-bound {
-  width: 100%;
+.slider-play {
+  grid-area: play;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: var(--text-2);
+}
+
+.slider-play[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.slider .slider-min {
+  grid-area: min;
+  justify-self: start;
+  margin-left: -6px;
+}
+
+.slider .slider-max {
+  grid-area: max;
+  justify-self: end;
+  margin-right: -6px;
+}
+
+.slider-max .math-input,
+.slider-max .math-mirror {
+  text-align: right;
+}
+
+.slider-min .math-input,
+.slider-min .math-mirror {
+  text-align: left;
+}
+
+.slider-track {
+  --thumb: 16px;
+  grid-area: track;
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 28px;
+}
+
+/* Fill and value bubble end at the thumb's center: half a thumb in, then the value's share. */
+.slider-range,
+.slider-bubble {
+  --thumb-x: calc(var(--thumb) / 2 + var(--frac, 0.5) * (100% - var(--thumb)));
 }
 
 .slider-range {
+  -webkit-appearance: none;
+  appearance: none;
   min-width: 0;
   width: 100%;
+  height: 28px;
   margin: 0;
-  accent-color: var(--accent);
+  background: transparent;
+  cursor: pointer;
+}
+
+.slider-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(
+    to right,
+    var(--text-2) var(--thumb-x),
+    var(--hairline-strong) var(--thumb-x)
+  );
+}
+
+.slider-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: var(--thumb);
+  height: var(--thumb);
+  margin-top: -6px;
+  border-radius: 50%;
+  background: var(--thumb-bg);
+  box-shadow:
+    0 0 0 1px rgba(15, 23, 42, 0.16),
+    0 1px 3px rgba(15, 23, 42, 0.2);
+  transition:
+    transform var(--dur-1) var(--ease-out),
+    box-shadow var(--dur-1) var(--ease-out);
+}
+
+.slider-range::-moz-range-track {
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--hairline-strong);
+}
+
+.slider-range::-moz-range-progress {
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--text-2);
+}
+
+.slider-range::-moz-range-thumb {
+  width: var(--thumb);
+  height: var(--thumb);
+  border: none;
+  border-radius: 50%;
+  background: var(--thumb-bg);
+  box-shadow:
+    0 0 0 1px rgba(15, 23, 42, 0.16),
+    0 1px 3px rgba(15, 23, 42, 0.2);
+}
+
+.slider-range:active::-webkit-slider-thumb {
+  transform: scale(1.12);
+}
+
+.slider-range:focus-visible {
+  outline: none;
+}
+
+.slider-range:focus-visible::-webkit-slider-thumb {
+  box-shadow:
+    0 0 0 1px rgba(15, 23, 42, 0.16),
+    0 0 0 4px var(--accent-soft),
+    0 0 0 5.5px var(--accent);
+}
+
+.slider-range:focus-visible::-moz-range-thumb {
+  box-shadow:
+    0 0 0 4px var(--accent-soft),
+    0 0 0 5.5px var(--accent);
 }
 
 .slider.invalid .slider-range {
   opacity: 0.4;
+  cursor: default;
 }
 
-.slider-play {
-  min-width: 32px;
-  height: 32px;
-  font-size: 13px;
-  border-radius: 50%;
-  background: var(--gutter-bg);
+/* The value over the thumb while it is dragged. */
+.slider-bubble {
+  position: absolute;
+  bottom: calc(100% - 2px);
+  left: var(--thumb-x);
+  z-index: 2;
+  padding: 1px 8px 2px;
+  border-radius: var(--radius-1);
+  background: var(--text-1);
+  color: var(--surface-1);
+  font-family: var(--math);
+  font-size: 14px;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translateX(-50%);
+  animation: bubble-in var(--dur-1) var(--ease-out);
+}
+
+@keyframes bubble-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px);
+  }
 }
 
 .slider-step {
   /* Step is a detail: shown while the row is being edited. */
   display: none;
-  grid-column: 2 / -1;
+  grid-area: step;
   justify-self: end;
   align-items: center;
   gap: 4px;
+  margin-right: -6px;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--text-3);
 }
 
 .expr-row:focus-within .slider-step {
@@ -609,43 +1076,71 @@ button {
   width: 56px;
 }
 
+.slider-step .math-input {
+  text-align: right;
+}
+
 .range-control {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 4px;
-  font-size: 14px;
-  color: var(--muted);
+  gap: 2px;
+  margin-left: -6px;
+  color: var(--text-3);
+}
+
+/* The bounds hug "≤ t ≤": as wide as their text where fields can size to it. */
+.range-control .range-bound:first-child .math-input,
+.range-control .range-bound:first-child .math-mirror {
+  text-align: right;
+}
+
+@supports (field-sizing: content) {
+  .range-control .range-bound {
+    width: auto;
+  }
+
+  .range-control .math-input {
+    field-sizing: content;
+    min-width: 28px;
+    max-width: 120px;
+  }
 }
 
 .range-var {
-  font-family: var(--mono);
+  font-family: var(--math);
+  font-size: 16px;
   white-space: nowrap;
 }
 
 /* ---------- Graph overlays ---------- */
 
+/* Zoom and reset: one floating pill, top right, clear of the corner the graph is tapped in. */
 .graph-controls {
   position: absolute;
-  top: 10px;
-  right: 10px;
+  top: var(--space-3);
+  right: var(--space-3);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  align-items: center;
+  gap: 2px;
+  padding: var(--space-1);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--surface-1) 86%, transparent);
+  box-shadow: var(--elev-2);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  cursor: default;
 }
 
-.graph-controls .icon-button,
-.show-sidebar {
-  width: 38px;
-  height: 38px;
-  background: var(--panel-bg);
-  box-shadow: var(--shadow);
+.graph-controls .icon-button {
+  border-radius: 50%;
 }
 
-.show-sidebar {
-  position: absolute;
-  top: 10px;
-  left: 10px;
+.graph-controls-divider {
+  width: 16px;
+  height: 1px;
+  margin: 2px 0;
+  background: var(--hairline-strong);
 }
 
 .trace {
@@ -658,35 +1153,55 @@ button {
 
 .trace-dot {
   position: absolute;
-  width: 12px;
-  height: 12px;
-  margin: -6px 0 0 -6px;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
   border-radius: 50%;
-  background: var(--swatch);
-  border: 2px solid var(--graph-bg);
+  background: var(--trace-color);
+  box-shadow:
+    0 0 0 2px var(--graph-bg),
+    0 1px 4px 2px rgba(15, 23, 42, 0.14);
 }
 
-.trace-label {
+/* Color dot, then "(x, y)". */
+.trace-pill {
   position: absolute;
-  bottom: 10px;
-  left: 10px;
-  padding: 3px 8px;
-  border-radius: 6px;
-  background: var(--panel-bg);
-  box-shadow: var(--shadow);
-  font-family: var(--mono);
-  font-size: 13px;
+  bottom: var(--space-3);
+  left: var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  padding: 0 11px 0 10px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-1);
+  box-shadow: var(--elev-2);
+  color: var(--text-1);
   white-space: nowrap;
 }
 
-.trace.flip-x .trace-label {
-  left: auto;
-  right: 10px;
+.trace-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--trace-color);
 }
 
-.trace.flip-y .trace-label {
+.trace-label {
+  font-family: var(--math);
+  font-size: 15px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.trace.flip-x .trace-pill {
+  left: auto;
+  right: var(--space-3);
+}
+
+.trace.flip-y .trace-pill {
   bottom: auto;
-  top: 10px;
+  top: var(--space-3);
 }
 
 .debug-overlay {
@@ -709,7 +1224,7 @@ button {
   -webkit-user-select: none;
   /* Like `manipulation` (no double-tap zoom delay) but without pinch-zoom either. */
   touch-action: pan-x pan-y;
-  animation: keypad-in 0.16s ease-out;
+  animation: keypad-in var(--dur-2) var(--ease-out);
 }
 
 @keyframes keypad-in {
@@ -719,16 +1234,10 @@ button {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .keypad {
-    animation: none;
-  }
-}
-
 .keypad-tabs {
   display: flex;
-  gap: 4px;
-  padding: 0 0 4px;
+  gap: var(--space-1);
+  padding: 0 0 var(--space-1);
 }
 
 .keypad-tab,
@@ -736,50 +1245,54 @@ button {
   height: 32px;
   padding: 0 14px;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-1);
   background: transparent;
   font-size: 14px;
   font-weight: 600;
-  color: var(--muted);
-  cursor: pointer;
+  color: var(--text-3);
   touch-action: pan-x pan-y;
 }
 
 .keypad-tab[aria-selected="true"] {
   background: var(--key-bg);
-  color: var(--fg);
+  box-shadow: var(--key-shadow);
+  color: var(--text-1);
 }
 
 .keypad-hide {
+  display: inline-grid;
+  place-items: center;
   margin-left: auto;
-  font-size: 20px;
+  padding: 0 10px;
+  color: var(--text-2);
 }
 
 .keypad-grid {
   display: grid;
   grid-template-columns: repeat(var(--cols, 9), minmax(0, 1fr));
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .key {
+  display: inline-grid;
+  place-items: center;
   height: var(--keypad-key-h);
   min-width: 0;
   padding: 0;
   border: none;
-  border-radius: 7px;
+  border-radius: var(--radius-1);
   background: var(--key-bg);
-  color: var(--fg);
+  color: var(--text-1);
   font-size: 18px;
   font-family: var(--font);
-  cursor: pointer;
   touch-action: pan-x pan-y;
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.15);
+  box-shadow: var(--key-shadow);
   white-space: nowrap;
   overflow: hidden;
 }
 
 .key:active {
-  filter: brightness(0.9);
+  filter: brightness(0.92);
 }
 
 .key-op {
@@ -802,8 +1315,8 @@ button {
 
 @media (min-width: 768px) {
   .keypad {
-    border-right: 1px solid var(--row-border);
-    border-top: 1px solid var(--row-border);
+    border-right: 1px solid var(--hairline);
+    border-top: 1px solid var(--hairline);
   }
 
   .key {
@@ -846,11 +1359,12 @@ button {
 
   .panel {
     border-top: none;
-    border-right: 1px solid var(--row-border);
+    border-right: 1px solid var(--hairline);
     box-shadow: none;
   }
 
   .panel-header {
+    min-height: 40px;
     padding-top: 2px;
     padding-bottom: 2px;
     touch-action: pan-x pan-y;
@@ -862,7 +1376,7 @@ button {
   }
 
   .keypad {
-    border-right: 1px solid var(--row-border);
+    border-right: 1px solid var(--hairline);
   }
 
   .keypad-tab,
@@ -877,17 +1391,25 @@ button {
 .toasts {
   position: fixed;
   left: 50%;
-  bottom: calc(16px + env(safe-area-inset-bottom));
+  bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
   transform: translateX(-50%);
   z-index: 20;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   /* Left at 50% would otherwise cap the width at half the window and wrap short messages. */
   width: max-content;
   max-width: calc(100% - 32px);
   pointer-events: none;
+}
+
+/* Beside the list, centered over the graph. */
+@media (min-width: 768px) {
+  .app:not(.sidebar-collapsed) .toasts {
+    left: calc(var(--sidebar-col) + (100% - var(--sidebar-col)) / 2);
+    max-width: calc(100% - var(--sidebar-col) - 32px);
+  }
 }
 
 .app.keypad-open .toasts {
@@ -899,38 +1421,65 @@ button {
   pointer-events: auto;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 8px 8px 14px;
-  border-radius: 10px;
-  background: var(--panel-bg);
-  box-shadow: var(--shadow);
-  font-size: 14px;
+  gap: 2px;
+  min-height: 40px;
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-4);
+  border-radius: var(--radius-2);
+  background: var(--surface-1);
+  box-shadow: var(--elev-3);
+  color: var(--text-1);
+  font-size: 13.5px;
+  animation: toast-in var(--dur-3) var(--ease-out);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+
+.toast-message {
+  padding-right: 8px;
 }
 
 .toast-action {
-  padding: 4px 12px;
+  height: 32px;
+  padding: 0 10px;
   border: none;
-  border-radius: 6px;
-  background: var(--accent);
-  color: #fff;
-  cursor: pointer;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--accent);
+  font-weight: 600;
+  transition: background-color var(--dur-1) var(--ease-out);
+}
+
+.toast-action:hover {
+  background: var(--accent-soft);
 }
 
 .toast-close {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
   border: none;
+  border-radius: var(--radius-1);
   background: transparent;
-  font-size: 18px;
-  cursor: pointer;
-  color: var(--muted);
+  color: var(--text-3);
+  transition:
+    background-color var(--dur-1) var(--ease-out),
+    color var(--dur-1) var(--ease-out);
+}
+
+.toast-close:hover {
+  background: var(--hover);
+  color: var(--text-1);
 }
 
 /* Thumb-sized buttons: on a phone, a toast's Undo is the only undo there is. */
 @media (pointer: coarse) {
-  .toast {
-    padding-top: 4px;
-    padding-bottom: 4px;
-  }
-
   .toast-action,
   .toast-close {
     min-width: 44px;
@@ -942,9 +1491,20 @@ button {
   /* Stacked phone layout: the graph is on top, so show toasts there, clear of the list and keypad. */
   .toasts,
   .app.keypad-open .toasts {
-    top: calc(12px + env(safe-area-inset-top));
+    top: calc(var(--space-3) + env(safe-area-inset-top));
     bottom: auto;
     max-width: calc(100% - 96px);
+  }
+
+  .toast {
+    animation-name: toast-down;
+  }
+}
+
+@keyframes toast-down {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
   }
 }
 
@@ -956,5 +1516,9 @@ button {
     left: 75%;
     bottom: calc(16px + env(safe-area-inset-bottom));
     max-width: calc(50% - 16px);
+  }
+
+  .toast {
+    animation-name: toast-in;
   }
 }

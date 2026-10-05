@@ -24,6 +24,11 @@ export { expect };
 export const RED = '#c74440';
 export const BLUE = '#2d70b3';
 export const GREEN = '#388c46';
+/** The first curve color in the dark color scheme (src/state/colors.ts). */
+export const RED_DARK = '#f0605b';
+/** Axis colors (src/styles/global.css), counted with a tolerance of 20. */
+export const AXIS = '#3a3d44';
+export const AXIS_DARK = '#80868f';
 
 export function exprInput(page: Page, index: number) {
   return page.getByTestId('expr-input').nth(index);

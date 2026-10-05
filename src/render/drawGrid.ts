@@ -4,6 +4,8 @@ import { toScreenX, toScreenY, viewBounds } from '../plot/viewport';
 import type { Theme } from './theme';
 
 const FONT = '12px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+/** Axis line width in CSS px, before snapping to whole device pixels. */
+const AXIS_WIDTH = 1.25;
 
 /** Crisp lines: snap to device pixels based on the line's device-pixel width. */
 function snapper(dpr: number, lineWidthCss: number) {
@@ -15,6 +17,20 @@ function snapper(dpr: number, lineWidthCss: number) {
 function isMultiple(v: number, step: number): boolean {
   const q = v / step;
   return Math.abs(q - Math.round(q)) < 1e-6;
+}
+
+/** Minor grid lines closer together than this (CSS px) are not drawn… */
+const MINOR_HIDDEN_PX = 8;
+/** …and from this spacing on they are drawn at full strength, fading in between. */
+const MINOR_FULL_PX = 24;
+
+/**
+ * Opacity of minor grid lines `spacingPx` apart. Dense lines fade away instead of turning the
+ * background grey, so zooming out (between tick steps) never makes the grid busy.
+ */
+export function minorGridAlpha(spacingPx: number): number {
+  if (!(spacingPx > MINOR_HIDDEN_PX)) return 0;
+  return Math.min(1, (spacingPx - MINOR_HIDDEN_PX) / (MINOR_FULL_PX - MINOR_HIDDEN_PX));
 }
 
 /** Gap kept between neighbouring x labels, in CSS px. */
@@ -60,8 +76,9 @@ export function drawGrid(
   const thinY = snapper(scale.y, 1);
   ctx.lineWidth = thinX.width;
 
-  // Minor lines (skipping those under major lines).
+  // Minor lines (skipping those under major lines), fainter the closer together they are.
   ctx.strokeStyle = theme.gridMinor;
+  ctx.globalAlpha = minorGridAlpha(tx.minorStep * view.ppuX);
   ctx.beginPath();
   for (const x of tx.minor) {
     if (isMultiple(x, tx.step)) continue;
@@ -69,6 +86,9 @@ export function drawGrid(
     ctx.moveTo(sx, 0);
     ctx.lineTo(sx, h);
   }
+  ctx.stroke();
+  ctx.globalAlpha = minorGridAlpha(ty.minorStep * view.ppuY);
+  ctx.beginPath();
   for (const y of ty.minor) {
     if (isMultiple(y, ty.step)) continue;
     const sy = thinY.snap(toScreenY(view, y));
@@ -76,6 +96,7 @@ export function drawGrid(
     ctx.lineTo(w, sy);
   }
   ctx.stroke();
+  ctx.globalAlpha = 1;
 
   ctx.strokeStyle = theme.gridMajor;
   ctx.beginPath();
@@ -93,9 +114,9 @@ export function drawGrid(
   }
   ctx.stroke();
 
-  // Axes.
-  const axisX = snapper(scale.x, 1.5);
-  const axisY = snapper(scale.y, 1.5);
+  // Axes: one crisp device pixel on a 1x screen, about 1.5px on denser ones.
+  const axisX = snapper(scale.x, AXIS_WIDTH);
+  const axisY = snapper(scale.y, AXIS_WIDTH);
   const ox = toScreenX(view, 0);
   const oy = toScreenY(view, 0);
   const yAxisVisible = ox >= 0 && ox <= w;
