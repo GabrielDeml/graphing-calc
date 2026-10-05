@@ -108,11 +108,13 @@ test.describe('typeset rows', () => {
     await openApp(page);
     await typeRow(page, 0, 'y = (x + 1)/(x^2 + 1)');
     const row = page.locator('.expr-row').first();
-    const typeset = await row.boundingBox();
+    // The math's own line: once focused (selected), the row may also open its insight line.
+    const line = row.locator('.expr-body > .math-field').first();
+    const typeset = await line.boundingBox();
+    expect((await row.boundingBox())?.height).toBeGreaterThan(55);
     await exprInput(page, 0).focus();
     await expect(view(page, 0).locator('.m-caret')).toBeVisible();
-    const editing = await row.boundingBox();
-    expect(typeset?.height).toBeGreaterThan(55);
+    const editing = await line.boundingBox();
     expect(Math.abs((editing?.height ?? 0) - (typeset?.height ?? 0))).toBeLessThan(1);
   });
 

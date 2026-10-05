@@ -28,6 +28,7 @@ scratch in plain TypeScript.
 | `2^10`, `sqrt(2)` | Shows the value |
 | `y = (x+1)/(x^2+1)`, `sqrt(x)`, `e^(-x^2)` | Shown typeset as you type: a stacked fraction, a radical, a raised exponent (see **Editing math** below) |
 | `y = x^2 - 2`, `x^2 + y^2 = 9`, `r = cos(3θ)` | A quiet line under the row says what the curve is: "Parabola · vertex (0, −2) · roots −1.414, 1.414 · axis x = 0", "Circle · centre (0, 0) · radius 3", "Rose with 3 petals · petal length 1" (see **Insights** below) |
+| `y = x^2`, `x^2 + y^2 = 9`, `r = 1 + cos θ` | On a blank graph these three wait under the list as example chips: one tap types it into the first row and graphs it (see **First visit** below) |
 
 Syntax notes:
 
@@ -50,9 +51,26 @@ Syntax notes:
 
 ## Using it
 
+- **First visit:** a blank graph (the first visit, or after **New graph**) shows three examples
+  under the list, typeset: `y = x²`, `x² + y² = 9` and `r = 1 + cos θ`. A tap or click on one
+  puts it in the first row and graphs it (one undo step, so `Ctrl+Z` gives the blank graph and
+  the examples back); they go away as soon as the list has any math in it. With a mouse or
+  trackpad the first row also has the caret, ready to type into; on touch nothing takes focus,
+  so no keypad pops up until you tap a row (with the keypad already open, an example goes into
+  the row being edited). Nothing covers the graph.
 - **Graph:** drag to pan, use the wheel or pinch to zoom, double-click to zoom in, and the buttons
   at the top right zoom in and out, fit and reset the view. With the graph focused, the keyboard
   works too: arrows pan, `+` and `-` zoom, `0` resets.
+- **Moving around:** each notch of a mouse wheel zooms in a short glide around the pointer (the
+  point under it stays put), and quick notches add up, each going on from where the last one
+  will end; a trackpad's scrolling and pinching are followed as they come. Arrow keys pan in
+  short glides too that add up exactly (three presses go three steps, however fast), as do the
+  zoom keys and buttons. On touch (or with a pen), let go of a drag while still moving and the
+  graph glides on, slowing to a stop; a new touch catches it where it is (that touch is no tap,
+  so it doesn't select or deselect anything), and so do the wheel, the keys and the buttons. A
+  drag that comes to rest before lifting stays put, and a pinch or a scrub along a curve never
+  glides. With reduced motion turned on in the system, nothing glides: zooms and pans jump
+  straight to where they end.
 - **Zoom to fit:** the button between zoom out and reset (its icon a curve in a frame) flies to
   show every curve on the graph, with some room around and the same scale on both axes. A
   closed curve (a circle, a rose, a parametric loop, even a small one far away) and points are
@@ -260,9 +278,10 @@ Syntax notes:
   keys on a slider undo like typing, and a playing slider adds none (undoing something else
   leaves it where it is). Undo puts the caret back where the change was (in the denominator it
   was in, not after the fraction); a change made outside
-  the rows (delete, a color, New graph) is scrolled into view. Phones have no undo key yet: **New
-  graph**, deleting a row by touch, sliders made for you and rows the trace adds show an Undo
-  button for a few seconds instead (it waits while you point at it or it has focus).
+  the rows (delete, a color, New graph) is scrolled into view. On a phone, the keypad's top row
+  has an **Undo** key (dimmed when there is nothing to undo; pressing it keeps the caret in the
+  row). **New graph**, deleting a row by touch, sliders made for you and rows the trace adds also
+  show an Undo button for a few seconds (it waits while you point at it or it has focus).
 - **Saved automatically:** the expression list, the view and the panel layout (including the
   list's width) are kept in the browser and come back on the next visit (sliders come back
   paused), and so is the keypad mode once you pick one with the header's keyboard button. Nothing
@@ -273,16 +292,27 @@ Syntax notes:
 - **Layout:** on a wide screen the list sits beside the graph. Drag its right edge to resize it
   (or focus the edge and use the arrow keys, `Home` and `End`); double-click the edge for the
   default width. The sidebar button in the list's header hides it, and the same button at the top
-  of the graph's controls brings it back.
+  of the graph's controls brings it back. On a phone the list is a panel under the graph: tap its
+  header to cycle it between half, full and collapsed, or drag the header; it glides to its new
+  height (from wherever a drag let go), while the graph follows along at a quick drawing quality
+  and sharpens once the panel rests.
+- **Motion:** new rows open to their height and deleted ones close their place, so the rows
+  around them slide instead of jumping; the keypad slides up from the bottom edge and away
+  again (the graph and the list take its room at once); keys give a little under the finger.
+  The "Ready to work offline" note of a first visit is brief and small on a phone, and taps go
+  through it to the graph.
 - **Look:** follows the system's light or dark setting. Math is set in STIX Two Text (with `≤`,
   `≥`, `√` and superscripts from STIX Two Math), bundled with the app so it works offline: letters
   in italic, digits, operators and function names upright; radical signs and tall parentheses are
-  drawn to fit. With reduced motion turned on in the system,
-  transitions, the zoom animation (and the flights to fit, frame or follow a chip) and the
-  points of interest's bloom are skipped.
-- **Math keypad:** on touch devices, tapping a row opens the built-in keypad, which has three pages:
-  numbers, functions and letters. The keyboard key on the letters page switches that row to the
-  device keyboard, and the keyboard button in the header switches modes for good. Tapping the
+  drawn to fit; the graph's tick labels use a true minus (−2). With reduced motion turned on in
+  the system, transitions, the zoom animation (and the flights to fit, frame or follow a chip),
+  wheel and arrow glides, flings, the panel's and keypad's slides, rows opening and closing and
+  the points of interest's bloom are all skipped.
+- **Math keypad:** on touch devices, tapping a row opens the built-in keypad, a sheet with three
+  pages (numbers, functions and letters) picked from a segmented control, and an **Undo** key
+  and the hide chevron beside it. Digits and letters sit on raised keys, operators and functions
+  a shade quieter, and ↵ stands out in ink. The keyboard key on the letters page switches that
+  row to the device keyboard, and the keyboard button in the header switches modes for good. Tapping the
   graph or the chevron hides the keypad; on a phone held sideways, the list and keypad sit beside
   the graph. On desktop the keypad is off by default and can be turned on from the header. Its
   keys edit the way typing does: `÷` starts a fraction and `aᵇ` an exponent, `a²` squares what is
@@ -311,14 +341,15 @@ pnpm icons        # regenerate PWA icons from public/logo.svg
 src/engine/       math language: tokenizer, parser, classifier, compiler, document engine (pure TS)
 src/plot/         geometry: viewport, ticks, adaptive samplers, marching squares, points of
                   interest, the trace's tangent lines, exact fits and what they say about a
-                  curve (insights), where a curve is (bounds, for fitting and framing) (pure TS)
+                  curve (insights), where a curve is (bounds, for fitting and framing), fling
+                  inertia (release velocity, glide) (pure TS)
 src/keypad/       on-screen keypad layouts and text-editing logic (pure TS)
 src/mathedit/     typeset rows: a tolerant parse that reads text exactly as the engine does,
                   the render plan (boxes, spacing, error marks), caret stops, the editing
                   commands, which splice the text and check where it landed, and the
                   completions of function names (pure TS)
 src/render/       canvas drawing and the render loop
-src/interaction/  pan / zoom / pinch gestures
+src/interaction/  pan / zoom / pinch / fling gestures, wheel and keys
 src/state/        Solid stores and signals; the undo history core, the autosave format, what
                   stays steady while typing and which unknown names become sliders are plain TS
 src/components/   UI
