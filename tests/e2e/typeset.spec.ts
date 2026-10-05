@@ -59,13 +59,14 @@ test.describe('typeset rows', () => {
     await page.goto('./?plain');
     await expect(exprInput(page, 0)).toBeVisible();
     await typeRow(page, 0, 'y = (x + 1)/(x^2 + 1)');
-    const row = page.locator('.expr-row').first();
-    const typeset = await row.boundingBox();
+    // (The row's math, not the whole row: selected, its insight line may open meanwhile.)
+    const field = page.locator('.expr-row').first().locator('.math-field').first();
+    const typeset = await field.boundingBox();
     await exprInput(page, 0).focus();
     await expect(exprInput(page, 0)).toHaveCSS('opacity', '1');
     await expect(view(page, 0)).toBeHidden();
     // It keeps the row's height meanwhile.
-    const editing = await row.boundingBox();
+    const editing = await field.boundingBox();
     expect(Math.abs((editing?.height ?? 0) - (typeset?.height ?? 0))).toBeLessThan(1);
     // Keys are the input's own: no structure is added.
     await exprInput(page, 1).click();

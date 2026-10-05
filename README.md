@@ -55,17 +55,23 @@ Syntax notes:
   works too: arrows pan, `+` and `-` zoom, `0` resets.
 - **Zoom to fit:** the button between zoom out and reset (its icon a curve in a frame) flies to
   show every curve on the graph, with some room around and the same scale on both axes. A
-  closed curve (a circle, a rose, a parametric loop) and points are shown whole; a curve without
-  end such as `y = x^3 - x` is shown by what is worth seeing of it over the x in view (where it
-  crosses the axes, turns and ends), not by how high it climbs there, and `y = 1/x` without
-  the far reaches of its pole. Pressed again before anything changes, it stays put; with nothing
-  on the graph it goes home like reset.
-- **Framing new curves:** a curve that appears out of sight, such as `y = x + 100` pasted or typed
-  in one go, makes the graph glide over to it (along with what was in view, unless that is much
-  farther away). Only when a row first draws a curve, and only when none of it shows: never for
-  a slider moving, for an edit to a curve that already drew (`y = x + 1` on its way to
-  `y = x + 100` stays where you put the view), for a curve brought back by undo, or within two
-  seconds of you moving the view yourself.
+  closed curve (a circle, a rose, a parametric loop, even a small one far away) and points are
+  shown whole; a curve without end such as `y = x^3 - x` is shown by what is worth seeing of it
+  over the x in view (where it crosses the axes, turns and ends), not by how high it climbs
+  there, and `y = 1/x` without the far reaches of its pole. Such a curve is never zoomed in on
+  closer than a quarter of what the home view shows across, so `y = x + 0.001` doesn't dive
+  into its two intercepts a hair apart. Pressed again, it stays put (`y = sin(x)` doesn't creep
+  outwards); with nothing on the graph it goes home like reset.
+- **Framing new curves:** a curve that appears out of sight, such as `y = x + 100`, makes the
+  graph glide over to it (along with what was in view, unless that is much farther away) once
+  its row settles: you press Enter, leave the row, or stop typing for a second. What it is on
+  the way doesn't count: typing `y = 12x` passes `y = 12`, out of sight, and the graph stays
+  put; typing a circle far away doesn't fly off to `y = x − 50` halfway through. Only when a row
+  first settles into a curve, and only when none of it shows: never for a slider moving, for a
+  later edit to a curve (`y = x + 1`, left, then changed to `y = x + 100` stays where you put
+  the view), for a curve brought back by undo, or within two seconds of you moving the view
+  yourself. A curve without end is brought into view at the scale you had; a closed one is
+  shown whole.
 - **Trace:** hover a curve to see its coordinates, in a pill with the curve's color; its row in the
   list lights up faintly. On touch, tap a curve to pin the trace; with a mouse, click the selected
   curve (the first click on a curve selects it). Near a point of interest the
@@ -98,10 +104,13 @@ Syntax notes:
   new ones are found.
 - **Insights:** a moment after a row settles, a quiet line fades in under it saying what its
   curve is, and nothing it can't check: every model is fitted on a few samples and then held to
-  the curve at many more, near and far.
+  the curve at many more, near and far. It is always one line, so rows keep their height
+  whatever it says; what doesn't fit fades out at its end (widen the list to see more, or Tab
+  along its chips).
   - `y = f(x)` (and `x = f(y)`): an exact polynomial up to degree 4 (a horizontal or vertical
     line, a line with its slope and intercepts, a parabola with its vertex, roots and axis, a
-    cubic or quartic with its roots and turning points), an exponential `a·bˣ + c` (its base,
+    cubic or quartic with its roots and turning points, a double or triple root named once), an
+    exponential `a·bˣ + c` (its base,
     asymptote and intercept), a periodic function (its period, from the arguments of its `sin`,
     `cos`, `tan`… and checked as f(x + P) = f(x), its amplitude and midline; "Sine wave" when it
     is one). Otherwise the selected row counts what is in view ("In view: 3 roots, 2 turning
@@ -111,15 +120,21 @@ Syntax notes:
   - `r = f(θ)`: a circle, a cardioid, a limaçon (with an inner loop, dimpled or convex), a rose
     with its number of petals, an Archimedean spiral; only when the θ range draws it whole.
   - A parametric curve: a segment, a circle or an ellipse, else whether it is closed.
-  - A slider, a variable or a function: "Used by ● y = a sin(x)", the rows that use it.
-  - The selected row also says where it meets the other curves: "meets ● y = x/3 at 3 points"
-    (exactly for two polynomials, otherwise counted in view).
+  - A slider, a variable or a function: "Used by ● y = a sin(x)", the rows that use it (the
+    first three, then "+2 more"). A function of x is drawn too, so `f(x) = x^2` also says it is
+    a parabola.
+  - The selected row also says where it meets the other curves, right after what the curve is
+    first: "meets ● y = x/3 at 3 points", each point once even where they only touch (exactly
+    for two polynomials, first; otherwise counted in view), the first three and then "meets 2
+    more curves".
   - Values at a point are chips: click or tap one ("Vertex (0, −2)") and the graph flies there
     and pins the trace on it; a circle's centre is flown to without a pin. Numbers have four
     significant digits and multiples of π read as such (`2π`).
   - The line dims while you type a change and updates once you pause; a row with an error, or a
     hidden curve, has none. While a slider plays, the lines that depend on it keep up a few times
-    a second. Values (`2^10`) keep showing `= 1024` instead.
+    a second, and a row typed or changed meanwhile is read as usual; what was counted in view
+    waits, dimmed, for the graph to count again once the slider stops. Values (`2^10`) keep
+    showing `= 1024` instead.
 - **Typeset math:** rows you aren't editing show their math typeset, as in a textbook: stacked
   fractions, raised exponents (and `x²` typed with a superscript), subscripts, square and cube
   roots under a radical sign, parentheses and `|x|` bars that grow around a fraction, function

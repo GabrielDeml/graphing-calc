@@ -369,7 +369,7 @@ describe('names and curves together', () => {
   it('the selected curve: where it meets the others, exactly for polynomials', () => {
     const sources = ['y = x/3', 'y = x^2', 'y = -1', 'y = x^2 + 0'];
     expect(said(sources, selected(sources))).toBe(
-      'Parabola · vertex (0, 0) · root 0 · axis x = 0 · same curve as y = x^2 · meets y = x/3 at 2 points',
+      'Parabola · vertex (0, 0) · same curve as y = x^2 · meets y = x/3 at 2 points · root 0 · axis x = 0',
     );
     const cubic = ['y = x', 'y = x^3'];
     expect(said(cubic, selected(cubic))).toContain('meets y = x at 3 points');
@@ -395,14 +395,14 @@ describe('names and curves together', () => {
       meets: new Map([['r0', 2]]),
     };
     expect(said(sources, selected(sources, inView))).toBe(
-      'Line · slope 1 · through (0, 0) · meets y = 1 at 1 point · meets y = 2 at 1 point · ' +
-        'meets y = -x at 1 point · meets 2 more curves',
+      'Line · slope 1 · meets y = 1 at 1 point · meets y = 2 at 1 point · ' +
+        'meets y = -x at 1 point · meets 2 more curves · through (0, 0)',
     );
     // One more is named rather than counted.
     const five = sources.filter((s) => s !== 'y = 5 - x');
     expect(said(five, selected(five, inView))).toBe(
-      'Line · slope 1 · through (0, 0) · meets y = 1 at 1 point · meets y = 2 at 1 point · ' +
-        'meets y = -x at 1 point · meets x^2 + y^2 = 9 at 2 points in view',
+      'Line · slope 1 · meets y = 1 at 1 point · meets y = 2 at 1 point · ' +
+        'meets y = -x at 1 point · meets x^2 + y^2 = 9 at 2 points in view · through (0, 0)',
     );
   });
 
@@ -414,7 +414,7 @@ describe('names and curves together', () => {
       meets: new Map([['r0', 2]]),
     };
     expect(said(sources, selected(sources, inView))).toBe(
-      'Sine wave · period 2π · amplitude 1 · midline y = 0 · meets x^2 + y^2 = 9 at 2 points in view',
+      'Sine wave · period 2π · meets x^2 + y^2 = 9 at 2 points in view · amplitude 1 · midline y = 0',
     );
   });
 });

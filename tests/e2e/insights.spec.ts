@@ -68,6 +68,45 @@ test.describe('the insight line', () => {
     await expect(insight(page, 1)).toContainText('vertex (0, 3)');
   });
 
+  test('a function drawn too says which rows use it', async ({ page }) => {
+    await openApp(page);
+    await setExpr(page, 0, 'f(x) = x^2');
+    await setExpr(page, 1, 'y = f(x - 1)');
+    await expect(insight(page, 0)).toContainText('Parabola · used by');
+    await expect(insight(page, 0).locator('.insight-row')).toHaveCount(1);
+  });
+
+  test('what follows the rows named keeps up as they change', async ({ page }) => {
+    await openApp(page);
+    await setExpr(page, 0, 'a = 1');
+    for (let i = 1; i <= 4; i++) await setExpr(page, i, `y = a + ${i}`);
+    await expect(insight(page, 0)).toContainText('+1 more');
+    await setExpr(page, 5, 'y = a + 5');
+    await expect(insight(page, 0)).toContainText('+2 more');
+    // The selected row's count of meetings, too (touching y = 2 at −1 counts once).
+    await setExpr(page, 6, 'y = x^3 - 3x');
+    await expect(insight(page, 6)).toContainText('y=a+1 at 2 points');
+    await exprInput(page, 6).fill('y = x^3 - 3x + 1');
+    await expect(insight(page, 6)).toContainText('y=a+1 at 3 points');
+  });
+
+  test('keeps up while a slider plays', async ({ page }) => {
+    await openApp(page);
+    await setExpr(page, 0, 'a = 1');
+    await setExpr(page, 1, 'y = x^3 - a x');
+    await expect(insight(page, 1)).toContainText('Cubic');
+    await page.getByRole('button', { name: 'Play a' }).click();
+    // Rows typed in while it plays, one using it and one not, are read within a second…
+    await setExpr(page, 2, 'y = x^2 - 2');
+    await expect(insight(page, 2)).toContainText('Parabola', { timeout: 1500 });
+    await setExpr(page, 3, 'y = x^2 - a');
+    await expect(insight(page, 3)).toContainText('Parabola', { timeout: 1500 });
+    // …and so is an edit to one using it.
+    await exprInput(page, 1).fill('y = x^2 + a');
+    await expect(insight(page, 1)).toContainText('Parabola', { timeout: 1500 });
+    await expect(page.getByRole('button', { name: 'Pause a' })).toBeVisible();
+  });
+
   test('the selected row says where it meets the others', async ({ page }) => {
     await openApp(page);
     await setExpr(page, 0, 'y = x/3');
@@ -179,8 +218,12 @@ test.describe('framing', () => {
     await openApp(page);
     const home = await place(page);
     await setExpr(page, 0, 'y = x');
+    // Left (Escape): it is a curve in view now…
+    await exprInput(page, 0).press('Escape');
     await drawn(page);
+    // …so an edit taking it out of sight leaves the view be.
     await exprInput(page, 0).fill('y = x + 100');
+    await exprInput(page, 0).press('Escape');
     await drawn(page);
     await page.waitForTimeout(500);
     expect(await place(page)).toEqual(home);
@@ -190,8 +233,44 @@ test.describe('framing', () => {
     await expect.poll(() => place(page)).not.toEqual(home);
     const panned = await place(page);
     await setExpr(page, 1, 'y = x - 100');
+    await exprInput(page, 1).press('Escape');
     await drawn(page);
     await page.waitForTimeout(500);
     expect(await place(page)).toEqual(panned);
+  });
+
+  test('a curve typed key by key is framed once the typing pauses', async ({ page }) => {
+    await openApp(page);
+    const input = exprInput(page, 0);
+    await input.click();
+    await input.pressSequentially('y = x + 100', { delay: 30 });
+    await expect.poll(async () => (await center(page))[1], { timeout: 4000 }).toBeCloseTo(100, 3);
+  });
+
+  test('never on the way there', async ({ page }) => {
+    await openApp(page);
+    const input = exprInput(page, 0);
+    await input.click();
+    await drawn(page);
+    const before = await place(page);
+    // `(x-50)` on the way plots y = x − 50, out of sight: the graph doesn't fly there…
+    await input.pressSequentially('(x-50)^2+(y-50)^2=4', { delay: 30 });
+    await expect(input).toHaveValue('(x-50)^2+(y-50)^2=4');
+    expect(await place(page)).toEqual(before);
+    // …but to the circle, once the typing pauses.
+    await expect.poll(async () => (await center(page))[0], { timeout: 4000 }).toBeCloseTo(50, 3);
+    expect((await center(page))[1]).toBeCloseTo(50, 3);
+  });
+
+  test('nor when the curve typed is in view, whatever it was on the way', async ({ page }) => {
+    await openApp(page);
+    const input = exprInput(page, 0);
+    await input.click();
+    await drawn(page);
+    const before = await place(page);
+    // y = 12 on the way is out of sight; y = 12x is in it.
+    await input.pressSequentially('y = 12x', { delay: 30 });
+    await page.waitForTimeout(1500);
+    expect(await place(page)).toEqual(before);
   });
 });

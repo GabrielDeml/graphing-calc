@@ -14,7 +14,8 @@
 //   - r = f(θ): a circle, a cardioid or limaçon, a k-petal rose, an Archimedean spiral;
 //   - parametric: a segment, a circle or an ellipse, else whether it closes;
 //   - a variable or function: the rows that use it;
-//   - the selected curve: where it meets the others (exactly, for two polynomials).
+//   - the selected curve: where it meets the others (exactly, for two polynomials), after what
+//     the curve is first, so it shows in the one line.
 // Numbers read as words do: four significant digits, true minus signs, multiples of π as such.
 
 import { formatPlain, formatValue } from '../engine/format';
@@ -969,7 +970,12 @@ export function rowInsight(input: InsightInput): Insight | null {
       return null;
   }
   const insight = curveInsight(input);
-  const facts = [...used, ...(insight?.facts ?? []), ...meetsFacts(input)];
+  // The line is one line, cut short at its end: where the selected curve meets the others comes
+  // right after what the curve is first (its vertex, its roots), before the rest.
+  const [first = [], rest = []] = insight
+    ? [insight.facts.slice(0, 1), insight.facts.slice(1)]
+    : [];
+  const facts = [...used, ...first, ...meetsFacts(input), ...rest];
   if (facts.length === 0) return insight?.title ? { title: insight.title, facts } : null;
   return { title: insight?.title, facts };
 }
