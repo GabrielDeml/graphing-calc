@@ -11,10 +11,12 @@
 //   - parametric and polar curves: their whole parameter range, as drawn, just as robust;
 //   - points: their coordinates;
 //   - an implicit curve F = 0: where F changes sign on grids from the view outwards (and then
-//     inwards, for a curve too small to show on the view's grid). A curve that runs out of every
-//     square tried (a line, a hyperbola) has no box of its own: the part in the first square it
-//     shows in stands for it.
-// fitViewport turns a box into a view that shows it with some room around, equally scaled.
+//     down into where |F| was least, for a curve too small to show on those grids: a small
+//     circle far off). A curve that runs out of every square tried (a line, a hyperbola) has no
+//     box of its own: the part in the first square it shows in stands for it.
+// A box of a curve that goes on past it (y = f(x), a line) is `open`: where it is worth seeing,
+// not all of it. fitViewport turns a box into a view that shows it with some room around,
+// equally scaled; fitCurves does so for several, an open one counted at least so big.
 
 import type { Fn1, Fn2, PlotItem } from '../engine/types';
 import type { Bounds, RowGeometry, Viewport } from './types';
@@ -26,10 +28,15 @@ const SAMPLES = 1024;
 const CLIP = 0.05;
 /** Wider ranges (×4 each) tried for y = f(x) defined nowhere in view, and for implicit curves. */
 const MAX_WIDEN = 8;
-/** Narrower squares (÷4 each) tried for an implicit curve too small for the view's grid. */
+/** Grids (each GRID / 4 times finer) tried down into where |F| was least, for a tiny curve. */
 const MAX_NARROW = 6;
 /** Cells of an implicit search grid, per side. */
-const GRID = 96;
+const GRID = 64;
+/**
+ * Evaluations of F an implicit search may make, so a search that finds nothing (x² + y² = −1,
+ * sin(xy) = 2) is over in a few milliseconds: every grid outwards and down, about.
+ */
+const IMPLICIT_BUDGET = (MAX_WIDEN + 1 + MAX_NARROW) * (GRID + 1) ** 2;
 /** Bisection steps on a grid edge where F changes sign. */
 const EDGE_STEPS = 24;
 /** A sign change is a crossing once |F| falls below this fraction of its values at the ends. */
@@ -40,6 +47,11 @@ const MAX_PARAMETER_RANGE = 1e6;
 const FIT_MARGIN = 0.08;
 /** …this many px (the controls float over the top right corner). */
 const FIT_MARGIN_PX = 32;
+/**
+ * How big an open curve's box counts as at least, in a fit: a quarter of what the home view
+ * shows across (src/plot/viewport.ts: 20 units).
+ */
+export const FIT_MIN_OPEN = 5;
 /** World-aligned offset, irrational so periodic functions cannot alias with the samples. */
 const PHI = 0.3819660112501051;
 
@@ -94,6 +106,12 @@ function robustBox(xs: ArrayLike<number>, ys: ArrayLike<number>): Bounds | null 
   return box;
 }
 
+/** Where a curve is, as seen from a view: its box, and whether it goes on past it (`open`). */
+export interface CurveBounds {
+  box: Bounds;
+  open: boolean;
+}
+
 function extend(box: Bounds | null, x: number, y: number): Bounds {
   if (!box) return { xmin: x, xmax: x, ymin: y, ymax: y };
   return {
@@ -139,7 +157,8 @@ function features(f: Fn1, us: Float64Array, vs: Float64Array): { u: number; v: n
   for (let i = 0; i < n; i++) {
     const v = vs[i];
     if (!Number.isFinite(v)) continue;
-    if (v === 0) out.push({ u: us[i], v: 0 });
+    // On the axis (a run of it, floor x over [0, 1), only where the run starts and ends).
+    if (v === 0 && !(vs[i - 1] === 0 && vs[i + 1] === 0)) out.push({ u: us[i], v: 0 });
     const prev = vs[i - 1];
     const next = vs[i + 1];
     if ((i > 0 && !Number.isFinite(prev)) || (i < n - 1 && !Number.isFinite(next))) keep(us[i], v);
@@ -155,12 +174,14 @@ function features(f: Fn1, us: Float64Array, vs: Float64Array): { u: number; v: n
 
 /**
  * v = f(u) over the u the view shows, or the nearest wider range where f is defined at all: the
- * box of its features there, else of its values.
+ * box of its features there, else of its values. Open unless f ends on both sides in the range
+ * (√(4 − x²)).
  */
-function explicitBounds(f: Fn1, axis: 'x' | 'y', view: Bounds): Bounds | null {
+function explicitBounds(f: Fn1, axis: 'x' | 'y', view: Bounds): CurveBounds | null {
   const [lo, hi] = axis === 'x' ? [view.xmin, view.xmax] : [view.ymin, view.ymax];
   const mid = (lo + hi) / 2;
-  const half = (hi - lo) / 2;
+  // A few samples past the ends, so a turn right at one (where a fit put it) is seen as one.
+  const half = ((hi - lo) / 2) * (1 + 4 / SAMPLES);
   for (let k = 0; k <= MAX_WIDEN; k++) {
     const us = samples(mid - half * 4 ** k, mid + half * 4 ** k);
     const vs = us.map(f);
@@ -169,7 +190,7 @@ function explicitBounds(f: Fn1, axis: 'x' | 'y', view: Bounds): Bounds | null {
       box = axis === 'x' ? extend(box, u, v) : extend(box, v, u);
     }
     box ??= axis === 'x' ? robustBox(us, vs) : robustBox(vs, us);
-    if (box) return box;
+    if (box) return { box, open: Number.isFinite(vs[0]) || Number.isFinite(vs[vs.length - 1]) };
   }
   return null;
 }
@@ -183,11 +204,12 @@ function parameterRange(min: number, max: number): [number, number] | null {
   return [lo, Math.min(max, lo + MAX_PARAMETER_RANGE)];
 }
 
-function curveBounds(x: Fn1, y: Fn1, min: number, max: number): Bounds | null {
+function pathBounds(x: Fn1, y: Fn1, min: number, max: number): CurveBounds | null {
   const range = parameterRange(min, max);
   if (!range) return null;
   const ts = samples(range[0], range[1], 4 * SAMPLES);
-  return robustBox(ts.map(x), ts.map(y));
+  const box = robustBox(ts.map(x), ts.map(y));
+  return box && { box, open: false };
 }
 
 /** A root of g between a and b (g(a), g(b) of opposite signs), or null where g only jumps there. */
@@ -209,16 +231,35 @@ function edgeRoot(g: Fn1, a: number, ga: number, b: number, gb: number): number 
   return Math.abs(g(m)) <= CROSS_RATIO * Math.max(Math.abs(ga), Math.abs(gb)) ? m : null;
 }
 
-/** The box of the points where F changes sign on a GRID × GRID grid over `sq`. */
-function crossings(F: Fn2, sq: Bounds): Bounds | null {
+/** A grid point where |F| was least, and its grid's cell (the size of a square to look in). */
+interface Low {
+  x: number;
+  y: number;
+  size: number;
+  cell: number;
+}
+
+/**
+ * The box of the points where F changes sign on a GRID × GRID grid over `sq`, and the grid
+ * point where |F| is least.
+ */
+function crossings(F: Fn2, sq: Bounds): { box: Bounds | null; low: Low | null } {
   const n = GRID;
   const hx = (sq.xmax - sq.xmin) / n;
   const hy = (sq.ymax - sq.ymin) / n;
   const xs = Array.from({ length: n + 1 }, (_, i) => sq.xmin + i * hx);
   const ys = Array.from({ length: n + 1 }, (_, j) => sq.ymin + j * hy);
   const vals = new Float64Array((n + 1) * (n + 1));
+  let low: Low | null = null;
   for (let j = 0; j <= n; j++) {
-    for (let i = 0; i <= n; i++) vals[j * (n + 1) + i] = F(xs[i], ys[j]);
+    for (let i = 0; i <= n; i++) {
+      const v = F(xs[i], ys[j]);
+      vals[j * (n + 1) + i] = v;
+      const size = Math.abs(v);
+      if (size < (low?.size ?? Number.POSITIVE_INFINITY)) {
+        low = { x: xs[i], y: ys[j], size, cell: Math.max(hx, hy) };
+      }
+    }
   }
   let box: Bounds | null = null;
   const at = (i: number, j: number) => vals[j * (n + 1) + i];
@@ -240,7 +281,7 @@ function crossings(F: Fn2, sq: Bounds): Bounds | null {
       }
     }
   }
-  return box;
+  return { box, low };
 }
 
 /** Whether a box found on a grid over `sq` reaches its outer cells (the curve may go on). */
@@ -255,44 +296,79 @@ function reachesEdge(box: Bounds, sq: Bounds): boolean {
   );
 }
 
-function implicitBounds(F: Fn2, view: Bounds): Bounds | null {
+function implicitBounds(F0: Fn2, view: Bounds): CurveBounds | null {
+  let evals = IMPLICIT_BUDGET;
+  const F: Fn2 = (x, y) => {
+    evals--;
+    return F0(x, y);
+  };
+  const affordable = () => evals >= (GRID + 1) ** 2;
+  const square = (h: number, x: number, y: number): Bounds => ({
+    xmin: x - h,
+    xmax: x + h,
+    ymin: y - h,
+    ymax: y + h,
+  });
+
+  /**
+   * The curve found as `box` on the grid over square(h, x, y), followed: out while it runs out
+   * of the square (a big circle closes in a wider one; a line never does, and its part in the
+   * first square stands for it), in while it is only a few cells across (the grid may have
+   * caught a small curve on a line or two, or at a point).
+   */
+  const follow = (box: Bounds, h: number, x: number, y: number): CurveBounds => {
+    if (reachesEdge(box, square(h, x, y))) {
+      for (let j = 1; j <= 2 && affordable(); j++) {
+        const wide = square(h * 4 ** j, x, y);
+        const all = crossings(F, wide).box;
+        if (all && !reachesEdge(all, wide)) return { box: all, open: false };
+      }
+      return { box, open: true };
+    }
+    let found = box;
+    let cell = (2 * h) / GRID;
+    const size = (b: Bounds) => Math.max(b.xmax - b.xmin, b.ymax - b.ymin);
+    for (let k = 0; k < MAX_NARROW && size(found) < 4 * cell && affordable(); k++) {
+      const h2 = Math.max(2 * cell, size(found));
+      const finer = crossings(
+        F,
+        square(h2, (found.xmin + found.xmax) / 2, (found.ymin + found.ymax) / 2),
+      ).box;
+      if (!finer) break;
+      found = finer;
+      cell = (2 * h2) / GRID;
+    }
+    return { box: found, open: false };
+  };
+
   const cx = (view.xmin + view.xmax) / 2;
   const cy = (view.ymin + view.ymax) / 2;
   const half = Math.max(view.xmax - view.xmin, view.ymax - view.ymin) / 2;
-  const square = (h: number): Bounds => ({
-    xmin: cx - h,
-    xmax: cx + h,
-    ymin: cy - h,
-    ymax: cy + h,
-  });
+  let low: Low | null = null;
   // Outwards from the view, until the curve shows…
-  for (let k = 0; k <= MAX_WIDEN; k++) {
-    const sq = square(half * 4 ** k);
-    const box = crossings(F, sq);
-    if (!box) continue;
-    if (!reachesEdge(box, sq)) return box;
-    // …and on, while it runs out of the square: a big circle closes in a wider one…
-    for (let j = k + 1; j <= Math.min(MAX_WIDEN, k + 2); j++) {
-      const wide = square(half * 4 ** j);
-      const all = crossings(F, wide);
-      if (all && !reachesEdge(all, wide)) return all;
-    }
-    // …a line never does: its part in the first square stands for it.
-    return box;
+  for (let k = 0; k <= MAX_WIDEN && affordable(); k++) {
+    const h = half * 4 ** k;
+    const found = crossings(F, square(h, cx, cy));
+    if (found.box) return follow(found.box, h, cx, cy);
+    if (found.low && found.low.size < (low?.size ?? Number.POSITIVE_INFINITY)) low = found.low;
   }
-  // A curve too small for the view's grid, near its middle.
-  for (let k = 1; k <= MAX_NARROW; k++) {
-    const box = crossings(F, square(half / 4 ** k));
-    if (box) return box;
+  // …or, too small for those grids (a small circle far off, a tiny one in view), down into
+  // where |F| was least, a few cells around it each time.
+  for (let k = 1; k <= MAX_NARROW && low && affordable(); k++) {
+    const h = 2 * low.cell;
+    const { x, y } = low;
+    const found = crossings(F, square(h, x, y));
+    if (found.box) return follow(found.box, h, x, y);
+    low = found.low;
   }
   return null;
 }
 
 /**
- * The box around what a row draws, as seen from `view` (an explicit curve over the view's range,
- * an unending implicit one near it); null when it draws nothing anywhere this finds.
+ * Where a row's curve is, as seen from `view` (an explicit curve over the view's range, an
+ * unending implicit one near it); null when it draws nothing anywhere this finds.
  */
-export function plotBounds(plot: PlotItem, view: Viewport): Bounds | null {
+export function curveBounds(plot: PlotItem, view: Viewport): CurveBounds | null {
   const b = viewBounds(view);
   switch (plot.kind) {
     case 'explicitY':
@@ -300,10 +376,10 @@ export function plotBounds(plot: PlotItem, view: Viewport): Bounds | null {
     case 'explicitX':
       return explicitBounds(plot.f, 'y', b);
     case 'parametric':
-      return curveBounds(plot.fx, plot.fy, plot.tMin(), plot.tMax());
+      return pathBounds(plot.fx, plot.fy, plot.tMin(), plot.tMax());
     case 'polar': {
       const r = plot.r;
-      return curveBounds(
+      return pathBounds(
         (t) => r(t) * Math.cos(t),
         (t) => r(t) * Math.sin(t),
         plot.thetaMin(),
@@ -316,11 +392,62 @@ export function plotBounds(plot: PlotItem, view: Viewport): Bounds | null {
         const [x, y] = [p.x(), p.y()];
         if (Number.isFinite(x) && Number.isFinite(y)) box = extend(box, x, y);
       }
-      return box;
+      return box && { box, open: false };
     }
     case 'implicit':
       return implicitBounds(plot.F, b);
   }
+}
+
+/** The box around what a row draws, as seen from `view` (see curveBounds). */
+export function plotBounds(plot: PlotItem, view: Viewport): Bounds | null {
+  return curveBounds(plot, view)?.box ?? null;
+}
+
+/** Room kept around a fitted box, in px. */
+function fitMargin(view: Viewport): number {
+  return Math.max(FIT_MARGIN_PX, FIT_MARGIN * Math.min(view.width, view.height));
+}
+
+/**
+ * The part of `view` a fit fills (inside its margins). Read over this much of the view, a curve
+ * that fills it (sin x) fits to the same view again, rather than a little wider at each press.
+ */
+export function fitWindow(view: Viewport): Viewport {
+  const m = fitMargin(view);
+  return {
+    ...view,
+    width: Math.max(1, view.width - 2 * m),
+    height: Math.max(1, view.height - 2 * m),
+  };
+}
+
+/** How much of the world the window of `view` shows across its shorter side. */
+export function windowSpan(view: Viewport): number {
+  const w = fitWindow(view);
+  return Math.min(w.width / w.ppuX, w.height / w.ppuY);
+}
+
+/** `box`, grown about its middle to at least `min` across each way. */
+function atLeast(box: Bounds, min: number): Bounds {
+  const grow = (lo: number, hi: number): [number, number] => {
+    const pad = Math.max(0, (min - (hi - lo)) / 2);
+    return [lo - pad, hi + pad];
+  };
+  const [xmin, xmax] = grow(box.xmin, box.xmax);
+  const [ymin, ymax] = grow(box.ymin, box.ymax);
+  return { xmin, xmax, ymin, ymax };
+}
+
+/**
+ * The box to fit for some curves: theirs together, an open one's counted at least `minOpen`
+ * across (it is only where the curve is worth seeing: a fit must not dive into the intercepts
+ * of y = x + 0.001, a hair apart). Null for none.
+ */
+export function curvesBox(curves: readonly CurveBounds[], minOpen: number): Bounds | null {
+  let box: Bounds | null = null;
+  for (const c of curves) box = unionBounds(box, c.open ? atLeast(c.box, minOpen) : c.box);
+  return box;
 }
 
 /**
@@ -329,7 +456,7 @@ export function plotBounds(plot: PlotItem, view: Viewport): Bounds | null {
  * single point is centred at the view's scale.
  */
 export function fitViewport(box: Bounds, view: Viewport): Viewport {
-  const margin = Math.max(FIT_MARGIN_PX, FIT_MARGIN * Math.min(view.width, view.height));
+  const margin = fitMargin(view);
   const w = Math.max(1, view.width - 2 * margin);
   const h = Math.max(1, view.height - 2 * margin);
   const cx = (box.xmin + box.xmax) / 2;

@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import type { Fn1, Fn2, PlotItem } from '../engine/types';
-import { drawsIn, fitViewport, plotBounds, robustRange, unionBounds } from './bounds';
+import {
+  curveBounds,
+  curvesBox,
+  drawsIn,
+  FIT_MIN_OPEN,
+  fitViewport,
+  fitWindow,
+  plotBounds,
+  robustRange,
+  unionBounds,
+  windowSpan,
+} from './bounds';
 import { buildRowGeometry } from './scene';
 import type { Bounds, Viewport } from './types';
 import { homeViewport, viewBounds } from './viewport';
@@ -256,6 +267,144 @@ describe('plotBounds', () => {
         home,
       ),
     ).toBeNull();
+  });
+});
+
+describe('curveBounds', () => {
+  it('tells a curve that goes on past its box from one that closes', () => {
+    expect(
+      curveBounds(
+        fx((x) => x * x),
+        home,
+      )?.open,
+    ).toBe(true);
+    expect(
+      curveBounds(
+        fx((x) => 1 / x),
+        home,
+      )?.open,
+    ).toBe(true);
+    // Ends on both sides.
+    expect(
+      curveBounds(
+        fx((x) => Math.sqrt(4 - x * x)),
+        home,
+      )?.open,
+    ).toBe(false);
+    expect(
+      curveBounds(
+        fx((x) => Math.sqrt(x)),
+        home,
+      )?.open,
+    ).toBe(true);
+    expect(
+      curveBounds(
+        implicit((x, y) => x * x + y * y - 9),
+        home,
+      )?.open,
+    ).toBe(false);
+    expect(
+      curveBounds(
+        implicit((x, y) => x + y - 1),
+        home,
+      )?.open,
+    ).toBe(true);
+    expect(curveBounds(parametric(Math.cos, Math.sin), home)?.open).toBe(false);
+  });
+
+  it('a run of zeros counts at its ends (floor x over [0, 1))', () => {
+    const box = plotBounds(fx(Math.floor), home);
+    expect(box?.xmin).toBeCloseTo(0, 1);
+    expect(box?.xmax).toBeCloseTo(1, 1);
+  });
+
+  it('finds a small curve far off, down where |F| is least', () => {
+    const circle = (cx: number, cy: number, r: number) =>
+      implicit((x, y) => (x - cx) ** 2 + (y - cy) ** 2 - r * r);
+    expectBox(
+      plotBounds(circle(600, 600, 3), home),
+      { xmin: 597, xmax: 603, ymin: 597, ymax: 603 },
+      1,
+    );
+    expectBox(
+      plotBounds(circle(300, 300, 1), home),
+      { xmin: 299, xmax: 301, ymin: 299, ymax: 301 },
+      1,
+    );
+    expectBox(
+      plotBounds(circle(1000, 0, 1), home),
+      { xmin: 999, xmax: 1001, ymin: -1, ymax: 1 },
+      1,
+    );
+    // Off the view's middle, too small for its grid.
+    expectBox(
+      plotBounds(circle(0.1, 0.1, 0.001), home),
+      { xmin: 0.099, xmax: 0.101, ymin: 0.099, ymax: 0.101 },
+      4,
+    );
+  });
+
+  it('gives up on an equation with no curve within a budget', () => {
+    for (const F of [
+      (x: number, y: number) => x * x + y * y + 1,
+      (x: number, y: number) => Math.sin(x * y) - 2,
+      (x: number, y: number) => Math.sin(x * x + y * y) + Math.cos(3 * x) * Math.sin(5 * y) - 3,
+    ]) {
+      let evals = 0;
+      const counted = (x: number, y: number) => {
+        evals++;
+        return F(x, y);
+      };
+      expect(plotBounds(implicit(counted), home)).toBeNull();
+      expect(evals).toBeLessThan(70_000);
+    }
+  });
+});
+
+describe('fitting curves (Zoom to fit)', () => {
+  /** What Zoom to fit does from `view`. */
+  const zoomToFit = (plots: PlotItem[], view: Viewport) => {
+    const curves = plots.flatMap((p) => curveBounds(p, fitWindow(view)) ?? []);
+    const box = curvesBox(curves, FIT_MIN_OPEN);
+    return box ? fitViewport(box, view) : null;
+  };
+
+  it('never dives into features a hair apart on a curve with no end', () => {
+    for (const f of [(x: number) => x + 0.001, Math.floor, (x: number) => x * x - 1e-4]) {
+      const v = zoomToFit([fx(f)], home);
+      expect(v).not.toBeNull();
+      // At most a quarter of what home shows across, about.
+      expect(v?.ppuX).toBeLessThanOrEqual((home.height / FIT_MIN_OPEN) * 1.0001);
+    }
+    // Still zoomed in on x³ − x's roots and turns.
+    expect(zoomToFit([fx((x) => x ** 3 - x)], home)?.ppuX).toBeGreaterThan(2 * home.ppuX);
+  });
+
+  it('a curve that closes is shown whole however small', () => {
+    const v = zoomToFit([implicit((x, y) => x * x + y * y - 0.01)], home);
+    const b = viewBounds(v as Viewport);
+    expect(b.ymax - b.ymin).toBeLessThan(0.4);
+  });
+
+  it('pressed again, it stays (sin x filling the view)', () => {
+    for (const f of [Math.sin, (x: number) => x ** 3 - x, (x: number) => x + 100]) {
+      const once = zoomToFit([fx(f)], home) as Viewport;
+      const twice = zoomToFit([fx(f)], once) as Viewport;
+      expect(twice.ppuX / once.ppuX).toBeCloseTo(1, 2);
+      expect(twice.cx).toBeCloseTo(once.cx, 1);
+      expect(twice.cy).toBeCloseTo(once.cy, 1);
+    }
+  });
+
+  it('frames an open curve at the scale of the view (windowSpan)', () => {
+    const curve = curveBounds(
+      fx((x) => x + 100),
+      home,
+    );
+    const box = curvesBox(curve ? [curve] : [], windowSpan(home));
+    const v = fitViewport(box as Bounds, home);
+    expect(v.ppuX).toBeCloseTo(home.ppuX, 9);
+    expect(v.cy).toBeCloseTo(100, 9);
   });
 });
 

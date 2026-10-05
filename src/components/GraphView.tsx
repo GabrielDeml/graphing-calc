@@ -7,6 +7,7 @@ import {
   onCleanup,
   onMount,
   Show,
+  untrack,
 } from 'solid-js';
 import { attachGestures } from '../interaction/gestures';
 import type { Poi, PoiKind } from '../plot/poi';
@@ -41,6 +42,11 @@ const PICK_PX = 8;
 const PICK_TOUCH_PX = 32;
 /** A drag from this close to the pinned trace's dot scrubs along its curve. */
 const GRAB_PX = 24;
+/**
+ * A new curve out of sight is framed once its row settles: its edit ends (Enter, leaving the
+ * row) or its typing pauses this long. Not on the way there: `y = 9` on the way to `y = 9x`.
+ */
+const FRAME_SETTLE_MS = 1000;
 
 const KIND_PILL_NAMES: Record<Exclude<PoiKind, 'intersection'>, string> = {
   max: 'Maximum',
@@ -252,23 +258,58 @@ export function GraphView() {
     );
 
     /**
-     * Rows that have drawn a curve, ever (an undo bringing one back, or a curve shown again, is
-     * no new curve). Those plotting as the graph opens (a restored list) are seen already.
+     * Rows whose curve has been seen settled (see FRAME_SETTLE_MS): an edit to one later is no
+     * new curve, nor is one an undo brings back or a hidden one shown again. Those plotting as
+     * the graph opens (a restored list) are seen already.
      */
-    const plotted = new Set<string>();
+    const seen = new Set<string>();
+    /** Rows plotting for the first time, until they settle: what they were last, and a timer. */
+    const pending = new Map<string, { source: string; timer?: ReturnType<typeof setTimeout> }>();
     let opened = false;
+    /** A new curve settled: it is seen, and framed if none of it shows (frameNew). */
+    const settle = (id: string) => {
+      clearTimeout(pending.get(id)?.timer);
+      pending.delete(id);
+      const res = untrack(analysis).byId.get(id);
+      const row = doc.rows.find((r) => r.id === id);
+      // Broken just now: it is still to become a curve.
+      if (!row || res?.status !== 'ok' || !res.plot) return;
+      seen.add(id);
+      if (!row.hidden) c.frameNew([id]);
+    };
+    // Leaving a row (Enter, a click elsewhere) settles it at once.
+    createEffect(
+      on(
+        ui.editingRowId,
+        (_, prev) => {
+          if (prev && pending.has(prev)) settle(prev);
+        },
+        { defer: true },
+      ),
+    );
+    onCleanup(() => {
+      for (const p of pending.values()) clearTimeout(p.timer);
+    });
     createEffect(() => {
       const a = analysis();
       const held = steadyRows().held;
       const rows: SceneRow[] = [];
-      /** Rows drawing a curve for the first time, framed if none of it shows. */
-      const fresh: string[] = [];
+      /** New curves not being typed in (a tangent added, an undo): they settle as they are. */
+      const settled: string[] = [];
+      const editing = untrack(ui.editingRowId);
       for (const row of doc.rows) {
         const res = a.byId.get(row.id);
         const plots = res?.status === 'ok' && !!res.plot;
-        if (plots && !plotted.has(row.id)) {
-          plotted.add(row.id);
-          if (opened && !row.hidden) fresh.push(row.id);
+        if (plots && !seen.has(row.id)) {
+          const p = pending.get(row.id);
+          if (!opened || row.hidden) seen.add(row.id);
+          else if (row.id !== editing) settled.push(row.id);
+          else if (p?.source !== row.source) {
+            // Typed in: it settles once the typing pauses (a slider moving changes no source).
+            clearTimeout(p?.timer);
+            const timer = setTimeout(() => settle(row.id), FRAME_SETTLE_MS);
+            pending.set(row.id, { source: row.source, timer });
+          }
         }
         if (row.hidden) continue;
         if (res?.status === 'ok' && res.plot) {
@@ -290,7 +331,7 @@ export function GraphView() {
       palette(); // repaint when the scheme changes
       const active = document.activeElement;
       c.setScene(rows, a.values, !!active?.classList.contains('math-input'));
-      if (fresh.length > 0) c.frameNew(fresh);
+      for (const id of settled) settle(id);
       opened = true;
     });
 

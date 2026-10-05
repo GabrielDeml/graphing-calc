@@ -1,5 +1,15 @@
 import type { PlotItem } from '../engine/types';
-import { drawsIn, fitViewport, plotBounds, unionBounds } from '../plot/bounds';
+import {
+  type CurveBounds,
+  curveBounds,
+  curvesBox,
+  drawsIn,
+  FIT_MIN_OPEN,
+  fitViewport,
+  fitWindow,
+  unionBounds,
+  windowSpan,
+} from '../plot/bounds';
 import { type NearestHit, nearestOnPolyline, nearestPoint, traceExplicit } from '../plot/nearest';
 import { findPois, type Poi, type PoiCensus, type PoiCurve } from '../plot/poi';
 import { SceneCache } from '../plot/scene';
@@ -153,6 +163,7 @@ export class GraphController {
   private fitted: string | null = null;
   /** Rows that have just become curves, to frame once they are drawn (see frameNew). */
   private toFrame: readonly string[] | null = null;
+  private frameTimer: ReturnType<typeof setTimeout> | undefined;
   private poiTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
@@ -188,6 +199,7 @@ export class GraphController {
     cancelAnimationFrame(this.animation);
     clearTimeout(this.idleTimer);
     clearTimeout(this.poiTimer);
+    clearTimeout(this.frameTimer);
     for (const d of this.disposers) d();
   }
 
@@ -315,20 +327,22 @@ export class GraphController {
 
   /**
    * Fly to show every curve on the graph, with room around, equally scaled (src/plot/bounds.ts);
-   * home when there are none. Pressed again before anything changes, it stays: a curve with no
-   * end (sin x) is read over the x in view, which each fit would widen a little more.
+   * home when there are none. A curve with no end (sin x) is read over the part of the view a
+   * fit fills, so a second press stays put; one that shows nothing to fit (a curve this can't
+   * find) leaves the view as it is.
    */
   zoomToFit(): void {
     const base = this.animTarget ?? this.view;
     if (this.fitted === viewKey(base)) return;
-    let box: Bounds | null = null;
-    for (const row of this.rows) {
-      if (!row.ghost) box = unionBounds(box, this.boundsOf(row, base));
-    }
-    if (!box) {
+    const rows = this.rows.filter((r) => !r.ghost);
+    if (rows.length === 0) {
       this.home();
       return;
     }
+    const window = fitWindow(base);
+    const curves = rows.flatMap((row) => this.boundsOf(row, window) ?? []);
+    const box = curvesBox(curves, FIT_MIN_OPEN);
+    if (!box) return;
     const target = fitViewport(box, base);
     this.animateTo(target, FIT_MS);
     this.fitted = viewKey(target);
@@ -354,35 +368,44 @@ export class GraphController {
 
   /**
    * Frame the new curves when none of them shows, together with what is in view when that is
-   * not much farther out. Never while the user has just moved the view or it is animating.
+   * not much farther out. Never while the user has just moved the view or it is animating. A
+   * curve with no end (y = x + 100) is brought into view at the view's scale; one that closes is
+   * shown whole. Where they are is looked for after the frame (it can take a while: an implicit
+   * curve far off), and dropped if anything changed meanwhile.
    */
   private frameRows(ids: readonly string[]): void {
     if (performance.now() - this.userMoved < USER_MOVE_MS || this.animTarget) return;
-    const view = viewBounds(this.view);
+    const bounds = viewBounds(this.view);
     const rows = this.rows.filter((r) => ids.includes(r.id) && !r.ghost);
-    let own: Bounds | null = null;
     for (const row of rows) {
       const geometry = this.geometries.get(row.id);
-      if (!geometry || drawsIn(geometry, view)) return;
-      own = unionBounds(own, this.boundsOf(row, this.view));
+      if (!geometry || drawsIn(geometry, bounds)) return;
     }
-    if (!own) return;
-    let target = fitViewport(own, this.view);
+    if (rows.length === 0) return;
     const shown = this.rows.some((r) => {
       const g = !rows.includes(r) && !r.ghost && this.geometries.get(r.id);
-      return g && drawsIn(g, view);
+      return g && drawsIn(g, bounds);
     });
-    if (shown) {
-      const wide = fitViewport(unionBounds(own, view) as Bounds, this.view);
-      if (wide.ppuX * MAX_UNION_ZOOM_OUT >= target.ppuX) target = wide;
-    }
-    this.animateTo(target, FIT_MS, false, false);
+    const [view, scene] = [this.view, this.rows];
+    clearTimeout(this.frameTimer);
+    this.frameTimer = setTimeout(() => {
+      if (this.view !== view || this.rows !== scene || this.animTarget) return;
+      const curves = rows.flatMap((row) => this.boundsOf(row, view) ?? []);
+      const own = curvesBox(curves, windowSpan(view));
+      if (!own) return;
+      let target = fitViewport(own, view);
+      if (shown) {
+        const wide = fitViewport(unionBounds(own, bounds) as Bounds, view);
+        if (wide.ppuX * MAX_UNION_ZOOM_OUT >= target.ppuX) target = wide;
+      }
+      this.animateTo(target, FIT_MS, false, false);
+    });
   }
 
   /** Where a row's curve is (null where it draws nothing to be found, or fails). */
-  private boundsOf(row: SceneRow, view: Viewport): Bounds | null {
+  private boundsOf(row: SceneRow, view: Viewport): CurveBounds | null {
     try {
-      return plotBounds(row.plot, view);
+      return curveBounds(row.plot, view);
     } catch (err) {
       console.warn('Failed to find the bounds of row', row.id, err);
       return null;
