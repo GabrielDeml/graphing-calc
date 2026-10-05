@@ -310,8 +310,8 @@ export class GraphController {
 
   /**
    * Fly to show every curve on the graph, with room around, equally scaled (src/plot/bounds.ts);
-   * home when there are none. Pressed again before the view moves, it stays: a curve with no end
-   * (x²) is fitted over the x in view, which a fit widens.
+   * home when there are none. Pressed again before anything changes, it stays: a curve with no
+   * end (sin x) is read over the x in view, which each fit would widen a little more.
    */
   zoomToFit(): void {
     const base = this.animTarget ?? this.view;
