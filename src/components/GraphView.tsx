@@ -11,11 +11,13 @@ import {
 import { attachGestures } from '../interaction/gestures';
 import type { Poi, PoiKind } from '../plot/poi';
 import { isStraight, pointRow, slopeAt, tangentRow } from '../plot/tangent';
+import { viewBounds } from '../plot/viewport';
 import { GraphController, type SceneRow, type TraceHit } from '../render/controller';
 import { analysis, steadyRows } from '../state/analysis';
 import { noteView } from '../state/autosave';
 import { doc } from '../state/doc';
 import { offerUndo } from '../state/historyUi';
+import { insightSources } from '../state/insight';
 import { isCoarsePointer, keypad } from '../state/keypad';
 import { savedState } from '../state/persist';
 import { addTraceRow } from '../state/rowActions';
@@ -206,8 +208,16 @@ export function GraphView() {
       const hit = c.trace(sx, sy, PICK_TOUCH_PX, { rowId, snapPx: 1 });
       if (hit) pin(hit);
     };
-    c.onPois = (pois, view, rowId, stale) => {
+    c.onPois = (pois, view, rowId, stale, census) => {
       setPoiSet(pois.length > 0 && rowId !== null ? { rowId, pois, view, stale } : null);
+      // What the row's insight line counts in view.
+      if (census && rowId !== null) {
+        const { kinds: counts, meets, plot } = census;
+        insightSources.setCensus(rowId, {
+          plot,
+          facts: { bounds: viewBounds(view), counts, meets },
+        });
+      }
       if (stale || anchor?.mode !== 'pinned' || !anchor.seek) return;
       // The first search since a tap picked a curve: snap the pin to a point near the tap, if
       // it found one on that curve. Either way the tap stops looking (a later zoom or slider
@@ -223,13 +233,42 @@ export function GraphView() {
 
     createEffect(on(ui.homeRequests, () => c.home(), { defer: true }));
 
+    // An insight's chip: fly there, and pin the trace on the point when it is on the curve (once
+    // the flight brings it into view, the next frames' retrace finds it).
+    createEffect(
+      on(
+        ui.flight,
+        (f) => {
+          if (!f) return;
+          c.flyTo(f.x, f.y);
+          if (!f.pin || !c.hasRow(f.rowId)) return;
+          anchor = { mode: 'pinned', x: f.x, y: f.y, rowId: f.rowId };
+          retrace();
+        },
+        { defer: true },
+      ),
+    );
+
+    /**
+     * Rows that have drawn a curve, ever (an undo bringing one back, or a curve shown again, is
+     * no new curve). Those plotting as the graph opens (a restored list) are seen already.
+     */
+    const plotted = new Set<string>();
+    let opened = false;
     createEffect(() => {
       const a = analysis();
       const held = steadyRows().held;
       const rows: SceneRow[] = [];
+      /** Rows drawing a curve for the first time, framed if none of it shows. */
+      const fresh: string[] = [];
       for (const row of doc.rows) {
-        if (row.hidden) continue;
         const res = a.byId.get(row.id);
+        const plots = res?.status === 'ok' && !!res.plot;
+        if (plots && !plotted.has(row.id)) {
+          plotted.add(row.id);
+          if (opened && !row.hidden) fresh.push(row.id);
+        }
+        if (row.hidden) continue;
         if (res?.status === 'ok' && res.plot) {
           rows.push({ id: row.id, plot: res.plot, deps: res.deps, colorIndex: row.colorIndex });
           continue;
@@ -249,6 +288,8 @@ export function GraphView() {
       palette(); // repaint when the scheme changes
       const active = document.activeElement;
       c.setScene(rows, a.values, !!active?.classList.contains('math-input'));
+      if (fresh.length > 0) c.frameNew(fresh);
+      opened = true;
     });
 
     createEffect(() => c.setEmphasis(ui.emphasizedRowId()));

@@ -62,11 +62,11 @@ function selected(sources: string[], inView: InViewFacts | null = null) {
   };
 }
 
-/** The chips that fly somewhere: [accessible name, x, y]. */
+/** The chips that fly somewhere and pin the trace there: [name, x, y]. */
 function chips(insight: Insight | null): [string, number, number][] {
   return (insight?.facts ?? []).flatMap((f) =>
     (f.values ?? []).flatMap((v) =>
-      v.at ? [[v.name, v.at.x, v.at.y] as [string, number, number]] : [],
+      v.at && !v.offCurve ? [[v.name, v.at.x, v.at.y] as [string, number, number]] : [],
     ),
   );
 }
@@ -156,8 +156,9 @@ describe('y = f(x)', () => {
       ['Root', -Math.SQRT2, 0],
       ['Root', Math.SQRT2, 0],
     ]);
+    // The amplitude's chip flies to a maximum.
     const [[name, x, y]] = chips(insightOf(['y = sin(x)']));
-    expect(name).toBe('Maximum');
+    expect(name).toBe('Amplitude');
     expect(x).toBeCloseTo(Math.PI / 2, 3);
     expect(y).toBeCloseTo(1, 9);
   });
@@ -267,7 +268,6 @@ describe('implicit curves', () => {
       const insight = rowInsight({ kind: 'implicit', plot });
       expect(insight, source).not.toBeNull();
       for (const [name, x, y] of chips(insight)) {
-        if (name === 'Centre') continue;
         expect(Math.abs(plot.F(x, y)), `${source}: ${name}`).toBeLessThan(1e-9);
       }
     }
@@ -315,7 +315,7 @@ describe('polar curves', () => {
 
   it('the petal tip is on the curve', () => {
     const [[name, x, y]] = chips(insightOf(['r = 2sin(2θ)']));
-    expect(name).toBe('Petal tip');
+    expect(name).toBe('Petal length');
     expect(Math.hypot(x, y)).toBeCloseTo(2, 9);
     expect(Math.atan2(y, x)).toBeCloseTo(Math.PI / 4, 9);
   });

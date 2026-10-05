@@ -46,6 +46,11 @@ export interface TraceHit {
   poi?: Poi;
 }
 
+/** What a search for points of interest counted in view (PoiCensus), on which plot of its row. */
+export interface RowCensus extends PoiCensus {
+  plot: PlotItem;
+}
+
 export interface TraceOptions {
   /** Trace only this row (scrubbing along one curve). */
   rowId?: string;
@@ -99,8 +104,8 @@ export class GraphController {
         view: Viewport,
         rowId: string | null,
         stale: boolean,
-        /** What the search counted in view (null unless it found them just now). */
-        census: PoiCensus | null,
+        /** What the search counted in view, on which plot (null unless found just now). */
+        census: RowCensus | null,
       ) => void)
     | null = null;
   /** Milliseconds spent drawing the last frame (debug overlay). */
@@ -141,6 +146,8 @@ export class GraphController {
   private poiSettle = 0;
   /** The view the last Zoom to fit flew to. */
   private fitted: string | null = null;
+  /** Rows that have just become curves, to frame once they are drawn (see frameNew). */
+  private toFrame: readonly string[] | null = null;
   private poiTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
@@ -332,30 +339,39 @@ export class GraphController {
   }
 
   /**
-   * A row has just become a curve: when none of it shows, and the user has not moved the view
-   * for a while, frame it, together with what is in view when that is not much farther out.
-   * Returns whether the view moves.
+   * Rows that have just become curves (for the first time): once they are drawn, when none of
+   * them shows and the user has not moved the view for a while, frame them (see frameRows).
    */
-  frameNew(id: string): boolean {
-    if (performance.now() - this.userMoved < USER_MOVE_MS || this.animTarget) return false;
-    const row = this.rows.find((r) => r.id === id && !r.ghost);
-    const geometry = row && this.geometries.get(row.id);
+  frameNew(ids: readonly string[]): void {
+    this.toFrame = ids;
+    this.invalidate();
+  }
+
+  /**
+   * Frame the new curves when none of them shows, together with what is in view when that is
+   * not much farther out. Never while the user has just moved the view or it is animating.
+   */
+  private frameRows(ids: readonly string[]): void {
+    if (performance.now() - this.userMoved < USER_MOVE_MS || this.animTarget) return;
     const view = viewBounds(this.view);
-    if (!row || !geometry || drawsIn(geometry, view)) return false;
-    const own = this.boundsOf(row, this.view);
-    if (!own) return false;
+    const rows = this.rows.filter((r) => ids.includes(r.id) && !r.ghost);
+    let own: Bounds | null = null;
+    for (const row of rows) {
+      const geometry = this.geometries.get(row.id);
+      if (!geometry || drawsIn(geometry, view)) return;
+      own = unionBounds(own, this.boundsOf(row, this.view));
+    }
+    if (!own) return;
     let target = fitViewport(own, this.view);
     const shown = this.rows.some((r) => {
-      const g = r !== row && !r.ghost && this.geometries.get(r.id);
+      const g = !rows.includes(r) && !r.ghost && this.geometries.get(r.id);
       return g && drawsIn(g, view);
     });
-    const both = shown ? unionBounds(own, view) : null;
-    if (both) {
-      const wide = fitViewport(both, this.view);
+    if (shown) {
+      const wide = fitViewport(unionBounds(own, view) as Bounds, this.view);
       if (wide.ppuX * MAX_UNION_ZOOM_OUT >= target.ppuX) target = wide;
     }
     this.animateTo(target, FIT_MS, false, false);
-    return true;
   }
 
   /** Where a row's curve is (null where it draws nothing to be found, or fails). */
@@ -585,6 +601,11 @@ export class GraphController {
     this.lastFrameMs = performance.now() - t0;
     this.updatePois();
     this.onDraw?.();
+    const toFrame = this.toFrame;
+    if (toFrame) {
+      this.toFrame = null;
+      this.frameRows(toFrame);
+    }
   }
 
   /**
@@ -636,7 +657,7 @@ export class GraphController {
       geometry: this.geometries.get(r.id) as RowGeometry,
     });
     let pois: Poi[] = [];
-    const census: PoiCensus = { kinds: {}, meets: new Map() };
+    const census: RowCensus = { kinds: {}, meets: new Map(), plot: row.plot };
     try {
       pois = findPois(curve(row), others.map(curve), this.view, { census });
     } catch (err) {
@@ -649,7 +670,7 @@ export class GraphController {
     pois: readonly Poi[],
     inputs: GraphController['poiInputs'],
     stale = false,
-    census: PoiCensus | null = null,
+    census: RowCensus | null = null,
   ): void {
     const found = inputs !== null && !stale;
     const unchanged =

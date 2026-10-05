@@ -13,7 +13,6 @@ import {
 import { errorFixes, hintBesideFixes, sliderFixNames } from '../engine/errors';
 import { formatValue } from '../engine/format';
 import type { MathError, QuickFix } from '../engine/types';
-import { inlineMath } from '../mathedit';
 import { analysis, engine, nameContext, steadyRows } from '../state/analysis';
 import { offeredNames } from '../state/autoSlider';
 import {
@@ -41,6 +40,8 @@ import {
 } from '../state/rowActions';
 import { ui } from '../state/ui';
 import { ColorPicker } from './ColorPicker';
+import { InlineMath } from './InlineMath';
+import { InsightLine } from './InsightLine';
 import { Icon } from './icons';
 import { blurActive, MathField } from './MathField';
 import { RangeControl } from './RangeControl';
@@ -556,6 +557,13 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
             </Switch>
           )}
         </Show>
+
+        <InsightLine
+          rowId={props.row.id}
+          result={result()}
+          closed={!!error() || props.row.hidden}
+          onMouseDown={keepFocus}
+        />
       </div>
 
       <div class="expr-actions">
@@ -641,27 +649,5 @@ function FixChip(props: {
         </Match>
       </Switch>
     </button>
-  );
-}
-
-/** Short math set in the chip's line: italic letters, upright names, raised exponents. */
-function InlineMath(props: { text: string }) {
-  return (
-    <span class="quick-fix-text">
-      <For each={inlineMath(props.text)}>
-        {(piece) => (
-          <span
-            class={`m-a qm-${piece.role}`}
-            classList={{
-              'm-var': piece.role === 'var',
-              'qm-sup': piece.script === 'sup',
-              'qm-sub': piece.script === 'sub',
-            }}
-          >
-            {piece.text}
-          </span>
-        )}
-      </For>
-    </span>
   );
 }

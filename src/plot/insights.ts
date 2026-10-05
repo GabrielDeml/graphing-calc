@@ -41,13 +41,17 @@ export interface Point {
   y: number;
 }
 
-/** A number the line shows, as a chip; one `at` a point is a button that flies the graph there. */
+/**
+ * A number the line shows, as a chip; one `at` a point is a button that flies the graph there,
+ * and pins the trace on it unless it is `offCurve` (a circle's centre).
+ */
 export interface InsightValue {
   /** As shown: "(1, −2)", "2π", "−0.414", "y = 2x + 1". */
   text: string;
-  /** What it is ("Vertex", "Root"), for its accessible name. */
+  /** What it is ("Vertex", "Root"): its accessible name is this and the text, "Vertex (1, −2)". */
   name: string;
   at?: Point;
+  offCurve?: boolean;
 }
 
 /** One part of the line: words, then values or rows, then more words. */
@@ -135,6 +139,11 @@ export function lineText(v: string, u: string, m: number, b: number): string {
     else s = bt.startsWith(MINUS) ? `${s} ${MINUS} ${bt.slice(1)}` : `${s} + ${bt}`;
   }
   return `${v} = ${s === '' ? '0' : s}`;
+}
+
+/** A centre: flying there shows it, but it is not on the curve to pin the trace on. */
+function centreValue(p: Point): InsightValue {
+  return { text: pointText(p), name: 'Centre', at: p, offCurve: true };
 }
 
 /** "1 root", "3 roots". */
@@ -294,7 +303,7 @@ function periodicInsight(e: Explicit, args: readonly Fn1[] | null | undefined): 
     const top = pt(e, ext.argMax, ext.max);
     facts.push({
       label: 'amplitude',
-      values: [{ text: num((ext.max - ext.min) / 2), name: 'Maximum', at: top }],
+      values: [{ text: num((ext.max - ext.min) / 2), name: 'Amplitude', at: top }],
     });
     facts.push({
       label: 'midline',
@@ -511,10 +520,10 @@ export function describeConic(q: Conic): Insight | null {
           {
             title: 'Circle',
             facts: [
-              { label: 'centre', values: [at('Centre', centre)] },
+              { label: 'centre', values: [centreValue(centre)] },
               {
                 label: 'radius',
-                values: [{ text: num(ru), name: 'Point on the circle', at: ends[0] }],
+                values: [{ text: num(ru), name: 'Radius', at: ends[0] }],
               },
             ],
           },
@@ -524,12 +533,12 @@ export function describeConic(q: Conic): Insight | null {
       const [major, minor] = ru >= rv ? [ru, rv] : [rv, ru];
       const [majorEnd, minorEnd] = ru >= rv ? [ends[0], ends[1]] : [ends[1], ends[0]];
       const facts: InsightFact[] = [
-        { label: 'centre', values: [at('Centre', centre)] },
+        { label: 'centre', values: [centreValue(centre)] },
         {
           label: 'semi-axes',
           values: [
-            { text: num(major), name: 'End of the major axis', at: majorEnd },
-            { text: num(minor), name: 'End of the minor axis', at: minorEnd },
+            { text: num(major), name: 'Semi-major axis', at: majorEnd },
+            { text: num(minor), name: 'Semi-minor axis', at: minorEnd },
           ],
         },
       ];
@@ -565,7 +574,7 @@ export function describeConic(q: Conic): Insight | null {
       {
         title: 'Hyperbola',
         facts: [
-          { label: 'centre', values: [at('Centre', centre)] },
+          { label: 'centre', values: [centreValue(centre)] },
           { label: 'vertices', values: vertices.map((p) => at('Vertex', p)) },
           { label: 'asymptotes', values: asymptotes.map((text) => ({ text, name: 'Asymptote' })) },
         ],
@@ -664,10 +673,10 @@ export function polarInsight(
       return {
         title: 'Circle',
         facts: [
-          { label: 'centre', values: [{ text: '(0, 0)', name: 'Centre', at: { x: 0, y: 0 } }] },
+          { label: 'centre', values: [centreValue({ x: 0, y: 0 })] },
           {
             label: 'radius',
-            values: [{ text: num(Math.abs(a)), name: 'Point on the circle', at: edge }],
+            values: [{ text: num(Math.abs(a)), name: 'Radius', at: edge }],
           },
         ],
       };
@@ -681,10 +690,10 @@ export function polarInsight(
       return {
         title: 'Circle',
         facts: [
-          { label: 'centre', values: [at('Centre', { x: b / 2, y: c / 2 })] },
+          { label: 'centre', values: [centreValue({ x: b / 2, y: c / 2 })] },
           {
             label: 'radius',
-            values: [{ text: num(R / 2), name: 'Point on the circle', at: far }],
+            values: [{ text: num(R / 2), name: 'Radius', at: far }],
           },
         ],
       };
@@ -724,7 +733,7 @@ export function polarInsight(
     const petals = k % 2 === 1 ? k : 2 * k;
     return {
       title: `Rose with ${petals} petals`,
-      facts: [{ label: 'petal length', values: [{ text: num(A), name: 'Petal tip', at: tip }] }],
+      facts: [{ label: 'petal length', values: [{ text: num(A), name: 'Petal length', at: tip }] }],
     };
   }
   // r = a + bθ.
@@ -790,13 +799,13 @@ export function parametricInsight(
       return {
         title: 'Circle',
         facts: [
-          { label: 'centre', values: [at('Centre', centre)] },
+          { label: 'centre', values: [centreValue(centre)] },
           {
             label: 'radius',
             values: [
               {
                 text: num(Math.hypot(x1, y1)),
-                name: 'Point on the circle',
+                name: 'Radius',
                 at: { x: x0 + x1, y: y0 + y1 },
               },
             ],
@@ -815,14 +824,14 @@ export function parametricInsight(
     return {
       title: 'Ellipse',
       facts: [
-        { label: 'centre', values: [at('Centre', centre)] },
+        { label: 'centre', values: [centreValue(centre)] },
         {
           label: 'semi-axes',
           values: [
-            { text: num(major), name: 'End of the major axis', at: end(major, theta) },
+            { text: num(major), name: 'Semi-major axis', at: end(major, theta) },
             {
               text: num(minor),
-              name: 'End of the minor axis',
+              name: 'Semi-minor axis',
               at: end(minor, theta + Math.PI / 2),
             },
           ],

@@ -59,6 +59,8 @@ export const ui = createRoot(() => {
   });
   /** Counts requests to fly the graph back to its home view (GraphView acts on them). */
   const [homeRequests, setHomeRequests] = createSignal(0);
+  /** The last request to fly the graph to a point of a row's curve (an insight's chip). */
+  const [flight, setFlight] = createSignal<Flight | null>(null);
   return {
     sidebarOpen,
     setSidebarOpen,
@@ -89,8 +91,24 @@ export const ui = createRoot(() => {
     homeRequests,
     /** Back to the home view, as "Reset view" does (New graph starts over there). */
     requestHome: () => setHomeRequests((n) => n + 1),
+    flight,
+    /**
+     * Fly the graph to a point of a row's curve (GraphView acts on it), and pin the trace there
+     * unless the point is off the curve (a circle's centre).
+     */
+    flyTo: (rowId: string, x: number, y: number, pin: boolean) =>
+      setFlight((f) => ({ rowId, x, y, pin, seq: (f?.seq ?? 0) + 1 })),
   };
 });
+
+/** A request to fly the graph to (x, y); `seq` tells two requests for one point apart. */
+export interface Flight {
+  rowId: string;
+  x: number;
+  y: number;
+  pin: boolean;
+  seq: number;
+}
 
 /**
  * The stacked phone layout (graph over a snapping panel over the keypad). Short landscape phones

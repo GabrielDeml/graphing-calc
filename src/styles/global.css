@@ -813,39 +813,40 @@ button {
 }
 
 /*
- * A fix's new text (`x²`, `≤`) or the names it makes sliders of, in the math's face, set in line
- * (src/mathedit/inline.ts): spaced operators, small raised exponents.
+ * Short math in a line of UI text (src/components/InlineMath.tsx): a fix's new text (`x²`, `≤`),
+ * the names it makes sliders of, a row an insight names. In the math's face, spaced operators,
+ * small raised exponents.
  */
-.quick-fix-text {
+.inline-math {
   font-family: var(--math-text);
   font-size: 14px;
   font-weight: 400;
   white-space: nowrap;
 }
 
-.quick-fix-text .qm-op {
+.inline-math .qm-op {
   margin: 0 0.18em;
 }
 
-.quick-fix-text .qm-rel {
+.inline-math .qm-rel {
   margin: 0 0.25em;
 }
 
-.quick-fix-text .qm-sep {
+.inline-math .qm-sep {
   margin-right: 0.22em;
 }
 
-.quick-fix-text .qm-sup,
-.quick-fix-text .qm-sub {
+.inline-math .qm-sup,
+.inline-math .qm-sub {
   margin: 0;
   font-size: 0.72em;
 }
 
-.quick-fix-text .qm-sup {
+.inline-math .qm-sup {
   vertical-align: 0.6em;
 }
 
-.quick-fix-text .qm-sub {
+.inline-math .qm-sub {
   vertical-align: -0.25em;
 }
 
@@ -889,6 +890,95 @@ button {
   font-variant-numeric: tabular-nums;
   color: var(--text-2);
   text-align: right;
+}
+
+/*
+ * What a row's curve is, in one quiet line under it (InsightLine): it opens like the error line
+ * once the row settles, dims while the row is typed in, and fades a new reading in.
+ */
+.expr-insight {
+  display: grid;
+  grid-template-rows: 1fr;
+  animation: reveal var(--dur-3) var(--ease-out);
+  transition: opacity var(--dur-2) var(--ease-out);
+}
+
+.expr-insight.closing {
+  animation: conceal var(--dur-2) var(--ease-out) forwards;
+}
+
+.expr-insight.dim {
+  opacity: 0.4;
+}
+
+.expr-insight-line {
+  min-height: 0;
+  overflow: hidden;
+  margin: 0;
+  padding: 0 2px 3px;
+  color: var(--text-3);
+  font-size: 12.5px;
+  line-height: 22px;
+}
+
+.expr-insight-line.fresh {
+  animation: fade-in var(--dur-3) var(--ease-out);
+}
+
+.insight-title {
+  color: var(--text-2);
+  font-weight: 500;
+}
+
+.insight-sep {
+  color: var(--text-4);
+}
+
+/* Numbers in the math's face, with tabular figures: a value a slider moves doesn't jiggle. */
+.insight-value {
+  font-family: var(--math);
+  font-size: 14.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+/* A value at a point: pressed, the graph flies there. Quiet until pointed at. */
+.insight-chip {
+  position: relative;
+  display: inline-block;
+  margin: 0 -1px;
+  padding: 0 5px;
+  border: none;
+  border-radius: 6px;
+  background: var(--hover);
+  line-height: 20px;
+  touch-action: manipulation;
+  transition:
+    background-color var(--dur-1) var(--ease-out),
+    color var(--dur-1) var(--ease-out);
+}
+
+.insight-chip:hover {
+  background: var(--press);
+  color: var(--text-1);
+}
+
+/* Another row, by its color and its math: "used by ● y = a x". */
+.insight-row {
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.insight-row.colored::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--ref-color);
+  vertical-align: 0.05em;
 }
 
 .color-picker {
@@ -1273,6 +1363,11 @@ button {
   .m-ghost,
   .m-completion {
     opacity: 0.6;
+  }
+
+  .insight-chip {
+    outline: 1px solid ButtonText;
+    outline-offset: -1px;
   }
 }
 
@@ -2136,6 +2231,13 @@ button {
   .graph-controls .icon-button {
     width: 40px;
     height: 40px;
+  }
+
+  /* An insight's chips reach out invisibly, above and below the line. */
+  .insight-chip::after {
+    content: "";
+    position: absolute;
+    inset: -8px -2px;
   }
 
   /* Change color and Delete, apart enough that a thumb meant for one doesn't hit the other. */
