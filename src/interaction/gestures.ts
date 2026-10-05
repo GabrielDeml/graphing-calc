@@ -9,12 +9,26 @@ export interface GestureCallbacks {
   leave(): void;
   /** A quick tap without movement (touch pins the trace there, and dismisses the keypad). */
   tap(sx: number, sy: number, pointerType: string): void;
+  /**
+   * A touch or pen press: whether it starts a scrub along a curve instead of a pan (it is on the
+   * pinned trace's dot).
+   */
+  scrubStart?(sx: number, sy: number): boolean;
+  /** A touch or pen press held still for HOLD_MS: whether it starts a scrub (it is on a curve). */
+  hold?(sx: number, sy: number): boolean;
+  /** The scrubbing finger moved. */
+  scrub?(sx: number, sy: number): void;
 }
 
 const TAP_MOVE_PX = 6;
 const TAP_MS = 300;
+/** A press held this long without moving picks up the curve under it to scrub along. */
+const HOLD_MS = 250;
 
-/** Pan with one pointer, pinch-zoom with two, wheel/trackpad zoom, double-click zoom, keys. */
+/**
+ * Pan with one pointer, pinch-zoom with two, wheel/trackpad zoom, double-click zoom, keys. On
+ * touch, a press on the pinned trace (or held on a curve) scrubs along the curve instead.
+ */
 export function attachGestures(
   el: HTMLElement,
   controller: GraphController,
@@ -23,6 +37,9 @@ export function attachGestures(
   const pointers = new Map<number, Pt>();
   let tapStart: { x: number; y: number; time: number; id: number } | null = null;
   let moved = false;
+  /** The pointer scrubbing along a curve, if one is. */
+  let scrubbing: number | null = null;
+  let holdTimer: ReturnType<typeof setTimeout> | undefined;
 
   const local = (e: { clientX: number; clientY: number }): Pt => {
     const r = el.getBoundingClientRect();
@@ -31,10 +48,16 @@ export function attachGestures(
 
   /**
    * Events on the overlaid controls (zoom, home, show list) belong to them, including the gaps
-   * and rim of their pill, which reads as chrome rather than graph.
+   * and rim of their pill, which reads as chrome rather than graph. Points of interest are part
+   * of the graph: hovering one traces it, and a drag from one pans.
    */
   const onControl = (e: Event) =>
-    (e.target as HTMLElement).closest('button, .graph-controls') !== null;
+    (e.target as HTMLElement).closest('button:not(.poi), .graph-controls') !== null;
+
+  const stopHold = () => {
+    clearTimeout(holdTimer);
+    holdTimer = undefined;
+  };
 
   const onPointerDown = (e: PointerEvent) => {
     if (e.button !== 0 && e.pointerType === 'mouse') return;
@@ -44,11 +67,30 @@ export function attachGestures(
     el.setPointerCapture(e.pointerId);
     const p = local(e);
     pointers.set(e.pointerId, p);
+    stopHold();
     if (pointers.size === 1) {
       tapStart = { ...p, time: performance.now(), id: e.pointerId };
       moved = false;
+      if (e.pointerType !== 'mouse') {
+        if (cb.scrubStart?.(p.x, p.y)) {
+          scrubbing = e.pointerId;
+          tapStart = null;
+        } else if (cb.hold) {
+          const hold = cb.hold;
+          holdTimer = setTimeout(() => {
+            holdTimer = undefined;
+            const at = pointers.get(e.pointerId);
+            if (pointers.size === 1 && at && !moved && hold(at.x, at.y)) {
+              scrubbing = e.pointerId;
+              tapStart = null;
+            }
+          }, HOLD_MS);
+        }
+      }
     } else {
+      // A second finger: a pinch, never a scrub.
       tapStart = null;
+      scrubbing = null;
     }
   };
 
@@ -62,9 +104,15 @@ export function attachGestures(
       else cb.hover(p.x, p.y);
       return;
     }
+    if (scrubbing === e.pointerId) {
+      pointers.set(e.pointerId, p);
+      cb.scrub?.(p.x, p.y);
+      return;
+    }
     if (tapStart && Math.hypot(p.x - tapStart.x, p.y - tapStart.y) > TAP_MOVE_PX) {
       moved = true;
       tapStart = null;
+      stopHold();
       cb.leave();
     }
     if (!moved && pointers.size === 1) return;
@@ -84,6 +132,8 @@ export function attachGestures(
   const onPointerUp = (e: PointerEvent) => {
     if (!pointers.has(e.pointerId)) return;
     pointers.delete(e.pointerId);
+    stopHold();
+    if (scrubbing === e.pointerId) scrubbing = null;
     if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
     if (
       e.type === 'pointerup' &&
@@ -167,6 +217,7 @@ export function attachGestures(
   el.addEventListener('dblclick', onDblClick);
   el.addEventListener('keydown', onKeyDown);
   return () => {
+    stopHold();
     el.removeEventListener('pointerdown', onPointerDown);
     el.removeEventListener('pointermove', onPointerMove);
     el.removeEventListener('pointerup', onPointerUp);

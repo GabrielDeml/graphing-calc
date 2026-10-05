@@ -18,6 +18,11 @@ export interface MathError {
   span?: Span;
   hint?: string;
   quickFix?: QuickFix;
+  /**
+   * 'dependency-error' (also inside a 'bad-domain' error): the name whose definition the error
+   * comes from, so the UI can tell which row is to blame.
+   */
+  dependsOn?: string;
 }
 
 export type RowKind =

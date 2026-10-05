@@ -1,15 +1,23 @@
-import { createSignal, onCleanup, Show } from 'solid-js';
+import { createSignal, For, onCleanup, Show } from 'solid-js';
 import { formatCoordinate } from '../engine/format';
 import type { TraceHit } from '../render/controller';
 
 /** The pill's distance from the traced point, and the room it keeps from the graph's edge. */
 const PILL_INSET_PX = 12;
 
+/** What a traced point is: "Root", "Minimum · y-intercept", "Intersection with ● y = x/3". */
+export interface TraceKind {
+  /** The curves it meets there (their color and math), when it is an intersection. */
+  meets: { color: string; text: string }[];
+  /** Its other kinds, most notable first. */
+  names: string[];
+}
+
 /**
  * DOM overlay for the traced point, so hovering never repaints the canvas. `kind` names what the
- * point is ("Root", "Intersection with …") beside its coordinates; a plain curve point has none.
+ * point is beside its coordinates; a plain curve point has none.
  */
-export function TraceMarker(props: { hit: TraceHit | null; kind?: string }) {
+export function TraceMarker(props: { hit: TraceHit | null; kind?: TraceKind | null }) {
   return (
     <Show when={props.hit}>
       {(hit) => {
@@ -40,7 +48,23 @@ export function TraceMarker(props: { hit: TraceHit | null; kind?: string }) {
             <span class="trace-pill" ref={measure}>
               <span class="trace-swatch" />
               <Show when={props.kind}>
-                <span class="trace-kind">{props.kind}</span>
+                {(kind) => (
+                  <span class="trace-kind">
+                    <Show when={kind().meets.length > 0}>
+                      <span>Intersection with</span>
+                      <For each={kind().meets}>
+                        {(m) => (
+                          <span class="trace-meet" style={{ '--meet-color': m.color }}>
+                            <span class="trace-meet-text">{m.text}</span>
+                          </span>
+                        )}
+                      </For>
+                    </Show>
+                    <For each={kind().names}>
+                      {(name) => <span class="trace-kind-name">{name}</span>}
+                    </For>
+                  </span>
+                )}
               </Show>
               {/* The status holds only "(x, y)". */}
               <span class="trace-label" role="status">

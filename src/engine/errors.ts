@@ -42,12 +42,13 @@ export function mathError(
   code: string,
   message: string,
   span?: Span,
-  extra?: { hint?: string; quickFix?: QuickFix },
+  extra?: { hint?: string; quickFix?: QuickFix; dependsOn?: string },
 ): MathError {
   const error: MathError = { code, message };
   if (span) error.span = { start: span.start, end: span.end };
   if (extra?.hint !== undefined) error.hint = extra.hint;
   if (extra?.quickFix !== undefined) error.quickFix = extra.quickFix;
+  if (extra?.dependsOn !== undefined) error.dependsOn = extra.dependsOn;
   return error;
 }
 

@@ -587,6 +587,52 @@ describe('identity across rebuilds', () => {
     expect(curve(c, 'r1')(3)).toBe(9);
     expect(ok(c, 'r42').value).toBe(42);
   });
+
+  it('counts reallocations of the globals, which strand older closures', () => {
+    const engine = new DocumentEngine();
+    const a = engine.update(rows('a = 2', 'y = a x'));
+    const before = engine.globalsGeneration;
+    const f = curve(a, 'r1');
+    // Edits that keep the storage keep the generation: old closures still see new values.
+    engine.update(rows('a = 2', 'y = a x', 'b = 1'));
+    engine.update(rows('a = 5', 'y = a x', 'b = 1'));
+    expect(engine.globalsGeneration).toBe(before);
+    expect(f(1)).toBe(5);
+    const many = Array.from({ length: 40 }, (_, i) => `v_${i} = ${i}`);
+    engine.update(rows('a = 5', 'y = a x', ...many));
+    expect(engine.globalsGeneration).toBeGreaterThan(before);
+    engine.update(rows('a = 7', 'y = a x', ...many));
+    // The old closure reads the storage it was compiled against, which no longer changes.
+    expect(f(1)).toBe(5);
+  });
+});
+
+describe('dependency errors', () => {
+  it('name the definition they come from', () => {
+    const engine = new DocumentEngine();
+    const a = engine.update(rows('a = (', 'b = 2a', 'y = b x', '(cos t, sin t)'));
+    expect(err(a, 'r1').dependsOn).toBe('a');
+    expect(err(a, 'r2').dependsOn).toBe('b');
+    expect(err(a, 'r0').dependsOn).toBeUndefined();
+  });
+
+  it('name it through a parameter range too', () => {
+    const engine = new DocumentEngine();
+    const a = engine.update([
+      { id: 'r0', source: 'k = (' },
+      { id: 'r1', source: '(cos t, sin t)', domain: { min: '0', max: 'k' } },
+    ]);
+    expect(err(a, 'r1')).toMatchObject({ code: 'bad-domain', dependsOn: 'k' });
+  });
+
+  it('are new results when the broken definition changes', () => {
+    const engine = new DocumentEngine();
+    const a = engine.update(rows('a = (', 'c = (', 'y = a c x'));
+    const b = engine.update(rows('a = 1', 'c = (', 'y = a c x'));
+    expect(err(a, 'r2').dependsOn).toBe('a');
+    expect(err(b, 'r2').dependsOn).toBe('c');
+    expect(row(b, 'r2')).not.toBe(row(a, 'r2'));
+  });
 });
 
 describe('robustness', () => {

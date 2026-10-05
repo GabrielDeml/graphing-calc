@@ -11,7 +11,7 @@ import {
 } from 'solid-js';
 import { formatValue } from '../engine/format';
 import type { MathError } from '../engine/types';
-import { analysis } from '../state/analysis';
+import { analysis, steadyRows } from '../state/analysis';
 import { doc, type Row, removeRow, setColor, toggleHidden, updateSource } from '../state/doc';
 import { focusRow, registerRowInput, unregisterRowInput } from '../state/focus';
 import { offerUndo } from '../state/historyUi';
@@ -33,31 +33,68 @@ import { SliderControl } from './SliderControl';
 const ERROR_DELAY_MS = 500;
 /** How long a fixed error's line takes to close (--dur-2 in global.css). */
 const ERROR_CLOSE_MS = 160;
+/** A mouse resting on a row this long makes its curve stand out (passing over it does not). */
+const HOVER_INTENT_MS = 120;
+/** The pulse of a row picked on the graph (keep in sync with .expr-row.pulse in global.css). */
+const PULSE_MS = 700;
 
 export function ExpressionRow(props: { row: Row; index: number; palette: readonly string[] }) {
   const result = createMemo(() => analysis().byId.get(props.row.id));
+  /** Broken by an edit in progress: the last good result, still shown (state/steady.ts). */
+  const held = createMemo(() => steadyRows().held.get(props.row.id));
+  /** The error only comes from an edit in progress elsewhere: it waits for that to finish. */
+  const quiet = createMemo(() => steadyRows().quiet.has(props.row.id));
+  /** What the row shows: its result, or while it is held, the last good one. */
+  const shown = () => {
+    const r = result();
+    return r?.status !== 'ok' && held() ? held() : r;
+  };
   const [errorVisible, setErrorVisible] = createSignal(false);
   const [pickerOpen, setPickerOpen] = createSignal(false);
+  let li!: HTMLLIElement;
   let input: HTMLInputElement | undefined;
   let colorButton: HTMLButtonElement | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let hoverTimer: ReturnType<typeof setTimeout> | undefined;
+  let pulseTimer: ReturnType<typeof setTimeout> | undefined;
 
   // Errors show after a pause in typing (or on blur) and disappear as soon as they are fixed.
   createEffect(
-    on([() => props.row.source, () => result()?.error], ([, error]) => {
+    on([() => props.row.source, () => result()?.error, quiet], ([, error, isQuiet]) => {
       clearTimeout(timer);
-      if (!error) setErrorVisible(false);
+      if (!error || isQuiet) setErrorVisible(false);
       else if (!errorVisible()) timer = setTimeout(() => setErrorVisible(true), ERROR_DELAY_MS);
     }),
   );
   onCleanup(() => {
     clearTimeout(timer);
+    clearTimeout(hoverTimer);
+    clearTimeout(pulseTimer);
     if (input) unregisterRowInput(props.row.id, input);
+    if (ui.hoveredRowId() === props.row.id) ui.setHoveredRowId(null);
+    if (ui.editingRowId() === props.row.id) ui.setEditingRowId(null);
   });
+
+  // Picked on the graph: into view, with a brief pulse in its color.
+  createEffect(
+    on(
+      ui.flash,
+      (f) => {
+        if (f?.id !== props.row.id) return;
+        li.scrollIntoView({ block: 'nearest' });
+        li.classList.remove('pulse');
+        void li.offsetWidth; // restart the animation
+        li.classList.add('pulse');
+        clearTimeout(pulseTimer);
+        pulseTimer = setTimeout(() => li.classList.remove('pulse'), PULSE_MS);
+      },
+      { defer: true },
+    ),
+  );
 
   const error = () => (errorVisible() ? result()?.error : undefined);
   const color = () => props.palette[props.row.colorIndex] ?? props.palette[0];
-  const plots = () => result()?.status === 'ok' && !!result()?.plot;
+  const plots = () => shown()?.status === 'ok' && !!shown()?.plot;
 
   // The error line keeps showing a fixed error while it closes (no longer an alert by then).
   const [shownError, setShownError] = createSignal<MathError | undefined>();
@@ -79,7 +116,7 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
   });
   onCleanup(() => clearTimeout(closeTimer));
   const rangeVariable = (): 't' | 'θ' | null => {
-    const kind = result()?.kind;
+    const kind = shown()?.kind;
     return kind === 'parametric' ? 't' : kind === 'polar' ? 'θ' : null;
   };
 
@@ -128,17 +165,41 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
 
   return (
     <li
+      ref={li}
       class="expr-row"
       classList={{
         'has-error': !!error(),
         hidden: props.row.hidden,
         plots: plots(),
         selected: ui.selectedRowId() === props.row.id,
+        traced: ui.tracedRowId() === props.row.id,
       }}
       style={{ '--row-color': props.row.colorIndex >= 0 ? color() : undefined }}
       data-row-id={props.row.id}
-      data-kind={result()?.kind ?? ''}
-      onFocusIn={() => ui.setSelectedRowId(props.row.id)}
+      data-kind={shown()?.kind ?? ''}
+      onFocusIn={(e) => {
+        ui.setSelectedRowId(props.row.id);
+        if (e.target.classList.contains('math-input')) ui.setEditingRowId(props.row.id);
+      }}
+      onFocusOut={(e) => {
+        const next = e.relatedTarget;
+        const stays = next instanceof HTMLElement && next.classList.contains('math-input');
+        if (ui.editingRowId() === props.row.id && !(stays && li.contains(next))) {
+          ui.setEditingRowId(null);
+        }
+      }}
+      onPointerMove={(e) => {
+        if (e.pointerType !== 'mouse' || hoverTimer || ui.hoveredRowId() === props.row.id) return;
+        hoverTimer = setTimeout(() => {
+          hoverTimer = undefined;
+          ui.setHoveredRowId(props.row.id);
+        }, HOVER_INTENT_MS);
+      }}
+      onPointerLeave={() => {
+        clearTimeout(hoverTimer);
+        hoverTimer = undefined;
+        if (ui.hoveredRowId() === props.row.id) ui.setHoveredRowId(null);
+      }}
     >
       <div class="expr-mark">
         <Show when={plots()}>
@@ -163,7 +224,7 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
           onDeleteEmpty={() => deleteEmptyBackward(props.row.id)}
           onKeyDown={onKeyDown}
           onBlur={() => {
-            if (result()?.error) {
+            if (result()?.error && !quiet()) {
               clearTimeout(timer);
               setErrorVisible(true);
             }
@@ -218,11 +279,19 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
           )}
         </Show>
 
-        <Show when={!error() && result()}>
+        {/* While the row is held its slider and value stay, inert, rather than blink out. */}
+        <Show when={(!error() || held()) && shown()}>
           {(res) => (
             <Switch>
               <Match when={res().kind === 'slider' && res().slider}>
-                {(s) => <SliderControl row={props.row} name={s().name} value={s().value} />}
+                {(s) => (
+                  <SliderControl
+                    row={props.row}
+                    name={s().name}
+                    value={s().value}
+                    stale={res() !== result()}
+                  />
+                )}
               </Match>
               <Match
                 when={
@@ -230,7 +299,9 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
                   res().value !== undefined
                 }
               >
-                <output class="expr-value">= {formatValue(res().value as number)}</output>
+                <output class="expr-value" classList={{ stale: res() !== result() }}>
+                  = {formatValue(res().value as number)}
+                </output>
               </Match>
             </Switch>
           )}

@@ -221,7 +221,9 @@ function analyzeConstant(source: string, ctx: NameContext): ConstantAnalysis {
 }
 
 function dependencyError(name: string): MathError {
-  return mathError('dependency-error', `Depends on '${name}', which has an error`);
+  return mathError('dependency-error', `Depends on '${name}', which has an error`, undefined, {
+    dependsOn: name,
+  });
 }
 
 function sameNumber(a: number | undefined, b: number | undefined): boolean {
@@ -255,7 +257,8 @@ function sameError(a: MathError | undefined, b: MathError | undefined): boolean 
     a.hint === b.hint &&
     sameSpan(a.span, b.span) &&
     a.quickFix?.kind === b.quickFix?.kind &&
-    sameList(a.quickFix?.names, b.quickFix?.names)
+    sameList(a.quickFix?.names, b.quickFix?.names) &&
+    a.dependsOn === b.dependsOn
   );
 }
 
@@ -390,6 +393,15 @@ export class DocumentEngine {
    */
   names(): { ctx: NameContext; signature: string } {
     return { ctx: this.ctx, signature: this.signature };
+  }
+
+  /**
+   * Bumped whenever the shared variable storage is reallocated. Closures compiled before then
+   * read values that no longer change, so a PlotItem kept from an earlier update (the last good
+   * plot of a row being edited) is only usable while this is unchanged.
+   */
+  get globalsGeneration(): number {
+    return this.generation;
   }
 
   /**
@@ -848,12 +860,10 @@ function probe(c: Omit<CompiledRow, 'fp'>): void {
 }
 
 function domainError(variable: string, inner: MathError): MathError {
-  return mathError(
-    'bad-domain',
-    `${variable} range: ${inner.message}`,
-    undefined,
-    inner.quickFix ? { quickFix: inner.quickFix } : undefined,
-  );
+  return mathError('bad-domain', `${variable} range: ${inner.message}`, undefined, {
+    quickFix: inner.quickFix,
+    dependsOn: inner.dependsOn,
+  });
 }
 
 /**

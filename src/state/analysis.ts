@@ -3,6 +3,8 @@ import { DocumentEngine } from '../engine/document';
 import type { DocAnalysis } from '../engine/types';
 import { type ColorUse, colorChanges } from './colors';
 import { assignColor, doc } from './doc';
+import { EMPTY_STEADY, type Steady, steady } from './steady';
+import { ui } from './ui';
 
 export const engine = new DocumentEngine();
 
@@ -37,6 +39,26 @@ createRoot(() => {
       });
       for (const [i, color] of colorChanges(rows)) assignColor(rows[i].id, color);
     });
+  });
+});
+
+/**
+ * What the row being edited breaks in passing, held at its last good result meanwhile (see
+ * state/steady.ts): the graph draws those curves as ghosts, the list keeps their color marks and
+ * sliders and quiets the errors they only have because of the edit.
+ */
+export const steadyRows = createRoot(() => {
+  let state = EMPTY_STEADY;
+  return createMemo<Steady>(() => {
+    const next = steady(
+      state,
+      doc.rows,
+      analysis().byId,
+      ui.editingRowId(),
+      engine.globalsGeneration,
+    );
+    state = next.state;
+    return next;
   });
 });
 

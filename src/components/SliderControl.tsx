@@ -12,7 +12,11 @@ const THUMB_PX = 16;
 /** Room the value bubble keeps from the end of the row's own text. */
 const BUBBLE_GAP_PX = 8;
 
-export function SliderControl(props: { row: Row; name: string; value: number }) {
+/**
+ * `stale`: the row's text is broken for a moment while it is being edited, and this is its last
+ * good slider, kept in place (inert) so the list doesn't jump at every keystroke.
+ */
+export function SliderControl(props: { row: Row; name: string; value: number; stale?: boolean }) {
   const min = createMemo(() => evalNumber(props.row.slider.min));
   const max = createMemo(() => evalNumber(props.row.slider.max));
   const step = createMemo(() => {
@@ -88,7 +92,11 @@ export function SliderControl(props: { row: Row; name: string; value: number }) 
   });
 
   return (
-    <div class="slider" classList={{ invalid: !valid() }}>
+    <div
+      class="slider"
+      classList={{ invalid: !valid(), stale: props.stale }}
+      inert={props.stale || undefined}
+    >
       <button
         type="button"
         class="slider-play icon-button"

@@ -70,6 +70,8 @@
   --axis: #484c55;
   /* Muted, but 4.5:1 on the graph (tick labels are small). */
   --graph-label: #6b717c;
+  /* Rings marking points of interest: grey, so they never read as a curve. */
+  --poi-ring: #868c97;
 
   /* Keypad (its restyle comes later; these only follow the surfaces). */
   --keypad-bg: #e9ebef;
@@ -126,6 +128,7 @@
     --grid-major: #262a31;
     --axis: #80868f;
     --graph-label: #7d838e;
+    --poi-ring: #8d939e;
 
     --keypad-bg: #0b0c0f;
     --key-bg: #22252b;
@@ -530,10 +533,26 @@ button {
   transition: background-color var(--dur-2) var(--ease-out);
 }
 
+/* The row whose curve the graph is tracing: a fainter wash, no bar. */
+.expr-row.traced {
+  --row-bg: color-mix(in srgb, var(--row-color) 4%, var(--surface-0));
+}
+
 /* The selected row: a bar and a faint wash, in its own color. */
 .expr-row.selected {
   --row-bg: color-mix(in srgb, var(--row-color) 6%, var(--surface-0));
   box-shadow: inset 2px 0 0 var(--row-color);
+}
+
+/* Picked on the graph: the wash flares once and settles (ExpressionRow's PULSE_MS). */
+.expr-row.pulse {
+  animation: row-pulse calc(var(--dur-3) * 3) var(--ease-out);
+}
+
+@keyframes row-pulse {
+  from {
+    background-color: color-mix(in srgb, var(--row-color) 18%, var(--surface-0));
+  }
 }
 
 .expr-mark {
@@ -732,6 +751,13 @@ button {
 
 .quick-fix .icon {
   color: var(--text-2);
+}
+
+/* A value or slider held while its row is broken mid-edit: there, but quiet. */
+.expr-value.stale,
+.slider.stale {
+  opacity: 0.55;
+  transition: opacity var(--dur-2) var(--ease-out);
 }
 
 .expr-value {
@@ -1189,6 +1215,85 @@ button {
   background: var(--hairline-strong);
 }
 
+/*
+ * Points of interest: grey rings that bloom in when found. The layer's --kx/--ky/--ox/--oy map
+ * each ring's position in the view it was found in (--sx0, --sy0) to the current view, so a pan
+ * is one style write for the whole layer (PoiLayer.place).
+ */
+.poi-layer {
+  --kx: 1;
+  --ky: 1;
+  --ox: 0;
+  --oy: 0;
+  --poi-stagger: 18ms;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.poi {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  pointer-events: auto;
+  cursor: pointer;
+  transform: translate(
+    calc((var(--sx0) * var(--kx) + var(--ox)) * 1px),
+    calc((var(--sy0) * var(--ky) + var(--oy)) * 1px)
+  );
+}
+
+.poi::before {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  border: 2px solid var(--poi-ring);
+  animation: poi-bloom var(--dur-2) var(--ease-out) both;
+  animation-delay: calc(var(--i) * var(--poi-stagger));
+  transition:
+    transform var(--dur-1) var(--ease-out),
+    border-color var(--dur-1) var(--ease-out);
+}
+
+.poi:hover::before,
+.poi:focus-visible::before {
+  transform: scale(1.3);
+  border-color: var(--text-2);
+}
+
+.poi:focus-visible {
+  outline: none;
+}
+
+.poi:focus-visible::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+@keyframes poi-bloom {
+  from {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .poi-layer {
+    --poi-stagger: 0ms;
+  }
+}
+
 .trace {
   position: absolute;
   top: 0;
@@ -1235,9 +1340,45 @@ button {
 
 /* What the point is ("Root"), beside its coordinates. */
 .trace-kind {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   color: var(--text-2);
   font-size: 13px;
   line-height: 1;
+}
+
+.trace-kind-name + .trace-kind-name::before,
+.trace-meet + .trace-kind-name::before {
+  content: "·";
+  margin-right: 5px;
+  color: var(--text-4);
+}
+
+/* The other curve of an intersection: its color and its math. */
+.trace-meet {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--text-1);
+  font-family: var(--math);
+  font-size: 14px;
+}
+
+.trace-meet-text {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trace-meet::before {
+  content: "";
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--meet-color);
 }
 
 .trace-label {

@@ -49,8 +49,21 @@ Syntax notes:
 - **Graph:** drag to pan, use the wheel or pinch to zoom, double-click to zoom in, and the buttons
   at the top right zoom or reset the view. With the graph focused, the keyboard works too: arrows
   pan, `+` and `-` zoom, `0` resets.
-- **Trace:** hover a curve to see its coordinates, in a pill with the curve's color. On touch, tap
-  a curve to pin the trace.
+- **Trace:** hover a curve to see its coordinates, in a pill with the curve's color; its row in the
+  list lights up faintly. On touch, tap a curve to pin the trace. Near a point of interest the
+  trace snaps to it and names it ("Root", "Minimum", "Intersection with ● y = x/3"). To scrub
+  along a curve on touch, drag the pinned trace's dot, or press and hold on a curve for a moment
+  and then drag; any other drag pans.
+- **The selected curve:** the selected row's curve is drawn on top, a little bolder, with a soft
+  halo. Clicking or tapping a curve selects its row (it scrolls into view and pulses briefly)
+  without opening it for editing, so no keypad pops up. Pointing at a row in the list brings its
+  curve forward the same way while the pointer rests there.
+- **Points of interest:** the selected curve shows its roots, local maxima and minima, where it
+  crosses the axes and where it meets the other curves, as grey rings that bloom in once found.
+  Hover or click one (or tap it) to see what it is; clicking pins the trace there. From the
+  graph, `Tab` reaches them and the arrow keys walk from one to the next. Only what is in view is
+  shown, and a kind of point too dense to read (the extrema of `sin(x)` far zoomed out) is left
+  out until you zoom in.
 - **Rows:**
   - `Enter` starts a new row. On an empty row it moves on to the next one instead, and on the
     empty row at the end it stays put (the keypad's ↵ puts the keypad away there).
@@ -58,7 +71,8 @@ Syntax notes:
   - `↑` and `↓` move between rows.
   - Tap a curve's color dot to hide it (the dot turns hollow and the row fades) or show it again.
   - The row you are working on is selected: a bar and a faint wash in its color, which stay when
-    you click the graph, until `Esc`, a tap on empty graph, or deleting the row.
+    you click the graph, until `Esc`, a tap on empty graph, or deleting the row. Clicking another
+    curve selects its row instead.
   - Pointing at a row (or selecting it) shows its color and delete buttons at its right end. On
     touch, they show on the selected row.
   - A curve gets its color when it first draws: the least-used one, red first, so the first three
@@ -66,6 +80,10 @@ Syntax notes:
     Rows that draw nothing (sliders, values such as `k = 2a + 1`, empty rows) don't take a color,
     and a curve turned into one gives its color back.
   - Errors show as one line under the row after a pause in typing, with the mistake underlined.
+  - Half-typed math doesn't make the graph flicker: while the row you are typing in is broken
+    for a moment (`y = x^` on the way to `y = x^2`), its curve stays as a faint ghost and its
+    color dot, slider or value stay in place. Curves it breaks along the way (retyping a slider
+    they use) do the same, and their errors wait until you leave the row.
 - **Sliders:** drag the thumb (its value shows above it, except under the row's own text, which
   shows it too) or press play. The min and max under the
   track's ends are fields you can edit; the step field appears while the row is being edited.
@@ -91,7 +109,7 @@ Syntax notes:
 - **Look:** follows the system's light or dark setting. Math is set in STIX Two Text (with `≤`,
   `≥`, `√` and superscripts from STIX Two Math), bundled with the app so it works offline: letters
   in italic, digits and operators upright. With reduced motion turned on in the system,
-  transitions and the zoom animation are skipped.
+  transitions, the zoom animation and the points of interest's bloom are skipped.
 - **Math keypad:** on touch devices, tapping a row opens the built-in keypad, which has three pages:
   numbers, functions and letters. The keyboard key on the letters page switches that row to the
   device keyboard, and the keyboard button in the header switches modes for good. Tapping the
@@ -119,11 +137,13 @@ pnpm icons        # regenerate PWA icons from public/logo.svg
 
 ```
 src/engine/       math language: tokenizer, parser, classifier, compiler, document engine (pure TS)
-src/plot/         geometry: viewport, ticks, adaptive samplers, marching squares (pure TS)
+src/plot/         geometry: viewport, ticks, adaptive samplers, marching squares, points of
+                  interest (pure TS)
 src/keypad/       on-screen keypad layouts and text-editing logic (pure TS)
 src/render/       canvas drawing and the render loop
 src/interaction/  pan / zoom / pinch gestures
-src/state/        Solid stores and signals; the undo history core and autosave format are plain TS
+src/state/        Solid stores and signals; the undo history core, the autosave format and what
+                  stays steady while typing are plain TS
 src/components/   UI
 tests/e2e/        Playwright specs
 ```
