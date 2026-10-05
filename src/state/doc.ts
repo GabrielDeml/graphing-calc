@@ -1,7 +1,7 @@
 import { batch, createSignal } from 'solid-js';
 import { createStore, produce, reconcile, unwrap } from 'solid-js/store';
 import { focusedRow, focusRow } from './focus';
-import { caretAfterChange, History } from './history';
+import { caretAfterChange, editGroup, History } from './history';
 import { type SavedRow, savedState } from './persist';
 
 export interface SliderSettings {
@@ -65,10 +65,11 @@ export { doc };
 // ---- undo ----
 
 /**
- * What a change came from. Typing coalesces per field into one undo step per burst, a slider
- * drag is one step (closed by endUndoStep), and a playing slider's frames are not undo steps.
+ * What a change came from. Typing coalesces per field into one undo step per burst (see
+ * editGroup), a slider drag is one step (closed by endUndoStep), arrow keys on a slider coalesce
+ * like typing, and a playing slider's frames are not undo steps.
  */
-export type ChangeOrigin = 'edit' | 'drag' | 'animation';
+export type ChangeOrigin = 'edit' | 'drag' | 'key' | 'animation';
 
 interface Snapshot {
   rows: Row[];
@@ -131,9 +132,12 @@ function willChange(group: string | null = null, windowMs?: number): void {
  * back), and writes that follow in the same tick are not steps either.
  */
 function animationWrite(id: string, from: string, to: string): void {
+  const live = unwrap(doc).rows.find((r) => r.id === id);
   history.amend((s) => {
     const row = s.rows.find((r) => r.id === id);
-    if (!row || row.source !== from) return false;
+    // The walk stops at a state where the row differs, bounds included: the new value may lie
+    // outside other bounds (undoing a wider maximum brings back the value it was widened at).
+    if (!row || !live || row.source !== from || !sameBounds(row, live)) return false;
     row.source = to;
     return true;
   });
@@ -150,20 +154,32 @@ export function endUndoStep(): void {
 }
 
 /**
- * What an undo or redo showed: the row it put the caret in (`focused`), or else the first row it
- * changed, for the caller to select and scroll to. Null when there was nothing to undo or redo.
+ * What an undo or redo showed: the row the caret is in afterwards, and the first row it changed
+ * (or brought back), for the caller to show. Null when there was nothing to undo or redo.
  */
 export interface Restored {
-  rowId: string | null;
-  focused: boolean;
+  focused: string | null;
+  changed: string | null;
 }
 
-export function undo(): Restored | null {
-  return restore(history.undo(snapshot()));
+/**
+ * Undo one step. `focusChanged`: focus is on something about to go away (a toast's Undo button),
+ * so unless the step puts the caret back in a row, it goes to the row the step changed.
+ */
+export function undo(focusChanged = false): Restored | null {
+  return restore(history.undo(snapshot()), focusChanged);
 }
 
 export function redo(): Restored | null {
-  return restore(history.redo(snapshot()));
+  return restore(history.redo(snapshot()), false);
+}
+
+function sameBounds(a: Row, b: Row): boolean {
+  return (
+    a.slider.min === b.slider.min &&
+    a.slider.max === b.slider.max &&
+    a.slider.step === b.slider.step
+  );
 }
 
 /** Rows that look the same (playing aside, which is live state). */
@@ -172,15 +188,13 @@ function sameRow(a: Row, b: Row): boolean {
     a.source === b.source &&
     a.colorIndex === b.colorIndex &&
     a.hidden === b.hidden &&
-    a.slider.min === b.slider.min &&
-    a.slider.max === b.slider.max &&
-    a.slider.step === b.slider.step &&
+    sameBounds(a, b) &&
     a.domain.min === b.domain.min &&
     a.domain.max === b.domain.max
   );
 }
 
-function restore(target: Snapshot | undefined): Restored | null {
+function restore(target: Snapshot | undefined, focusChanged: boolean): Restored | null {
   if (!target) return null;
   const current = new Map(unwrap(doc).rows.map((r) => [r.id, r]));
   const sources = new Map([...current].map(([id, r]) => [id, r.source]));
@@ -189,10 +203,11 @@ function restore(target: Snapshot | undefined): Restored | null {
     r.slider.playing = current.get(r.id)?.slider.playing ?? false;
     return r;
   });
-  const changed = rows.find((r) => {
-    const old = current.get(r.id);
-    return !old || !sameRow(old, r);
-  });
+  const changed =
+    rows.find((r) => {
+      const old = current.get(r.id);
+      return !old || !sameRow(old, r);
+    })?.id ?? null;
   restoring = true;
   try {
     // Keyed by id, so rows that survive keep their components (and their focused input).
@@ -211,19 +226,19 @@ function restore(target: Snapshot | undefined): Restored | null {
   // Back to the row the step was made in, with the caret where the text changed.
   if (target.focus && getRow(target.focus.id)) {
     focusRow(target.focus.id, caret(target.focus.id, target.focus.caret));
-    return { rowId: target.focus.id, focused: true };
+    return { focused: target.focus.id, changed };
   }
   // A step made outside the rows (×, a color, New graph). The row being edited keeps focus; if
   // the step takes it away, focus moves to the first changed row so it stays in the list.
   if (active && getRow(active.id)) {
     focusRow(active.id, caret(active.id, active.caret));
-    return { rowId: active.id, focused: true };
+    return { focused: active.id, changed };
   }
-  if (active && changed) {
-    focusRow(changed.id, 'end');
-    return { rowId: changed.id, focused: true };
+  if ((active || focusChanged) && changed !== null) {
+    focusRow(changed, 'end');
+    return { focused: changed, changed };
   }
-  return { rowId: changed?.id ?? null, focused: false };
+  return { focused: null, changed };
 }
 
 // ---- edits ----
@@ -234,6 +249,10 @@ function indexOf(id: string): number {
 
 export function getRow(id: string): Row | undefined {
   return doc.rows.find((r) => r.id === id);
+}
+
+function isEmpty(row: Row): boolean {
+  return row.source.trim() === '';
 }
 
 /** Insert a new row after `afterId` (or at the end) and return its id. */
@@ -252,7 +271,12 @@ export function addRowAfter(afterId: string | null, source = ''): string {
 }
 
 export function removeRow(id: string): void {
-  if (indexOf(id) < 0) return;
+  const i = indexOf(id);
+  if (i < 0) return;
+  // The empty row at the end would only come straight back (as a new row: an undo step that
+  // changes nothing to see).
+  const last = i === doc.rows.length - 1;
+  if (last && isEmpty(doc.rows[i]) && (i === 0 || !isEmpty(doc.rows[i - 1]))) return;
   willChange();
   setDoc('rows', (rows) => rows.filter((r) => r.id !== id));
   ensureTrailingEmpty();
@@ -260,7 +284,7 @@ export function removeRow(id: string): void {
 
 /** Whether every row is empty: a new graph, or one cleared down to nothing. */
 export function isBlank(): boolean {
-  return doc.rows.every((r) => r.source.trim() === '');
+  return doc.rows.every(isEmpty);
 }
 
 /** "New graph": one empty row (undoable like any other edit). */
@@ -300,8 +324,12 @@ export function updateSource(id: string, source: string, origin: ChangeOrigin = 
   if (i < 0) return;
   const before = doc.rows[i].source;
   if (before === source) return;
-  if (origin === 'edit') willChange(`edit:${id}`);
-  else if (origin === 'drag') willChange(`drag:${id}`, Number.POSITIVE_INFINITY);
+  if (origin === 'edit') {
+    const { group, fresh } = editGroup(id, before, source);
+    if (fresh) history.seal();
+    willChange(group);
+  } else if (origin === 'drag') willChange(`drag:${id}`, Number.POSITIVE_INFINITY);
+  else if (origin === 'key') willChange(`key:${id}`);
   else animationWrite(id, before, source);
   batch(() => {
     setDoc('rows', i, 'source', source);
@@ -354,7 +382,7 @@ export function setDomain(id: string, field: 'min' | 'max', value: string): void
 /** The list always ends with an empty row to type into. */
 export function ensureTrailingEmpty(): void {
   const rows = doc.rows;
-  if (rows.length === 0 || rows[rows.length - 1].source.trim() !== '') {
+  if (rows.length === 0 || !isEmpty(rows[rows.length - 1])) {
     setDoc('rows', rows.length, newRow());
   }
 }

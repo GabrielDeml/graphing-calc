@@ -1,21 +1,23 @@
 import { redo, revision, undo } from './doc';
 import { revealRow, rowInput } from './focus';
 import { historyShortcut } from './history';
+import { isCoarsePointer } from './keypad';
 import { toast } from './toast';
 import { ui } from './ui';
 
 /**
  * Undo or redo, and show where. The caret goes back to the row the change was made in; a change
- * made outside the rows (×, New graph, a color) selects the first row it changed and scrolls it
- * into view instead, without focusing it, so no keyboard pops up on a phone.
+ * made outside the rows (×, New graph, a color) is scrolled into view instead, and selected when
+ * no row has focus, without focusing it, so no keyboard pops up on a phone. `focusChanged`: see
+ * undo().
  */
-export function runHistory(command: 'undo' | 'redo'): boolean {
-  const restored = command === 'undo' ? undo() : redo();
+export function runHistory(command: 'undo' | 'redo', focusChanged = false): boolean {
+  const restored = command === 'undo' ? undo(focusChanged) : redo();
   if (!restored) return false;
-  const id = restored.rowId;
-  if (id !== null && !restored.focused) {
-    ui.setSelectedRowId(id);
-    revealRow(rowInput(id) ?? null);
+  const { focused, changed } = restored;
+  if (changed !== null && changed !== focused) {
+    if (focused === null) ui.setSelectedRowId(changed);
+    revealRow(rowInput(changed) ?? null);
   }
   return true;
 }
@@ -28,7 +30,13 @@ export function offerUndo(message: string): void {
   const at = revision();
   toast.show({
     message,
-    action: { label: 'Undo', run: () => runHistory('undo') },
+    action: {
+      label: 'Undo',
+      // When the button had focus (keyboard, or a click in most desktop browsers), the caret
+      // goes to what came back rather than being lost with the toast. A tap leaves focus be,
+      // so no keyboard pops up.
+      run: (hadFocus) => runHistory('undo', hadFocus && !isCoarsePointer),
+    },
     stale: () => revision() !== at,
   });
 }

@@ -48,7 +48,8 @@ export default function App() {
       <Show when={keypadVisible()}>
         <MathKeypad />
       </Show>
-      <div class="toasts">
+      {/* Always there, so screen readers announce a toast when it appears in it. */}
+      <div class="toasts" role="status">
         <Toast />
         <UpdatePrompt />
       </div>

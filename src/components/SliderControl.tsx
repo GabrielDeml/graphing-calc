@@ -35,6 +35,12 @@ export function SliderControl(props: { row: Row; name: string; value: number }) 
     });
   });
 
+  /**
+   * The last move came from the keyboard. Each arrow key press fires `change` too, so only a
+   * pointer's change ends the undo step; key presses coalesce like typing instead.
+   */
+  let byKey = false;
+
   // One effect sets the bounds and then the value: the browser clamps `value` to the current
   // min/max, so it has to be re-applied whenever they change, not only when the value does.
   let range!: HTMLInputElement;
@@ -72,9 +78,19 @@ export function SliderControl(props: { row: Row; name: string; value: number }) 
         aria-label={`${props.name} value`}
         aria-valuetext={formatValue(props.value)}
         data-testid={`slider-${props.name}`}
-        onInput={(e) => setSliderValue(props.row.id, e.currentTarget.valueAsNumber, 'drag')}
-        // Fires when the drag (or a key press) ends: the next move is a new undo step.
-        onChange={endUndoStep}
+        onKeyDown={() => {
+          byKey = true;
+        }}
+        onPointerDown={() => {
+          byKey = false;
+        }}
+        onInput={(e) =>
+          setSliderValue(props.row.id, e.currentTarget.valueAsNumber, byKey ? 'key' : 'drag')
+        }
+        // Fires when a drag ends: the next move is a new undo step.
+        onChange={() => {
+          if (!byKey) endUndoStep();
+        }}
       />
       <MathField
         class="slider-bound"

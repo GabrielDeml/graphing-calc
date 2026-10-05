@@ -195,6 +195,28 @@ test.describe('autosave on desktop', () => {
     await other.close();
   });
 
+  test('a slider playing in one tab plays on when another saves only its view', async ({
+    page,
+    context,
+  }) => {
+    await openApp(page);
+    await setExpr(page, 0, 'a = 1');
+    await setExpr(page, 1, 'y = a x');
+    await expect.poll(() => stored(page)).toContain('"y = a x"');
+    const other = await context.newPage();
+    await openApp(other);
+    await page.getByRole('button', { name: 'Play a' }).click();
+    await expect.poll(() => exprInput(page, 0).inputValue()).not.toBe('a = 1');
+    await other.getByRole('button', { name: 'Zoom in' }).click();
+    await expect.poll(() => stored(page)).not.toContain('"view":null');
+    await expect(page.getByRole('button', { name: 'Pause a' })).toBeVisible();
+    // Its undo history is kept too: the newest step is still typing `y = a x`.
+    await page.getByRole('button', { name: 'Pause a' }).click();
+    await page.keyboard.press('ControlOrMeta+z');
+    await expect(exprInput(page, 1)).toHaveValue('');
+    await other.close();
+  });
+
   test('the view, keypad mode and sidebar survive a reload', async ({ page }) => {
     await openApp(page);
     const home = await scale(page);
@@ -214,5 +236,33 @@ test.describe('autosave on desktop', () => {
     // Back at home, the view isn't pinned: it follows the window size again.
     await page.getByRole('button', { name: 'Reset view' }).click();
     await expect.poll(() => stored(page)).toContain('"view":null');
+  });
+});
+
+test.describe('a list hidden on a wide screen', () => {
+  test.skip(({ isMobile }) => !isMobile, 'touch layout');
+  const hidden = JSON.stringify({
+    version: 1,
+    rows: [savedRow('y = x')],
+    view: null,
+    sidebarOpen: false,
+  });
+
+  test('still shows on a phone, keypad and all', async ({ page }) => {
+    await seed(page, hidden);
+    await openApp(page);
+    await exprInput(page, 0).tap();
+    await expect(exprInput(page, 0)).toHaveAttribute('inputmode', 'none');
+    await expect(page.getByTestId('keypad')).toBeVisible();
+  });
+
+  test('still shows beside the graph on a short landscape phone', async ({ page }) => {
+    await page.setViewportSize({ width: 740, height: 420 });
+    await seed(page, hidden);
+    await openApp(page);
+    const graph = await page.getByTestId('graph').boundingBox();
+    expect(graph?.width).toBeGreaterThan(300);
+    await exprInput(page, 0).tap();
+    await expect(page.getByTestId('keypad')).toBeVisible();
   });
 });

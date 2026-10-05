@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PALETTE_NAMES, PALETTE_SIZE, pickColor } from './colors';
+import { type ColorUse, colorChanges, PALETTE_NAMES, PALETTE_SIZE, pickColor } from './colors';
 
 const [RED, BLUE, GREEN, PURPLE, ORANGE, BLACK] = [0, 1, 2, 3, 4, 5];
 
@@ -31,5 +31,70 @@ describe('pickColor', () => {
 
   it('ignores out-of-range entries (rows without a color)', () => {
     expect(pickColor([-1, -1, 99])).toBe(RED);
+  });
+});
+
+describe('colorChanges', () => {
+  /** Rows as `[colorIndex, use]`, with the changes applied, as the colors they end up with. */
+  const settle = (rows: [number, ColorUse][]) => {
+    const colors = rows.map(([c]) => c);
+    for (const [i, c] of colorChanges(rows.map(([colorIndex, use]) => ({ colorIndex, use })))) {
+      colors[i] = c;
+    }
+    return colors;
+  };
+
+  it('colors curves as they start to plot, red first, skipping rows that draw nothing', () => {
+    // `a = 1`, then `y = a x`, `y = x`, `y = 2`, typed in order.
+    expect(
+      settle([
+        [-1, 'none'],
+        [-1, 'plots'],
+      ]),
+    ).toEqual([-1, RED]);
+    expect(
+      settle([
+        [-1, 'none'],
+        [RED, 'plots'],
+        [-1, 'plots'],
+        [-1, 'plots'],
+      ]),
+    ).toEqual([-1, RED, BLUE, GREEN]);
+  });
+
+  it('keeps the color of a curve that is broken for now', () => {
+    expect(
+      settle([
+        [RED, 'broken'],
+        [-1, 'plots'],
+      ]),
+    ).toEqual([RED, BLUE]);
+  });
+
+  it('takes the color back from a row that stops drawing (a curve turned slider)', () => {
+    // `y = x` (red) becomes `b = 2`: red is free for the next curve…
+    expect(
+      settle([
+        [RED, 'none'],
+        [-1, 'plots'],
+      ]),
+    ).toEqual([-1, RED]);
+    // …and when the row is a curve again, it picks a color nobody uses.
+    expect(
+      settle([
+        [-1, 'plots'],
+        [RED, 'plots'],
+      ]),
+    ).toEqual([BLUE, RED]);
+  });
+
+  it('changes nothing once every row is settled', () => {
+    expect(
+      colorChanges([
+        { colorIndex: RED, use: 'plots' },
+        { colorIndex: -1, use: 'none' },
+        { colorIndex: BLUE, use: 'broken' },
+      ]),
+    ).toEqual([]);
   });
 });

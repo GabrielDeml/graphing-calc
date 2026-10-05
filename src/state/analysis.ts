@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createRoot, untrack } from 'solid-js';
 import { DocumentEngine } from '../engine/document';
 import type { DocAnalysis } from '../engine/types';
-import { pickColor } from './colors';
+import { type ColorUse, colorChanges } from './colors';
 import { assignColor, doc } from './doc';
 
 export const engine = new DocumentEngine();
@@ -22,30 +22,20 @@ export const analysis = createRoot(() =>
   ),
 );
 
-// A row gets its color when it first plots: the least-used one among the rows holding a color.
-// Rows that draw nothing (empty rows, sliders, values) don't take one or count against the
-// others, while a curve that is only broken for now (mid-edit) keeps its color reserved. Runs in
-// the same tick as the edit that made the row plot, so it is part of that undo step.
+// A row gets its color when it first plots, and rows that draw nothing hold none (see
+// colorChanges). Runs in the same tick as the edit that made the row plot (or stop), so it is
+// part of that undo step.
 createRoot(() => {
   createEffect(() => {
     const a = analysis();
     untrack(() => {
-      const used: number[] = [];
-      const waiting: string[] = [];
-      for (const row of doc.rows) {
+      const rows = doc.rows.map((row) => {
         const res = a.byId.get(row.id);
-        const plots = res?.status === 'ok' && !!res.plot;
-        if (row.colorIndex < 0) {
-          if (plots) waiting.push(row.id);
-        } else if (plots || res?.status === 'error') {
-          used.push(row.colorIndex);
-        }
-      }
-      for (const id of waiting) {
-        const color = pickColor(used);
-        assignColor(id, color);
-        used.push(color);
-      }
+        const use: ColorUse =
+          !res || res.status === 'error' ? 'broken' : res.plot ? 'plots' : 'none';
+        return { id: row.id, colorIndex: row.colorIndex, use };
+      });
+      for (const [i, color] of colorChanges(rows)) assignColor(rows[i].id, color);
     });
   });
 });

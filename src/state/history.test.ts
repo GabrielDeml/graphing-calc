@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { caretAfterChange, History, historyShortcut, type ShortcutKey } from './history';
+import {
+  caretAfterChange,
+  editGroup,
+  editKind,
+  History,
+  historyShortcut,
+  type ShortcutKey,
+} from './history';
 
 /** A tiny "document": the history stores strings, the test applies changes itself. */
 function editor(options: ConstructorParameters<typeof History<string>>[0] = {}) {
@@ -188,6 +195,61 @@ describe('caretAfterChange', () => {
     ['abc', 'abc', 3],
   ])('%j → %j puts the caret at %i', (before, after, caret) => {
     expect(caretAfterChange(before, after)).toBe(caret);
+  });
+});
+
+describe('editKind', () => {
+  it.each([
+    ['y = x', 'y = 2x', 'insert'],
+    ['', 'y = x', 'insert'],
+    ['aa', 'aaa', 'insert'],
+    ['y = 2x', 'y = x', 'delete'],
+    ['y = x^2', '', 'delete'],
+    ['y = x^2', 'b', 'replace'], // select all, type
+    // Select all and type `y` reads as deleting the rest: text alone can't tell them apart.
+    ['y = x^2', 'y', 'delete'],
+    ['a = 1.1', 'a = 1.2', 'replace'],
+  ] as const)('%j → %j is %s', (before, after, kind) => {
+    expect(editKind(before, after)).toBe(kind);
+  });
+});
+
+describe('editGroup', () => {
+  /** Apply edits to a field the way the document does, a few ms apart (one burst). */
+  function typeIn(texts: string[]) {
+    const e = editor();
+    texts.forEach((text, i) => {
+      const { group, fresh } = editGroup('r1', e.text, text);
+      if (fresh) e.history.seal();
+      e.change(text, group, i * 50);
+    });
+    return e;
+  }
+
+  it('keeps a burst of typing, or of deleting, in one step', () => {
+    const e = typeIn(['y', 'y=', 'y=x', 'y=', 'y']);
+    e.undo();
+    expect(e.text).toBe('y=x');
+    e.undo();
+    expect(e.text).toBe('');
+  });
+
+  it('brings back text deleted or typed over right after typing it', () => {
+    const deleted = typeIn(['y', 'y=', 'y=x', '']);
+    deleted.undo();
+    expect(deleted.text).toBe('y=x');
+    const replaced = typeIn(['y', 'y=', 'y=x', 'b', 'b=', 'b=2']);
+    replaced.undo();
+    expect(replaced.text).toBe('y=x');
+    replaced.undo();
+    expect(replaced.text).toBe('');
+    replaced.redo();
+    replaced.redo();
+    expect(replaced.text).toBe('b=2');
+  });
+
+  it('keeps fields apart', () => {
+    expect(editGroup('r1', '', 'a').group).not.toBe(editGroup('r2', '', 'a').group);
   });
 });
 

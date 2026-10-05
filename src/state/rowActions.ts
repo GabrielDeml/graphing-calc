@@ -26,7 +26,10 @@ export function enterFrom(id: string): boolean {
   return true;
 }
 
-/** Backspace in an empty row deletes it and focuses the end of the previous row. */
+/**
+ * Backspace in an empty row deletes it and focuses the end of the previous row. The empty row at
+ * the end stays (removeRow leaves it), so there it only moves up.
+ */
 export function deleteEmptyBackward(id: string): boolean {
   const i = position(id);
   if (i < 0 || doc.rows.length <= 1) return false;
@@ -67,12 +70,13 @@ export function sliderBounds(id: string): { min: number; max: number; step: numb
 
 /**
  * Rewrite just the slider's numeric literal in the row's source. A drag is one undo step (the
- * range's change event ends it); animation frames are not undo steps.
+ * range's change event ends it), arrow keys coalesce like typing, and animation frames are not
+ * undo steps.
  */
 export function setSliderValue(
   id: string,
   value: number,
-  origin: Extract<ChangeOrigin, 'drag' | 'animation'>,
+  origin: Exclude<ChangeOrigin, 'edit'>,
 ): void {
   const row = getRow(id);
   const res = analysis().byId.get(id);

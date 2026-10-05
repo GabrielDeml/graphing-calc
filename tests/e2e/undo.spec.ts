@@ -59,6 +59,55 @@ test.describe('undo and redo', () => {
     await expect(input).toHaveValue('y = 3');
   });
 
+  test('text deleted or typed over right after typing it comes back', async ({ page }) => {
+    await openApp(page);
+    const input = exprInput(page, 0);
+    await input.click();
+    await input.pressSequentially('y = x^2', { delay: 20 });
+    await input.press('ControlOrMeta+a');
+    await input.press('Backspace');
+    await expect(input).toHaveValue('');
+    await page.keyboard.press('ControlOrMeta+z');
+    await expect(input).toHaveValue('y = x^2');
+
+    await input.press('ControlOrMeta+a');
+    await input.pressSequentially('x = 1', { delay: 20 });
+    await page.keyboard.press('ControlOrMeta+z');
+    await expect(input).toHaveValue('y = x^2');
+    await page.keyboard.press('ControlOrMeta+z');
+    await expect(input).toHaveValue('');
+  });
+
+  test('Backspace in the empty last row only moves up, adding no step', async ({ page }) => {
+    await openApp(page);
+    await setExpr(page, 0, 'y = x');
+    await exprInput(page, 1).click();
+    await page.keyboard.press('Backspace');
+    await expect(exprInput(page, 0)).toBeFocused();
+    await expect(page.getByTestId('expr-input')).toHaveCount(2);
+    await page.keyboard.press('ControlOrMeta+z');
+    await expect(exprInput(page, 0)).toHaveValue('');
+  });
+
+  test('undo shows a row it brings back while another row has the caret', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 480 });
+    const rows = Array.from({ length: 16 }, (_, i) => ({ source: `y = ${i + 1}` }));
+    await page.addInitScript(
+      (value) => localStorage.setItem('graphing-calc:v1', value),
+      JSON.stringify({ version: 1, rows, view: null }),
+    );
+    await openApp(page);
+    await page.getByRole('button', { name: 'Delete expression 16' }).click();
+    await expect(page.getByTestId('expr-input')).toHaveCount(16);
+    await exprInput(page, 0).click();
+    await expect(exprInput(page, 15)).not.toBeInViewport();
+
+    await page.keyboard.press('ControlOrMeta+z');
+    await expect(exprInput(page, 15)).toHaveValue('y = 16');
+    await expect(exprInput(page, 15)).toBeInViewport();
+    await expect(exprInput(page, 0)).toBeFocused();
+  });
+
   test('a slider drag is one step', async ({ page }) => {
     await openApp(page);
     await setExpr(page, 0, 'a = 1');
@@ -89,6 +138,16 @@ test.describe('undo and redo', () => {
     await expect(exprInput(page, 0)).toHaveValue(first);
   });
 
+  test('arrow keys on a slider undo like typing, in one step', async ({ page }) => {
+    await openApp(page);
+    await setExpr(page, 0, 'a = 1');
+    const range = page.getByTestId('slider-a');
+    for (let i = 0; i < 6; i++) await range.press('ArrowRight');
+    await expect(exprInput(page, 0)).not.toHaveValue('a = 1');
+    await page.keyboard.press('ControlOrMeta+z');
+    await expect(exprInput(page, 0)).toHaveValue('a = 1');
+  });
+
   test('playing a slider adds no undo steps', async ({ page }) => {
     await openApp(page);
     await setExpr(page, 0, 'a = 1');
@@ -104,6 +163,28 @@ test.describe('undo and redo', () => {
     await expect(page.getByRole('button', { name: 'Play a' })).toBeVisible();
   });
 
+  test('undoing new slider bounds keeps the value inside the old ones', async ({ page }) => {
+    await openApp(page);
+    await setExpr(page, 0, 'a = 1');
+    await page.getByRole('button', { name: 'Play a' }).click();
+    const max = page.getByRole('textbox', { name: 'a slider maximum' });
+    await max.fill('20');
+    await max.press('Enter');
+    await page.waitForFunction(
+      () => {
+        const el = document.querySelector('[data-testid="expr-input"]') as HTMLInputElement;
+        return Number(el.value.split('=')[1]) > 10.5;
+      },
+      undefined,
+      { polling: 'raf' },
+    );
+    await page.getByRole('button', { name: 'Pause a' }).click();
+    await page.keyboard.press('ControlOrMeta+z');
+    await expect(max).toHaveValue('10');
+    const value = Number((await exprInput(page, 0).inputValue()).split('=')[1]);
+    expect(value).toBeLessThanOrEqual(10);
+  });
+
   test('a playing slider whose step does not divide its range adds no steps', async ({ page }) => {
     await openApp(page);
     await setExpr(page, 0, 'a = 8');
@@ -114,15 +195,19 @@ test.describe('undo and redo', () => {
     await page.getByRole('button', { name: 'Play a' }).click();
     // Up to the top of the range and back: the last step below 10 is 9.8, and snapping must not
     // go past 10 (that would widen the maximum, an undo step).
-    const reaches = (text: string) =>
+    // Any value past `limit` (above it going up, below it on the way down).
+    const passes = (limit: number, dir: 1 | -1) =>
       page.waitForFunction(
-        (t) =>
-          (document.querySelector('[data-testid="expr-input"]') as HTMLInputElement).value === t,
-        text,
+        ([l, d]) => {
+          const el = document.querySelector('[data-testid="expr-input"]') as HTMLInputElement;
+          return d * Number(el.value.split('=')[1]) > d * l;
+        },
+        [limit, dir] as const,
         { polling: 'raf' },
       );
-    await reaches('a = 9.8');
-    await reaches('a = 9.5');
+    await passes(9.7, 1);
+    // Back down, past the top grid point whichever frames were skipped.
+    await passes(9.8, -1);
     await page.getByRole('button', { name: 'Pause a' }).click();
     await expect(page.getByRole('textbox', { name: 'a slider maximum' })).toHaveValue('10');
     await page.keyboard.press('ControlOrMeta+z');
@@ -141,6 +226,10 @@ test.describe('undo and redo', () => {
     await page.keyboard.press('Escape');
     await setExpr(page, 0, 'y = x');
     await setExpr(page, 1, 'a = 2');
+    const graph = page.getByTestId('graph');
+    const home = await graph.getAttribute('data-view');
+    await page.getByRole('button', { name: 'Zoom in' }).click();
+    await expect(graph).not.toHaveAttribute('data-view', home ?? '');
 
     // Escape closes the menu and focus goes back to its button.
     await more.click();
@@ -164,12 +253,32 @@ test.describe('undo and redo', () => {
     await expect(page.getByTestId('expr-input')).toHaveCount(1);
     await expect(exprInput(page, 0)).toHaveValue('');
     await expect(page.getByTestId('toast')).toContainText('Graph cleared');
+    // Starting over starts at the home view.
+    await expect(graph).toHaveAttribute('data-view', home ?? '');
 
     await page.keyboard.press('ControlOrMeta+z');
     await expect(page.getByTestId('expr-input')).toHaveCount(3);
     await expect(exprInput(page, 0)).toHaveValue('y = x');
     await expect(exprInput(page, 1)).toHaveValue('a = 2');
     // Focus stays in the list, and the toast has nothing left to undo.
+    await expect(exprInput(page, 0)).toBeFocused();
+    await expect(page.getByTestId('toast')).toHaveCount(0);
+  });
+
+  test('the Undo toast waits while it has focus, then puts the caret in the list', async ({
+    page,
+  }) => {
+    await openApp(page);
+    await setExpr(page, 0, 'y = x');
+    await page.getByRole('button', { name: 'More options' }).click();
+    await page.getByRole('menuitem', { name: 'New graph' }).click();
+    const undo = page.getByTestId('toast').getByRole('button', { name: 'Undo', exact: true });
+    await undo.focus();
+    // Longer than a toast lasts on its own.
+    await page.waitForTimeout(6500);
+    await expect(undo).toBeVisible();
+    await page.keyboard.press('Enter');
+    await expect(exprInput(page, 0)).toHaveValue('y = x');
     await expect(exprInput(page, 0)).toBeFocused();
     await expect(page.getByTestId('toast')).toHaveCount(0);
   });
@@ -189,10 +298,12 @@ test.describe('New graph on a phone', () => {
 
     // No undo key on a phone: the toast's Undo brings the graph back.
     await expect(page.getByTestId('toast')).toContainText('Graph cleared');
-    await page.getByRole('button', { name: 'Undo' }).tap();
+    await page.getByTestId('toast').getByRole('button', { name: 'Undo', exact: true }).tap();
     await expect(page.getByTestId('expr-input')).toHaveCount(2);
     await expect(exprInput(page, 0)).toHaveValue('y=x');
     await expect(page.getByTestId('toast')).toHaveCount(0);
+    // Focus goes back where it was before the toast took it, not to the page.
+    await expect(page.getByRole('button', { name: 'More options' })).toBeFocused();
   });
 
   test('one tap opens the menu from a collapsed panel, which stays collapsed', async ({ page }) => {

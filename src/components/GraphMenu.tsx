@@ -3,6 +3,7 @@ import { clearRows, doc, isBlank } from '../state/doc';
 import { focusRow } from '../state/focus';
 import { offerUndo } from '../state/historyUi';
 import { isCoarsePointer } from '../state/keypad';
+import { ui } from '../state/ui';
 
 /** The header's ⋯ menu: a menu button with document-level actions. */
 export function GraphMenu() {
@@ -53,13 +54,14 @@ export function GraphMenu() {
   };
 
   /**
-   * Start over (undoable, and the toast's Undo is the way back on a phone). With a keyboard the
-   * caret goes to the new empty row, ready to type; on touch focus stays on ⋯, so no keypad or
-   * keyboard pops up.
+   * Start over, at the home view (undoable, and the toast's Undo is the way back on a phone; the
+   * view stays home). With a keyboard the caret goes to the new empty row, ready to type; on touch
+   * focus stays on ⋯, so no keypad or keyboard pops up.
    */
   const newGraph = () => {
     if (isBlank()) return;
     clearRows();
+    ui.requestHome();
     close(isCoarsePointer);
     if (!isCoarsePointer) focusRow(doc.rows[0].id, 'end');
     offerUndo('Graph cleared');

@@ -17,3 +17,36 @@ export function pickColor(used: readonly number[]): number {
   for (let i = 1; i < PALETTE_SIZE; i++) if (counts[i] < counts[best]) best = i;
   return best;
 }
+
+/** How a row stands with colors: it draws, it is broken for now (mid-edit), or it draws nothing. */
+export type ColorUse = 'plots' | 'broken' | 'none';
+
+/**
+ * The color changes rows need, as [row index, color] pairs. A row that has just started to plot
+ * takes the least-used color among the rows holding one (pickColor). A broken curve keeps its
+ * color reserved for when it is fixed, while a row that draws nothing (a slider, a value) gives
+ * its color back: if it plots again it picks afresh, rather than keep one that another curve may
+ * have taken since.
+ */
+export function colorChanges(
+  rows: readonly { colorIndex: number; use: ColorUse }[],
+): [number, number][] {
+  const used: number[] = [];
+  const waiting: number[] = [];
+  const changes: [number, number][] = [];
+  rows.forEach((row, i) => {
+    if (row.colorIndex < 0) {
+      if (row.use === 'plots') waiting.push(i);
+    } else if (row.use === 'none') {
+      changes.push([i, -1]);
+    } else {
+      used.push(row.colorIndex);
+    }
+  });
+  for (const i of waiting) {
+    const color = pickColor(used);
+    changes.push([i, color]);
+    used.push(color);
+  }
+  return changes;
+}

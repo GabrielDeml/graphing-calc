@@ -53,22 +53,27 @@ Syntax notes:
 - **Rows:**
   - `Enter` starts a new row. On an empty row it moves on to the next one instead, and on the
     empty row at the end it stays put (the keypad's ↵ puts the keypad away there).
-  - `Backspace` on an empty row deletes it.
+  - `Backspace` on an empty row deletes it (on the empty row at the end it just moves up).
   - `↑` and `↓` move between rows.
   - Tap the color dot to show or hide a curve.
   - A curve gets its color when it first draws: the least-used one, red first, so the first three
     curves are red, blue and green wherever they sit in the list. Rows that draw nothing (sliders,
-    values such as `k = 2a + 1`, empty rows) don't take a color.
+    values such as `k = 2a + 1`, empty rows) don't take a color, and a curve turned into one
+    gives its color back.
 - **Undo:** `Ctrl+Z` (`⌘Z` on a Mac) undoes and `Ctrl+Shift+Z` (`⌘⇧Z`) or `Ctrl+Y` redoes, from
-  anywhere in the app. Typing undoes in bursts, a slider drag is one step, and a playing slider
-  adds none (undoing something else leaves it where it is). Undo puts the caret back where the
-  change was, or else scrolls to the row it changed. Phones have no undo key yet: **New graph**
-  shows an Undo button for a few seconds instead.
+  anywhere in the app. Typing undoes in bursts, and deleting is a burst of its own, so text
+  deleted or typed over right after it was typed comes back. A slider drag is one step, arrow
+  keys on a slider undo like typing, and a playing slider adds none (undoing something else
+  leaves it where it is). Undo puts the caret back where the change was; a change made outside
+  the rows (×, a color, New graph) is scrolled into view. Phones have no undo key yet: **New
+  graph** shows an Undo button for a few seconds instead (it waits while you point at it or it
+  has focus).
 - **Saved automatically:** the expression list, the view and the panel layout are kept in the
   browser and come back on the next visit (sliders come back paused), and so is the keypad mode
   once you pick one with ⌨. Nothing is stored until you change something. **New graph** in the
-  header's ⋯ menu starts over. With the app open in two windows, each one picks up the list the
-  other saves (each keeps its own view). Data saved by a newer version of the app is never
+  header's ⋯ menu starts over, at the home view. With the app open in two windows, each one
+  picks up the list the other saves (each keeps its own view). A list hidden with « stays hidden
+  on wide screens only; phones always show it. Data saved by a newer version of the app is never
   overwritten by an older one.
 - **Math keypad:** on touch devices, tapping a row opens the built-in keypad, which has three pages:
   numbers, functions and letters. The ⌨ key on the letters page switches that row to the device

@@ -1,4 +1,4 @@
-import { createEffect, createSignal, onCleanup, onMount, Show } from 'solid-js';
+import { createEffect, createSignal, on, onCleanup, onMount, Show } from 'solid-js';
 import { attachGestures } from '../interaction/gestures';
 import { GraphController, type SceneRow, type TraceHit } from '../render/controller';
 import { analysis } from '../state/analysis';
@@ -57,6 +57,8 @@ export function GraphView() {
       retrace();
       if (debugEl) debugEl.textContent = `${c.lastFrameMs.toFixed(1)} ms ${c.currentQuality}`;
     };
+
+    createEffect(on(ui.homeRequests, () => c.home(), { defer: true }));
 
     createEffect(() => {
       const a = analysis();

@@ -130,13 +130,19 @@ button {
     "keypad graph";
 }
 
-.app.sidebar-collapsed {
-  grid-template-columns: 0 minmax(0, 1fr);
-}
+/*
+ * Hiding the list is a desktop choice (« only shows there). A narrower window ignores a saved
+ * one: the phone layouts have no » to bring the list back, nor another way to type.
+ */
+@media (min-width: 768px) {
+  .app.sidebar-collapsed {
+    grid-template-columns: 0 minmax(0, 1fr);
+  }
 
-.app.sidebar-collapsed .panel,
-.app.sidebar-collapsed .keypad {
-  display: none;
+  .app.sidebar-collapsed .panel,
+  .app.sidebar-collapsed .keypad {
+    display: none;
+  }
 }
 
 .panel {
@@ -194,14 +200,6 @@ button {
 
   .app.keypad-open {
     padding-bottom: 0;
-  }
-
-  .app.sidebar-collapsed {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .app.sidebar-collapsed .panel {
-    display: flex;
   }
 
   .panel {
@@ -924,6 +922,20 @@ button {
   font-size: 18px;
   cursor: pointer;
   color: var(--muted);
+}
+
+/* Thumb-sized buttons: on a phone, a toast's Undo is the only undo there is. */
+@media (pointer: coarse) {
+  .toast {
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+
+  .toast-action,
+  .toast-close {
+    min-width: 44px;
+    min-height: 44px;
+  }
 }
 
 @media (max-width: 767px) {

@@ -108,9 +108,9 @@ createRoot(() => {
 
 /**
  * Another window (a second tab, the installed app next to a browser tab) saved. Unless this one
- * has edits of its own waiting, it takes the other window's rows (a playing slider here stops),
- * so its next save builds on them instead of putting back the list it loaded with. Each window
- * keeps its own view and layout.
+ * has edits of its own waiting, it takes the other window's rows if they changed (a playing
+ * slider here then stops), so its next save builds on them instead of putting back the list it
+ * loaded with. Each window keeps its own view and layout.
  */
 function onStorage(e: StorageEvent): void {
   if (e.key !== null && e.key !== STORAGE_KEY) return;
@@ -120,7 +120,11 @@ function onStorage(e: StorageEvent): void {
   // Edits made here and not saved yet win: they are saved over it shortly.
   if (!state || untrack(revision) !== savedRevision) return;
   const waiting = timer !== undefined;
-  adoptRows(state.rows);
+  // With nothing unsaved, this window shows the stored rows already: unless the other window
+  // changed them (not just its view), there is nothing to take, and a slider playing here (its
+  // frames are not saved) plays on.
+  const before = decode(e.oldValue);
+  if (!before || JSON.stringify(before.rows) !== JSON.stringify(state.rows)) adoptRows(state.rows);
   savedRevision = untrack(revision);
   // A view or layout change that was waiting is saved, with the new rows. Otherwise storage
   // holds what this window shows, as far as it matters: only a later change here needs a save.

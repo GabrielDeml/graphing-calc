@@ -6,7 +6,7 @@ export type PanelSnap = 'collapsed' | 'half' | 'full';
 
 /**
  * Layout state: desktop sidebar visibility and the mobile expression panel's snap height (both
- * restored from the last session), plus the selected row.
+ * restored from the last session), plus the selected row and requests to the graph's view.
  */
 export const ui = createRoot(() => {
   const saved = savedState();
@@ -24,6 +24,8 @@ export const ui = createRoot(() => {
     const id = selectedRowId();
     if (id !== null && !doc.rows.some((r) => r.id === id)) setSelectedRowId(null);
   });
+  /** Counts requests to fly the graph back to its home view (GraphView acts on them). */
+  const [homeRequests, setHomeRequests] = createSignal(0);
   return {
     sidebarOpen,
     setSidebarOpen,
@@ -33,6 +35,9 @@ export const ui = createRoot(() => {
     setPanelDragPx,
     selectedRowId,
     setSelectedRowId,
+    homeRequests,
+    /** Back to the home view, as "Reset view" does (New graph starts over there). */
+    requestHome: () => setHomeRequests((n) => n + 1),
   };
 });
 

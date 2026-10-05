@@ -101,11 +101,10 @@ export class History<S> {
 }
 
 /**
- * Where the caret goes when undo or redo turns `before` into `after`: the end of the changed
- * part of `after`. Undoing typed text puts the caret where the typing started; redoing it puts
- * the caret after it again.
+ * The text two strings share at the start and at the end (not overlapping): what lies between
+ * is what a change replaced. With repeated characters the change is placed as late as possible.
  */
-export function caretAfterChange(before: string, after: string): number {
+function sharedEnds(before: string, after: string): { prefix: number; suffix: number } {
   const max = Math.min(before.length, after.length);
   let prefix = 0;
   while (prefix < max && before[prefix] === after[prefix]) prefix++;
@@ -116,7 +115,41 @@ export function caretAfterChange(before: string, after: string): number {
   ) {
     suffix++;
   }
-  return after.length - suffix;
+  return { prefix, suffix };
+}
+
+/**
+ * Where the caret goes when undo or redo turns `before` into `after`: the end of the changed
+ * part of `after`. Undoing typed text puts the caret where the typing started; redoing it puts
+ * the caret after it again.
+ */
+export function caretAfterChange(before: string, after: string): number {
+  return after.length - sharedEnds(before, after).suffix;
+}
+
+export type EditKind = 'insert' | 'delete' | 'replace';
+
+/** Whether a text change only added text, only removed some, or replaced some (a selection). */
+export function editKind(before: string, after: string): EditKind {
+  const { prefix, suffix } = sharedEnds(before, after);
+  if (before.length - prefix - suffix === 0) return 'insert';
+  return after.length - prefix - suffix === 0 ? 'delete' : 'replace';
+}
+
+/**
+ * The undo group of a text edit in `field`, and whether it must start a new step (`fresh`, by
+ * sealing the open one). Typing coalesces with typing and deleting with deleting, but switching
+ * between them starts a new step, so undo always brings back text that was typed and then
+ * deleted, however quickly (select all + Backspace). Typing over a selection starts a new
+ * typing burst.
+ */
+export function editGroup(
+  field: string,
+  before: string,
+  after: string,
+): { group: string; fresh: boolean } {
+  const kind = editKind(before, after);
+  return { group: `${kind === 'delete' ? 'delete' : 'type'}:${field}`, fresh: kind === 'replace' };
 }
 
 export interface ShortcutKey {
