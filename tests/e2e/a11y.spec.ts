@@ -1,6 +1,10 @@
 import type { Page } from '@playwright/test';
 import { expect, exprInput, openApp, setExpr, test } from './helpers';
 
+// The buttons are counted, then checked one by one: the service worker's "Ready to work offline"
+// toast (pwa.spec covers it) would come and go in between, taking its Dismiss button along.
+test.use({ serviceWorkers: 'block' });
+
 /** Every shown button without visible text (an icon, a color dot) must still have a name. */
 async function expectIconButtonsNamed(page: Page, atLeast: number) {
   const buttons = page.locator('button:visible').filter({ hasNotText: /\S/ });

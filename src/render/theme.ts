@@ -24,7 +24,7 @@ export function readTheme(): Theme {
     gridMinor: v('--grid-minor', dark ? '#1c1f25' : '#eff1f4'),
     gridMajor: v('--grid-major', dark ? '#262a31' : '#e2e5ea'),
     axis: v('--axis', dark ? '#80868f' : '#484c55'),
-    label: v('--graph-label', dark ? '#7d838e' : '#7b818c'),
+    label: v('--graph-label', dark ? '#7d838e' : '#6b717c'),
     palette: dark ? PALETTE_DARK : PALETTE_LIGHT,
   };
 }

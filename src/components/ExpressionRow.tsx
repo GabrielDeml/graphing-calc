@@ -14,6 +14,8 @@ import type { MathError } from '../engine/types';
 import { analysis } from '../state/analysis';
 import { doc, type Row, removeRow, setColor, toggleHidden, updateSource } from '../state/doc';
 import { focusRow, registerRowInput, unregisterRowInput } from '../state/focus';
+import { offerUndo } from '../state/historyUi';
+import { isCoarsePointer } from '../state/keypad';
 import {
   addSliders,
   deleteEmptyBackward,
@@ -81,10 +83,16 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
     return kind === 'parametric' ? 't' : kind === 'polar' ? 'θ' : null;
   };
 
-  /** × button: keyboard users keep their place in the list (pointer users are left alone). */
+  /**
+   * × button: keyboard users keep their place in the list (pointer users are left alone). On
+   * touch, where there is no undo key and a thumb can land on × instead of the color button, a
+   * toast offers to undo it.
+   */
   const remove = (e: MouseEvent) => {
     const i = doc.rows.findIndex((r) => r.id === props.row.id);
+    const hadMath = props.row.source.trim() !== '';
     removeRow(props.row.id);
+    if (isCoarsePointer && hadMath) offerUndo('Expression deleted');
     if (e.detail !== 0) return;
     const next = doc.rows[i] ?? doc.rows[i - 1];
     if (next) focusRow(next.id, 'end');

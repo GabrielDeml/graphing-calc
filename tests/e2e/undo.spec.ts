@@ -317,3 +317,27 @@ test.describe('New graph on a phone', () => {
     await expect(page.locator('.app')).toHaveAttribute('data-panel', 'collapsed');
   });
 });
+
+test.describe('deleting a row on a phone', () => {
+  test.skip(({ isMobile }) => !isMobile, 'touch layout');
+
+  test('Delete is thumb-sized, apart from Change color, and offers Undo', async ({ page }) => {
+    await openApp(page);
+    await setExpr(page, 0, 'y = x');
+    await setExpr(page, 1, 'y = 2');
+    await exprInput(page, 0).tap();
+    const row = page.locator('.expr-row').first();
+    const del = await row.getByRole('button', { name: 'Delete expression 1' }).boundingBox();
+    const color = await row.getByRole('button', { name: 'Change color' }).boundingBox();
+    if (!del || !color) throw new Error('no row actions');
+    expect(Math.min(del.width, del.height, color.width, color.height)).toBeGreaterThanOrEqual(40);
+    expect(del.x - (color.x + color.width)).toBeGreaterThanOrEqual(8);
+
+    await row.getByRole('button', { name: 'Delete expression 1' }).tap();
+    await expect(exprInput(page, 0)).toHaveValue('y = 2');
+    await expect(page.getByTestId('toast')).toContainText('Expression deleted');
+    await page.getByTestId('toast').getByRole('button', { name: 'Undo', exact: true }).tap();
+    await expect(exprInput(page, 0)).toHaveValue('y = x');
+    await expect(page.getByTestId('toast')).toHaveCount(0);
+  });
+});

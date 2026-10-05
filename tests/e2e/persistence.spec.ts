@@ -239,6 +239,29 @@ test.describe('autosave on desktop', () => {
   });
 });
 
+test.describe('with reduced motion', () => {
+  test.use({ contextOptions: { reducedMotion: 'reduce' } });
+
+  test('the zoom buttons jump, and Reset view still saves the home view', async ({ page }) => {
+    await openApp(page);
+    const home = await scale(page);
+    // No animation: the next frame shows the whole zoom.
+    const zoomed = await page.evaluate(async () => {
+      document.querySelector<HTMLElement>('[aria-label="Zoom in"]')?.click();
+      await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+      const el = document.querySelector('[data-testid="graph"]') as HTMLElement;
+      const [xmin, xmax] = (el.getAttribute('data-view') ?? '').split(',').map(Number);
+      return el.clientWidth / (xmax - xmin);
+    });
+    expect(zoomed).toBeCloseTo(home * 2, 3);
+    await expect.poll(() => stored(page)).toContain('"view":{');
+
+    // Home, not the numbers it has here: it follows the window size on the next visit.
+    await page.getByRole('button', { name: 'Reset view' }).click();
+    await expect.poll(() => stored(page)).toContain('"view":null');
+  });
+});
+
 test.describe('a list hidden on a wide screen', () => {
   test.skip(({ isMobile }) => !isMobile, 'touch layout');
   const hidden = JSON.stringify({

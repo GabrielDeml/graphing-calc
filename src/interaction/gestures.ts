@@ -29,8 +29,12 @@ export function attachGestures(
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   };
 
-  /** Events on the overlaid buttons (zoom, home, show list) belong to those buttons. */
-  const onControl = (e: Event) => (e.target as HTMLElement).closest('button') !== null;
+  /**
+   * Events on the overlaid controls (zoom, home, show list) belong to them, including the gaps
+   * and rim of their pill, which reads as chrome rather than graph.
+   */
+  const onControl = (e: Event) =>
+    (e.target as HTMLElement).closest('button, .graph-controls') !== null;
 
   const onPointerDown = (e: PointerEvent) => {
     if (e.button !== 0 && e.pointerType === 'mouse') return;
@@ -52,7 +56,10 @@ export function attachGestures(
     const p = local(e);
     const prev = pointers.get(e.pointerId);
     if (!prev) {
-      if (e.pointerType !== 'touch') cb.hover(p.x, p.y);
+      if (e.pointerType === 'touch') return;
+      // Over the controls, nothing underneath is traced.
+      if (onControl(e)) cb.leave();
+      else cb.hover(p.x, p.y);
       return;
     }
     if (tapStart && Math.hypot(p.x - tapStart.x, p.y - tapStart.y) > TAP_MOVE_PX) {
@@ -104,7 +111,7 @@ export function attachGestures(
     const factor = wheelZoomFactor(e.deltaY, e.deltaMode, e.ctrlKey, el.clientHeight);
     const next = zoomAt(controller.view, p.x, p.y, factor);
     if (next !== controller.view) controller.setView(next);
-    cb.hover(p.x, p.y);
+    if (!onControl(e)) cb.hover(p.x, p.y);
   };
 
   const onDblClick = (e: MouseEvent) => {

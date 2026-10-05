@@ -2,9 +2,15 @@ import { createEffect, createMemo, createSignal, Show, untrack } from 'solid-js'
 import { formatSliderValue, formatValue } from '../engine/format';
 import { analysis, evalNumber } from '../state/analysis';
 import { endUndoStep, type Row, setSliderField, setSliderPlaying } from '../state/doc';
+import { rowInput } from '../state/focus';
 import { setSliderValue } from '../state/rowActions';
 import { Icon } from './icons';
-import { blurActive, MathField } from './MathField';
+import { blurActive, MathField, textEndX } from './MathField';
+
+/** The range's thumb diameter (--thumb in global.css). */
+const THUMB_PX = 16;
+/** Room the value bubble keeps from the end of the row's own text. */
+const BUBBLE_GAP_PX = 8;
 
 export function SliderControl(props: { row: Row; name: string; value: number }) {
   const min = createMemo(() => evalNumber(props.row.slider.min));
@@ -62,6 +68,25 @@ export function SliderControl(props: { row: Row; name: string; value: number }) 
   /** A pointer is dragging the thumb: the value shows above it. */
   const [dragging, setDragging] = createSignal(false);
 
+  /**
+   * Keep the bubble over the thumb but inside the track, and off the row's own text above it:
+   * where they would overlap it hides, as "a = -8.5" right there shows the same value.
+   */
+  let bubble: HTMLSpanElement | undefined;
+  createEffect(() => {
+    if (!dragging()) return;
+    const frac = fraction(); // and the value, whose text sets the bubble's width
+    if (!bubble?.isConnected) return;
+    const track = range.getBoundingClientRect();
+    const half = bubble.offsetWidth / 2;
+    const thumbX = THUMB_PX / 2 + frac * (track.width - THUMB_PX);
+    const x = Math.min(Math.max(thumbX, half), track.width - half);
+    bubble.style.left = `${x}px`;
+    const text = rowInput(props.row.id);
+    const covers = !!text && track.left + x - half < textEndX(text) + BUBBLE_GAP_PX;
+    bubble.classList.toggle('covering', covers);
+  });
+
   return (
     <div class="slider" classList={{ invalid: !valid() }}>
       <button
@@ -92,10 +117,12 @@ export function SliderControl(props: { row: Row; name: string; value: number }) 
           onKeyDown={() => {
             byKey = true;
           }}
-          onPointerDown={() => {
+          onPointerDown={(e) => {
             byKey = false;
-            setDragging(true);
+            // Only the primary button drags (a context menu would swallow the pointerup).
+            if (e.button === 0) setDragging(true);
           }}
+          onContextMenu={() => setDragging(false)}
           onPointerUp={() => setDragging(false)}
           onPointerCancel={() => setDragging(false)}
           onLostPointerCapture={() => setDragging(false)}
@@ -109,7 +136,7 @@ export function SliderControl(props: { row: Row; name: string; value: number }) 
           }}
         />
         <Show when={dragging() && valid()}>
-          <span class="slider-bubble" aria-hidden="true">
+          <span class="slider-bubble" aria-hidden="true" ref={bubble}>
             {formatValue(props.value)}
           </span>
         </Show>

@@ -3,19 +3,28 @@
 :root {
   color-scheme: light dark;
 
-  /* Surfaces: the app itself (the list), raised (graph, popovers), sunken (wells, chips). */
+  /*
+   * Surfaces: the app itself (the list), raised (graph, popovers), sunken (wells, chips), and
+   * floating chrome over the graph (the zoom pill, trace pill, toasts, menus), which in dark mode
+   * must stand off a graph of the raised color.
+   */
   --surface-0: #fbfbfc;
   --surface-1: #ffffff;
   --surface-2: #f4f5f7;
+  --surface-float: #ffffff;
   --hairline: rgba(15, 23, 42, 0.08);
   --hairline-strong: rgba(15, 23, 42, 0.14);
   --hover: rgba(15, 23, 42, 0.045);
   --press: rgba(15, 23, 42, 0.08);
 
-  /* Text tiers: content, secondary, quiet. */
+  /*
+   * Text tiers: content, secondary, quiet (hints, placeholders, labels; still 4.5:1 on every
+   * surface), and faint, only for what needn't be read: icons at rest and disabled items.
+   */
   --text-1: #111318;
   --text-2: #4a4f5a;
-  --text-3: #8b919c;
+  --text-3: #646a75;
+  --text-4: #8b919c;
 
   /*
    * UI accent (focus rings, toggled chrome, actions): an indigo that is none of the curve
@@ -59,7 +68,8 @@
   --grid-major: #e2e5ea;
   /* Within e2e tolerance (20 per channel) of the #3a3d44 smoke.spec.ts counts. */
   --axis: #484c55;
-  --graph-label: #7b818c;
+  /* Muted, but 4.5:1 on the graph (tick labels are small). */
+  --graph-label: #6b717c;
 
   /* Keypad (its restyle comes later; these only follow the surfaces). */
   --keypad-bg: #e9ebef;
@@ -75,7 +85,7 @@
   --panel-collapsed: 104px;
   --keypad-key-h: 46px;
   --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  /* Math: STIX Two Text (fonts.css); ≤ ≥ √ and the like fall through to the next fonts. */
+  /* Math: STIX Two Text (fonts.css); characters it lacks fall through to the next fonts. */
   --math:
     "STIX Math Letters", "STIX Two Text", "STIX Two Math", "Cambria Math", Cambria,
     "Times New Roman", serif;
@@ -88,6 +98,7 @@
     --surface-0: #0f1115;
     --surface-1: #16181d;
     --surface-2: #121418;
+    --surface-float: #1f2228;
     --hairline: rgba(255, 255, 255, 0.07);
     --hairline-strong: rgba(255, 255, 255, 0.13);
     --hover: rgba(255, 255, 255, 0.05);
@@ -95,7 +106,8 @@
 
     --text-1: #e9ebef;
     --text-2: #a8adb7;
-    --text-3: #6c727d;
+    --text-3: #858b96;
+    --text-4: #6c727d;
 
     --accent: #8d8ef2;
     --accent-soft: rgba(141, 142, 242, 0.16);
@@ -321,18 +333,9 @@ button {
     cursor: grab;
   }
 
-  .panel-grip {
-    display: block;
-  }
-
   .app .desktop-only,
   .app .show-sidebar {
     display: none;
-  }
-
-  .graph-controls {
-    top: 10px;
-    right: 10px;
   }
 }
 
@@ -410,6 +413,13 @@ button {
   background: var(--hairline-strong);
 }
 
+/* The phone's sheet can be dragged by its header (not in short landscape, which hides it again). */
+@media (max-width: 767px) {
+  .panel-grip {
+    display: block;
+  }
+}
+
 .panel-title {
   flex: 1;
   margin: 0;
@@ -438,7 +448,7 @@ button {
   min-width: 184px;
   padding: var(--space-1);
   border-radius: var(--radius-2);
-  background: var(--surface-1);
+  background: var(--surface-float);
   box-shadow: var(--elev-3);
   transform-origin: top right;
   animation: pop-in var(--dur-2) var(--ease-out);
@@ -475,7 +485,7 @@ button {
 
 .menu-item[aria-disabled="true"],
 .menu-item[aria-disabled="true"] .icon {
-  color: var(--text-3);
+  color: var(--text-4);
   cursor: default;
 }
 
@@ -489,6 +499,7 @@ button {
 .panel-scroll {
   flex: 1;
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   /* Scroll the list, but never pinch-zoom the whole (fixed-height) app from it. */
@@ -592,6 +603,12 @@ button {
   background: linear-gradient(to right, transparent, var(--row-bg) 20px);
   opacity: 0;
   transition: opacity var(--dur-1) var(--ease-out);
+  /* The fade is only paint: a click on it reaches the math (to put the caret at its end). */
+  pointer-events: none;
+}
+
+.expr-actions > * {
+  pointer-events: auto;
 }
 
 .expr-row:hover .expr-actions,
@@ -614,6 +631,9 @@ button {
 @media (hover: none) {
   .expr-row:not(.selected):not(:focus-within) .expr-actions {
     opacity: 0;
+  }
+
+  .expr-row:not(.selected):not(:focus-within) .expr-actions > * {
     pointer-events: none;
   }
 }
@@ -621,7 +641,7 @@ button {
 .expr-actions .icon-button {
   width: 28px;
   height: 28px;
-  color: var(--text-3);
+  color: var(--text-4);
 }
 
 .expr-actions .icon-button:hover,
@@ -656,15 +676,17 @@ button {
      the math. */
   margin-left: -40px;
   padding: 1px 2px 3px 42px;
-  color: var(--danger);
+  color: var(--text-2);
   font-size: 12.5px;
   line-height: 18px;
 }
 
+/* Red marks the error (here and the wavy underline); the words stay quiet, red is for curves. */
 .expr-error-icon {
   position: absolute;
   top: 2px;
   left: 13px;
+  color: var(--danger);
 }
 
 .expr-hint {
@@ -736,7 +758,7 @@ button {
   gap: 10px;
   padding: var(--space-3);
   border-radius: var(--radius-3);
-  background: var(--surface-1);
+  background: var(--surface-float);
   box-shadow: var(--elev-3);
   transform-origin: top right;
   animation: pop-in var(--dur-2) var(--ease-out);
@@ -760,7 +782,7 @@ button {
 
 .color-choice[aria-pressed="true"] {
   box-shadow:
-    0 0 0 2px var(--surface-1),
+    0 0 0 2px var(--surface-float),
     0 0 0 3.5px var(--swatch);
 }
 
@@ -803,8 +825,11 @@ button {
   caret-color: var(--row-color, var(--accent));
 }
 
+/* Placeholders are prose ("Try y = sin(x)", "any"): UI type, not italic math letters. */
 .math-input::placeholder {
   color: var(--text-3);
+  font-family: var(--font);
+  font-size: 0.8em;
   opacity: 1;
 }
 
@@ -1029,7 +1054,10 @@ button {
   cursor: default;
 }
 
-/* The value over the thumb while it is dragged. */
+/*
+ * The value over the thumb while it is dragged (SliderControl keeps it inside the track, and hides
+ * it where it would cover the row's own text).
+ */
 .slider-bubble {
   position: absolute;
   bottom: calc(100% - 2px);
@@ -1047,6 +1075,14 @@ button {
   pointer-events: none;
   transform: translateX(-50%);
   animation: bubble-in var(--dur-1) var(--ease-out);
+  transition:
+    opacity var(--dur-1) var(--ease-out),
+    visibility var(--dur-1);
+}
+
+.slider-bubble.covering {
+  opacity: 0;
+  visibility: hidden;
 }
 
 @keyframes bubble-in {
@@ -1107,8 +1143,11 @@ button {
 }
 
 .range-var {
+  /* Pulled in over the bounds' padding, so "0 ≤ t ≤ 2π" spaces evenly. */
+  margin: 0 -3px;
   font-family: var(--math);
   font-size: 16px;
+  word-spacing: 0.1em;
   white-space: nowrap;
 }
 
@@ -1125,11 +1164,18 @@ button {
   gap: 2px;
   padding: var(--space-1);
   border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--surface-1) 86%, transparent);
+  background: color-mix(in srgb, var(--surface-float) 86%, transparent);
   box-shadow: var(--elev-2);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   cursor: default;
+}
+
+/* Curves seen through a dark pill would compete with its icons. */
+@media (prefers-color-scheme: dark) {
+  .graph-controls {
+    background: color-mix(in srgb, var(--surface-float) 94%, transparent);
+  }
 }
 
 .graph-controls .icon-button {
@@ -1163,7 +1209,7 @@ button {
     0 1px 4px 2px rgba(15, 23, 42, 0.14);
 }
 
-/* Color dot, then "(x, y)". */
+/* Color dot, what the point is (when it is something), then "(x, y)". */
 .trace-pill {
   position: absolute;
   bottom: var(--space-3);
@@ -1174,7 +1220,7 @@ button {
   height: 28px;
   padding: 0 11px 0 10px;
   border-radius: var(--radius-pill);
-  background: var(--surface-1);
+  background: var(--surface-float);
   box-shadow: var(--elev-2);
   color: var(--text-1);
   white-space: nowrap;
@@ -1185,6 +1231,13 @@ button {
   height: 8px;
   border-radius: 50%;
   background: var(--trace-color);
+}
+
+/* What the point is ("Root"), beside its coordinates. */
+.trace-kind {
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1;
 }
 
 .trace-label {
@@ -1213,6 +1266,70 @@ button {
   background: rgba(0, 0, 0, 0.6);
   color: #fff;
   font: 12px var(--mono);
+}
+
+/* ---------- Touch targets ---------- */
+
+/*
+ * Fingers need 40-44px. The glyphs keep their size and the chrome its calm look: buttons without
+ * a resting background simply grow, and the color mark and play button reach out invisibly.
+ */
+@media (pointer: coarse) {
+  .panel-header {
+    padding-top: 2px;
+    padding-bottom: 2px;
+  }
+
+  .panel-tools {
+    gap: 0;
+  }
+
+  .panel-tools .icon-button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .graph-controls .icon-button {
+    width: 40px;
+    height: 40px;
+  }
+
+  /* Change color and Delete, apart enough that a thumb meant for one doesn't hit the other. */
+  .expr-actions {
+    top: 4px;
+    gap: var(--space-2);
+  }
+
+  .expr-actions .icon-button {
+    width: 40px;
+    height: 40px;
+  }
+
+  .expr-row.selected > .expr-body > .math-field:first-child,
+  .expr-row:focus-within > .expr-body > .math-field:first-child {
+    margin-right: 42px;
+  }
+
+  .expr-row.plots.selected > .expr-body > .math-field:first-child,
+  .expr-row.plots:focus-within > .expr-body > .math-field:first-child {
+    margin-right: 90px;
+  }
+
+  .slider-play {
+    position: relative;
+  }
+
+  .expr-swatch::before,
+  .slider-play::before {
+    content: "";
+    position: absolute;
+    inset: -6px;
+  }
+
+  /* Not up into the math line above it. */
+  .slider-play::before {
+    inset: -4px -6px;
+  }
 }
 
 /* ---------- Keypad ---------- */
@@ -1249,7 +1366,7 @@ button {
   background: transparent;
   font-size: 14px;
   font-weight: 600;
-  color: var(--text-3);
+  color: var(--text-2);
   touch-action: pan-x pan-y;
 }
 
@@ -1412,10 +1529,6 @@ button {
   }
 }
 
-.app.keypad-open .toasts {
-  bottom: calc(260px + env(safe-area-inset-bottom));
-}
-
 .toast {
   touch-action: pan-x pan-y;
   pointer-events: auto;
@@ -1425,7 +1538,7 @@ button {
   min-height: 40px;
   padding: var(--space-1) var(--space-1) var(--space-1) var(--space-4);
   border-radius: var(--radius-2);
-  background: var(--surface-1);
+  background: var(--surface-float);
   box-shadow: var(--elev-3);
   color: var(--text-1);
   font-size: 13.5px;
@@ -1467,7 +1580,7 @@ button {
   border: none;
   border-radius: var(--radius-1);
   background: transparent;
-  color: var(--text-3);
+  color: var(--text-4);
   transition:
     background-color var(--dur-1) var(--ease-out),
     color var(--dur-1) var(--ease-out);
@@ -1489,8 +1602,7 @@ button {
 
 @media (max-width: 767px) {
   /* Stacked phone layout: the graph is on top, so show toasts there, clear of the list and keypad. */
-  .toasts,
-  .app.keypad-open .toasts {
+  .toasts {
     top: calc(var(--space-3) + env(safe-area-inset-top));
     bottom: auto;
     max-width: calc(100% - 96px);
@@ -1510,8 +1622,7 @@ button {
 
 @media (max-width: 767px) and (max-height: 500px) and (orientation: landscape) {
   /* Short landscape layout: over the graph column, clear of the list and keypad. */
-  .toasts,
-  .app.keypad-open .toasts {
+  .toasts {
     top: auto;
     left: 75%;
     bottom: calc(16px + env(safe-area-inset-bottom));

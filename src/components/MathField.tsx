@@ -16,22 +16,42 @@ export function blurActive(): void {
 
 let measureCtx: CanvasRenderingContext2D | null | undefined;
 
+/** Width of some text in a field's font (its computed style); null without a canvas. */
+function textWidth(style: CSSStyleDeclaration, text: string): number | null {
+  if (measureCtx === undefined) measureCtx = document.createElement('canvas').getContext('2d');
+  if (!measureCtx) return null;
+  measureCtx.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+  return measureCtx.measureText(text).width;
+}
+
 /**
  * Scroll a text input so its caret is visible. Browsers do this for typing, but not for a
  * selection set from script (keypad edits and arrows), so long expressions would hide the caret.
  */
 export function revealCaret(el: HTMLInputElement): void {
   if (el.scrollWidth <= el.clientWidth) return;
-  if (measureCtx === undefined) measureCtx = document.createElement('canvas').getContext('2d');
-  if (!measureCtx) return;
   const style = getComputedStyle(el);
-  measureCtx.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
   const pad = Number.parseFloat(style.paddingLeft) || 0;
   const caret = el.selectionDirection === 'backward' ? el.selectionStart : el.selectionEnd;
-  const x = pad + measureCtx.measureText(el.value.slice(0, caret ?? el.value.length)).width;
+  const width = textWidth(style, el.value.slice(0, caret ?? el.value.length));
+  if (width === null) return;
+  const x = pad + width;
   const margin = Math.min(24, el.clientWidth / 4);
   if (x - margin < el.scrollLeft) el.scrollLeft = Math.max(0, x - margin);
   else if (x + margin > el.scrollLeft + el.clientWidth) el.scrollLeft = x + margin - el.clientWidth;
+}
+
+/** Where a left-aligned input's text ends on screen (client x), within the field's box. */
+export function textEndX(el: HTMLInputElement): number {
+  const rect = el.getBoundingClientRect();
+  const style = getComputedStyle(el);
+  const width = textWidth(style, el.value);
+  const end = rect.right - (Number.parseFloat(style.paddingRight) || 0);
+  if (width === null) return end;
+  return Math.min(
+    end,
+    rect.left + (Number.parseFloat(style.paddingLeft) || 0) + width - el.scrollLeft,
+  );
 }
 
 export interface MathFieldProps {

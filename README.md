@@ -66,7 +66,8 @@ Syntax notes:
     Rows that draw nothing (sliders, values such as `k = 2a + 1`, empty rows) don't take a color,
     and a curve turned into one gives its color back.
   - Errors show as one line under the row after a pause in typing, with the mistake underlined.
-- **Sliders:** drag the thumb (its value shows above it) or press play. The min and max under the
+- **Sliders:** drag the thumb (its value shows above it, except under the row's own text, which
+  shows it too) or press play. The min and max under the
   track's ends are fields you can edit; the step field appears while the row is being edited.
 - **Undo:** `Ctrl+Z` (`⌘Z` on a Mac) undoes and `Ctrl+Shift+Z` (`⌘⇧Z`) or `Ctrl+Y` redoes, from
   anywhere in the app. Typing undoes in bursts, and deleting is a burst of its own, so text
@@ -74,8 +75,8 @@ Syntax notes:
   keys on a slider undo like typing, and a playing slider adds none (undoing something else
   leaves it where it is). Undo puts the caret back where the change was; a change made outside
   the rows (delete, a color, New graph) is scrolled into view. Phones have no undo key yet: **New
-  graph** shows an Undo button for a few seconds instead (it waits while you point at it or it
-  has focus).
+  graph**, and deleting a row by touch, show an Undo button for a few seconds instead (it waits
+  while you point at it or it has focus).
 - **Saved automatically:** the expression list, the view and the panel layout (including the
   list's width) are kept in the browser and come back on the next visit (sliders come back
   paused), and so is the keypad mode once you pick one with the header's keyboard button. Nothing
@@ -87,9 +88,10 @@ Syntax notes:
   (or focus the edge and use the arrow keys, `Home` and `End`); double-click the edge for the
   default width. The sidebar button in the list's header hides it, and the same button at the top
   of the graph's controls brings it back.
-- **Look:** follows the system's light or dark setting. Math is set in STIX Two Text, bundled with
-  the app so it works offline: letters in italic, digits and operators upright. With reduced
-  motion turned on in the system, transitions and the zoom animation are skipped.
+- **Look:** follows the system's light or dark setting. Math is set in STIX Two Text (with `≤`,
+  `≥`, `√` and superscripts from STIX Two Math), bundled with the app so it works offline: letters
+  in italic, digits and operators upright. With reduced motion turned on in the system,
+  transitions and the zoom animation are skipped.
 - **Math keypad:** on touch devices, tapping a row opens the built-in keypad, which has three pages:
   numbers, functions and letters. The keyboard key on the letters page switches that row to the
   device keyboard, and the keyboard button in the header switches modes for good. Tapping the

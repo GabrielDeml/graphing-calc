@@ -1,9 +1,12 @@
 /*
  * STIX Two Text for math, bundled (the CSP allows fonts from 'self' only, and the service worker
  * precaches them for offline use). Only the latin and greek subsets, regular and italic, are
- * shipped. Neither subset has ≤ ≥ √ ∞ or superscript digits other than ², so those fall through
- * the font stack in --math (global.css): STIX Two Math where installed (macOS), then the system
- * math and serif fonts.
+ * shipped. Neither has √ ∛ ∞ ≠ ≤ ≥ or superscript digits beyond ¹ ² ³: those come from
+ * fonts/stix-two-math-symbols.woff2, a 2 KB subset of STIX Two Math (same design, OFL 1.1, see
+ * fonts/OFL.txt), made from @fontsource/stix-two-math 5.3.0 with
+ *   pyftsubset stix-two-math-latin-400-normal.woff2 --flavor=woff2 --layout-features='' \
+ *     --unicodes=U+2070,U+2074-207B,U+221A-221B,U+221E,U+2260,U+2264-2265 --no-hinting
+ * plus the license in its name table. Anything else falls through the --math stack (global.css).
  */
 
 @font-face {
@@ -46,6 +49,15 @@
   unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
 }
 
+@font-face {
+  font-family: "STIX Two Text";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./fonts/stix-two-math-symbols.woff2") format("woff2");
+  unicode-range: U+2070, U+2074-207B, U+221A-221B, U+221E, U+2260, U+2264-2265;
+}
+
 /*
  * "STIX Math Letters": the same files, mixed for plain text fields, where characters can't be
  * styled one by one. Letters (Latin and Greek) come from the italic files and everything else
@@ -83,4 +95,13 @@
     U+0000-0040, U+005B-0060, U+007B-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
     U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215,
     U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "STIX Math Letters";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./fonts/stix-two-math-symbols.woff2") format("woff2");
+  unicode-range: U+2070, U+2074-207B, U+221A-221B, U+221E, U+2260, U+2264-2265;
 }

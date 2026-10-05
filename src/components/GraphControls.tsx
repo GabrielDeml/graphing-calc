@@ -6,6 +6,8 @@ import { Icon } from './icons';
 /**
  * The graph's floating controls: one pill at the top right (the top-left corner stays free for
  * the graph itself). With the list hidden on a wide screen, the button that brings it back leads.
+ * Zoom to fit joins zoom and reset once there are bounds to fit (src/plot/bounds.ts, with
+ * auto-framing): a fit from the sampled curves alone would fly off to the poles of y = 1/x.
  */
 export function GraphControls(props: { controller: GraphController }) {
   return (

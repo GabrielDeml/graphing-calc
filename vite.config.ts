@@ -80,5 +80,7 @@ export default defineConfig({
   ],
   build: {
     target: 'es2022',
+    // Never inline a small font as a data: URL, which the CSP's font-src 'self' would block.
+    assetsInlineLimit: (file) => (/\.woff2?$/.test(file) ? false : undefined),
   },
 });

@@ -72,6 +72,8 @@ export class GraphController {
   /** Where the running zoom/home animation ends, so repeated presses compose. */
   private animTarget: Viewport | null = null;
   private hasView = false;
+  /** When the last resize was drawn: a quick run of them (a list edge drag) is a gesture. */
+  private lastResize = -Infinity;
   /** The view is the home view, or animating to it (a restored or moved view is not). */
   private isHome: boolean;
   private disposers: Array<() => void> = [];
@@ -154,10 +156,13 @@ export class GraphController {
     this.applyView(v, interactive);
   }
 
-  /** Animate to a target view (zoom buttons, home); a jump when motion is reduced. */
-  animateTo(target: Viewport, ms = 180): void {
+  /**
+   * Animate to a target view (zoom buttons, home); a jump when motion is reduced. `home`: the
+   * target is the home view, set before the first frame so even a jump reports it as home.
+   */
+  animateTo(target: Viewport, ms = 180, home = false): void {
     cancelAnimationFrame(this.animation);
-    this.isHome = false;
+    this.isHome = home;
     if (reducedMotion?.matches) {
       this.cancelAnimation();
       this.applyView(target);
@@ -194,8 +199,7 @@ export class GraphController {
   }
 
   home(): void {
-    this.animateTo(homeViewport(this.view.width, this.view.height));
-    this.isHome = true;
+    this.animateTo(homeViewport(this.view.width, this.view.height), undefined, true);
   }
 
   /** Whether a row is in the current scene (a pinned trace drops its anchor when it isn't). */
@@ -305,11 +309,16 @@ export class GraphController {
       ? resizeViewport(this.view, width, height)
       : this.startView(width, height);
     this.hasView = true;
+    // Resizes in quick succession (dragging the list's edge, resizing the window) sample at
+    // interactive quality, like a pan, and settle to final once they stop.
+    if (performance.now() - this.lastResize < IDLE_MS) this.markInteractive();
     this.onViewChange?.(this.view);
     // Resizing clears the canvas; redraw synchronously to avoid a blank flash.
     cancelAnimationFrame(this.frame);
     this.frame = 0;
     this.draw();
+    // After drawing, so a slow frame doesn't break up the run.
+    this.lastResize = performance.now();
   }
 
   private draw(): void {

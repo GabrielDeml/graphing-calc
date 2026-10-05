@@ -94,8 +94,35 @@ test.describe('editing rows', () => {
     await expect(bubble).toBeVisible();
     const value = (await exprInput(page, 0).inputValue()).split('=')[1].trim();
     await expect(bubble).toHaveText(value);
+
+    // At the far end it stays inside the track (and the list doesn't scroll sideways).
+    await page.mouse.move(box.x + box.width + 20, box.y + box.height / 2, { steps: 4 });
+    await expect(exprInput(page, 0)).toHaveValue('a = 10');
+    const end = await bubble.boundingBox();
+    if (!end) throw new Error('no bubble box');
+    expect(end.x + end.width).toBeLessThanOrEqual(box.x + box.width + 1);
+    const scroller = page.locator('.panel-scroll');
+    expect(await scroller.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0);
+
+    // Near the start it would cover the row's own "a = -10", which shows the value right there.
+    await page.mouse.move(box.x + 2, box.y + box.height / 2, { steps: 8 });
+    await expect(exprInput(page, 0)).toHaveValue(/^a = -/);
+    await expect(bubble).toBeHidden();
+
     await page.mouse.up();
     await expect(bubble).toHaveCount(0);
+  });
+
+  test('a right click on a slider shows no bubble', async ({ page }) => {
+    await openApp(page);
+    await setExpr(page, 0, 'a = 0');
+    const box = await page.getByTestId('slider-a').boundingBox();
+    if (!box) throw new Error('no slider box');
+    // The context menu would take the button's release, leaving a bubble behind.
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down({ button: 'right' });
+    await expect(page.locator('.slider-bubble')).toHaveCount(0);
+    await page.mouse.up({ button: 'right' });
   });
 
   test('moving a playing slider continues from the new value', async ({ page }) => {
