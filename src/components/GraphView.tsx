@@ -1,17 +1,28 @@
-import { createEffect, createMemo, createSignal, on, onCleanup, onMount, Show } from 'solid-js';
+import {
+  batch,
+  createEffect,
+  createMemo,
+  createSignal,
+  on,
+  onCleanup,
+  onMount,
+  Show,
+} from 'solid-js';
 import { attachGestures } from '../interaction/gestures';
 import type { Poi, PoiKind } from '../plot/poi';
+import { pointRow, slopeAt, tangentRow } from '../plot/tangent';
 import { GraphController, type SceneRow, type TraceHit } from '../render/controller';
 import { analysis, steadyRows } from '../state/analysis';
 import { noteView } from '../state/autosave';
 import { doc } from '../state/doc';
 import { isCoarsePointer, keypad } from '../state/keypad';
 import { savedState } from '../state/persist';
+import { addTraceRow } from '../state/rowActions';
 import { palette } from '../state/theme';
 import { ui } from '../state/ui';
 import { GraphControls } from './GraphControls';
 import { PoiLayer, type PoiLayerHandle, type PoiSet } from './PoiLayer';
-import { type TraceKind, TraceMarker } from './TraceMarker';
+import { type TraceActions, type TraceKind, TraceMarker } from './TraceMarker';
 
 const debug = typeof location !== 'undefined' && new URLSearchParams(location.search).has('debug');
 
@@ -63,6 +74,8 @@ export function GraphView() {
   const [poiSet, setPoiSet] = createSignal<PoiSet | null>(null);
   /** A finger is scrubbing along the traced curve. */
   const [scrubbing, setScrubbing] = createSignal(false);
+  /** The trace is pinned (not following a hovering mouse). */
+  const [pinned, setPinned] = createSignal(false);
 
   /** A row's math as shown in labels ("y = x/3"). */
   const rowText = (id: string) => doc.rows.find((r) => r.id === id)?.source.trim() ?? '';
@@ -84,6 +97,28 @@ export function GraphView() {
     return { meets: ids.map((id) => ({ color: rowColor(id), text: rowText(id) })), names };
   });
 
+  /**
+   * At a pinned point of an explicit curve: "Tangent here" adds the tangent line there (its slope
+   * by central differences), "Keep point" the point, as rows below the curve's, written as the
+   * trace shows the numbers.
+   */
+  const traceActions = createMemo((): TraceActions | null => {
+    const hit = trace();
+    if (!hit || !pinned() || scrubbing()) return null;
+    const res = analysis().byId.get(hit.rowId);
+    const plot = res?.status === 'ok' ? res.plot : undefined;
+    if (plot?.kind !== 'explicitY' && plot?.kind !== 'explicitX') return null;
+    const variable = plot.kind === 'explicitY' ? 'x' : 'y';
+    const [u, v] = variable === 'x' ? [hit.x, hit.y] : [hit.y, hit.x];
+    const m = slopeAt(plot.f, u);
+    const { rowId, x, y, ppu } = hit;
+    return {
+      tangent:
+        m === null ? undefined : () => addTraceRow(rowId, tangentRow(variable, u, v, m, ppu)),
+      keep: () => addTraceRow(rowId, pointRow(x, y, ppu)),
+    };
+  });
+
   onMount(() => {
     const c = new GraphController(container, canvas, savedState()?.view ?? null);
     setController(c);
@@ -94,8 +129,11 @@ export function GraphView() {
     let scrubRow: string | null = null;
 
     const showTrace = (hit: TraceHit | null) => {
-      setTrace(hit);
-      ui.setTracedRowId(hit?.rowId ?? null);
+      batch(() => {
+        setTrace(hit);
+        setPinned(hit !== null && anchor?.mode === 'pinned');
+        ui.setTracedRowId(hit?.rowId ?? null);
+      });
     };
     const pin = (hit: TraceHit, seek?: { sx: number; sy: number }) => {
       anchor = { mode: 'pinned', x: hit.x, y: hit.y, rowId: hit.rowId };
@@ -334,7 +372,12 @@ export function GraphView() {
           poiLayer = h;
         }}
       />
-      <TraceMarker hit={trace()} kind={traceKind()} scrubbing={scrubbing()} />
+      <TraceMarker
+        hit={trace()}
+        kind={traceKind()}
+        scrubbing={scrubbing()}
+        actions={traceActions()}
+      />
       <Show when={controller()}>{(c) => <GraphControls controller={c()} />}</Show>
       <Show when={debug}>
         <div class="debug-overlay" ref={debugEl} />

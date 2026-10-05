@@ -1,6 +1,7 @@
 import { createSignal, For, onCleanup, Show } from 'solid-js';
 import { formatCoordinate } from '../engine/format';
 import type { TraceHit } from '../render/controller';
+import { Icon } from './icons';
 
 /** The pill's distance from the traced point, and the room it keeps from the graph's edge. */
 const PILL_INSET_PX = 12;
@@ -13,15 +14,25 @@ export interface TraceKind {
   names: string[];
 }
 
+/** One-tap actions at a pinned point of an explicit curve, each adding a row. */
+export interface TraceActions {
+  /** The tangent line there; absent where the curve has no slope (a corner, an end). */
+  tangent?: () => void;
+  /** The point itself. */
+  keep: () => void;
+}
+
 /**
  * DOM overlay for the traced point, so hovering never repaints the canvas. `kind` names what the
  * point is beside its coordinates; a plain curve point has none. `scrubbing`: a finger is
- * dragging the point along its curve (the dot grows under it).
+ * dragging the point along its curve (the dot grows under it). `actions`: buttons after the
+ * coordinates, for a pinned point.
  */
 export function TraceMarker(props: {
   hit: TraceHit | null;
   kind?: TraceKind | null;
   scrubbing?: boolean;
+  actions?: TraceActions | null;
 }) {
   return (
     <Show when={props.hit}>
@@ -85,6 +96,24 @@ export function TraceMarker(props: {
               <span class="trace-label" role="status">
                 {label()}
               </span>
+              <Show when={props.actions}>
+                {(actions) => (
+                  <span class="trace-actions">
+                    <Show when={actions().tangent}>
+                      {(tangent) => (
+                        <button type="button" class="trace-action" onClick={() => tangent()()}>
+                          <Icon name="tangent" size={14} />
+                          Tangent here
+                        </button>
+                      )}
+                    </Show>
+                    <button type="button" class="trace-action" onClick={() => actions().keep()}>
+                      <Icon name="add-point" size={14} />
+                      Keep point
+                    </button>
+                  </span>
+                )}
+              </Show>
             </span>
           </div>
         );

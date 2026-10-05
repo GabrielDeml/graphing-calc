@@ -1,7 +1,11 @@
+import { applyFix } from '../engine/errors';
 import { formatSliderValue } from '../engine/format';
-import { analysis, evalNumber } from './analysis';
+import type { QuickFix } from '../engine/types';
+import { analysis, engine, evalNumber } from './analysis';
+import { type AutoTrigger, autoSliderNames, smartRange } from './autoSlider';
 import { addRowAfter, type ChangeOrigin, doc, getRow, removeRow, updateSource } from './doc';
-import { focusRow } from './focus';
+import { focusedRow, focusRow, rowInput } from './focus';
+import { ui } from './ui';
 
 function position(id: string): number {
   return doc.rows.findIndex((r) => r.id === id);
@@ -96,8 +100,107 @@ export function setSliderValue(
   updateSource(id, row.source.slice(0, start) + text + row.source.slice(end), origin);
 }
 
-/** Quick fix for unknown names: add `name = 1` slider rows below the row. */
-export function addSliders(afterId: string, names: readonly string[]): void {
+/** Quick fix for unknown names: add `name = 1` slider rows below the row. Returns their ids. */
+export function addSliders(afterId: string, names: readonly string[]): string[] {
+  const ids: string[] = [];
   let after = afterId;
-  for (const name of names) after = addRowAfter(after, `${name} = 1`);
+  for (const name of names) {
+    after = addRowAfter(after, `${name} = 1`);
+    ids.push(after);
+  }
+  return ids;
+}
+
+/**
+ * Sliders made automatically (this session), with every pair of bounds they have been given:
+ * while a slider's bounds are still one of those, the user hasn't set them (see smartBounds).
+ */
+const autoSliders = new Map<string, Set<string>>();
+
+const boundsKey = (min: string, max: string) => `${min}\u0000${max}`;
+
+/**
+ * Unknown names in a row become `name = 1` sliders below it by themselves, when its edit ends or
+ * typing pauses (autoSlider.ts says which names, and when): one undo step, and the new rows
+ * pulse. `tried` holds the names the row made sliders of before, which it never makes again
+ * (they were undone or deleted since); the new ones are added to it. `selection`: the caret, for
+ * a pause. Returns the names made; the caller offers to undo them (sliderToast), once whatever
+ * else the key does is part of the same step.
+ */
+export function autoAddSliders(
+  id: string,
+  trigger: AutoTrigger,
+  tried: Set<string>,
+  selection?: { start: number; end: number },
+): { names: string[]; ids: string[] } {
+  const row = getRow(id);
+  const error = analysis().byId.get(id)?.error;
+  if (!row || error?.code !== 'unknown-name') return { names: [], ids: [] };
+  const names = autoSliderNames(row.source, engine.unknownUses(id), trigger, {
+    selection,
+    skip: tried,
+  });
+  if (names.length === 0) return { names, ids: [] };
+  for (const name of names) tried.add(name);
+  const ids = addSliders(id, names);
+  for (const s of ids) {
+    const slider = getRow(s)?.slider;
+    if (slider) autoSliders.set(s, new Set([boundsKey(slider.min, slider.max)]));
+  }
+  ui.flashRows(ids, false);
+  return { names, ids };
+}
+
+/** "Added sliders a, b": what a toast says of sliders made automatically. */
+export function sliderToast(names: readonly string[]): string {
+  return `Added slider${names.length > 1 ? 's' : ''} ${names.join(', ')}`;
+}
+
+/**
+ * The bounds a slider made automatically takes when a value outside them is typed into it, while
+ * the user hasn't set them: a round range around the value (autoSlider.ts smartRange, `a = 50` →
+ * 0…100). Null for every other slider, which widens to the typed value instead.
+ */
+export function smartBounds(id: string, value: number): { min: string; max: string } | null {
+  const given = autoSliders.get(id);
+  const slider = getRow(id)?.slider;
+  if (!given || !slider || !given.has(boundsKey(slider.min, slider.max))) return null;
+  const range = smartRange(value);
+  if (range) given.add(boundsKey(range.min, range.max));
+  return range;
+}
+
+/**
+ * A fix that rewrites part of the row's text (`x2` → `x^2`): one undo step. A row being edited
+ * keeps its caret where it was in the text (at the end of the new text, if it was in what was
+ * replaced); `focus` puts the caret there in a row that isn't (the fix's button had focus, and
+ * goes away with the error).
+ */
+export function applyTextFix(
+  id: string,
+  fix: Extract<QuickFix, { kind: 'replace' }>,
+  focus = false,
+): void {
+  const row = getRow(id);
+  if (!row) return;
+  const { text, caret: end } = applyFix(row.source, fix);
+  const editing = focusedRow();
+  const was = editing?.id === id ? editing.caret : null;
+  const delta = text.length - row.source.length;
+  const caret =
+    was === null || (was > fix.span.start && was < fix.span.end)
+      ? end
+      : was >= fix.span.end
+        ? was + delta
+        : was;
+  const focused = was !== null || (rowInput(id) !== undefined && focus);
+  updateSource(id, text, 'edit', 'replace');
+  if (focused) focusRow(id, caret);
+}
+
+/** A row the trace adds (a tangent, a point), below the traced curve's row, pulsed into view. */
+export function addTraceRow(afterId: string, source: string): string {
+  const id = addRowAfter(afterId, source);
+  ui.flashRows([id], true);
+  return id;
 }

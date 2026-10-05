@@ -1,9 +1,9 @@
-import { createEffect, createMemo, createSignal, Show, untrack } from 'solid-js';
+import { batch, createEffect, createMemo, createSignal, Show, untrack } from 'solid-js';
 import { formatSliderValue, formatValue } from '../engine/format';
 import { analysis, evalNumber, nameContext } from '../state/analysis';
 import { endUndoStep, type Row, setSliderField, setSliderPlaying } from '../state/doc';
 import { rowInput } from '../state/focus';
-import { setSliderValue } from '../state/rowActions';
+import { setSliderValue, smartBounds } from '../state/rowActions';
 import { Icon } from './icons';
 import { blurActive, MathField, textEndX } from './MathField';
 
@@ -27,6 +27,8 @@ export function SliderControl(props: { row: Row; name: string; value: number; st
 
   // Typing a value outside the bounds widens them (only when the bound is a plain number). The
   // new bound is the literal as typed, so rounding can't leave the value outside its range again.
+  // A slider made automatically from an unknown name takes a round range around the value
+  // instead (`a = 50`: 0…100), as long as its bounds are still the ones it was given.
   const plain = (s: string) => /^\s*-?\d*\.?\d+\s*$/.test(s);
   const typedLiteral = (v: number) => {
     const span = analysis().byId.get(props.row.id)?.slider?.valueSpan;
@@ -38,7 +40,15 @@ export function SliderControl(props: { row: Row; name: string; value: number; st
     const v = props.value;
     if (!Number.isFinite(v)) return;
     untrack(() => {
-      if (Number.isFinite(max()) && v > max() && plain(props.row.slider.max)) {
+      const outside =
+        (Number.isFinite(max()) && v > max()) || (Number.isFinite(min()) && v < min());
+      const smart = outside ? smartBounds(props.row.id, v) : null;
+      if (smart) {
+        batch(() => {
+          setSliderField(props.row.id, 'min', smart.min);
+          setSliderField(props.row.id, 'max', smart.max);
+        });
+      } else if (Number.isFinite(max()) && v > max() && plain(props.row.slider.max)) {
         setSliderField(props.row.id, 'max', typedLiteral(v));
       } else if (Number.isFinite(min()) && v < min() && plain(props.row.slider.min)) {
         setSliderField(props.row.id, 'min', typedLiteral(v));

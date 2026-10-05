@@ -4,6 +4,7 @@ import { type EditOp, nextCodePoint, prevCodePoint } from '../keypad/editing';
 import {
   type Caret,
   caretAt,
+  completionAt,
   type EditKind,
   type EditorCommand,
   type EditorOptions,
@@ -334,6 +335,26 @@ export function MathField(props: MathFieldProps) {
   };
 
   /**
+   * The rest of a function's name, offered faintly after the caret while its first letters are
+   * typed (src/mathedit/complete.ts): `si‸` offers `n(`.
+   */
+  const completion = createMemo(() => {
+    const c = caret();
+    const names = props.names;
+    if (!c || !names || !inPlace() || live() !== null) return null;
+    if (c.anchor.offset !== c.focus.offset || c.anchor.depth !== c.focus.depth) return null;
+    const text = props.value;
+    if (c.focus.offset > text.length) return null;
+    return completionAt(typesetRow(text, names), c.focus, names.ctx);
+  });
+
+  /** Tab or → takes the completion on offer: the rest of the name, typed. */
+  const accept = (): boolean => {
+    const c = completion();
+    return c !== null && run({ type: 'type', text: c.text });
+  };
+
+  /**
    * The caret moved without the editor (select all, a click elsewhere, undo), or the field just
    * took focus: draw it where it is.
    */
@@ -443,6 +464,7 @@ export function MathField(props: MathFieldProps) {
     get apply() {
       if (!inPlace()) return undefined;
       return (op: EditOp) => {
+        if (op.type === 'right' && accept()) return;
         const cmd = keypadCommand(op);
         if (cmd) run(cmd);
       };
@@ -577,6 +599,7 @@ export function MathField(props: MathFieldProps) {
             placeholder={props.placeholder}
             frozen={focused() && !inPlace()}
             caret={caret()}
+            completion={completion()}
             ref={(handle) => {
               view = handle;
             }}
@@ -652,6 +675,11 @@ export function MathField(props: MathFieldProps) {
         onKeyDown={(e) => {
           // Keys an IME uses to pick and commit (↑, ↓, Enter) are its own while it composes.
           if (composing || e.isComposing) return;
+          const plainKey = !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey;
+          if ((e.key === 'Tab' || e.key === 'ArrowRight') && plainKey && accept()) {
+            e.preventDefault();
+            return;
+          }
           if (inPlace() && moveKey(e)) return;
           if (props.onKeyDown) props.onKeyDown(e);
           else if (e.key === 'Enter') {

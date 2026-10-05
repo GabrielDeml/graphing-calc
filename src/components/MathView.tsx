@@ -618,6 +618,11 @@ export interface MathViewProps {
   frozen: boolean;
   /** Edited in place: the caret or selection, and the closers open groups still need. */
   caret?: CaretView | null;
+  /**
+   * The rest of a function's name, offered after the caret (src/mathedit/complete.ts offers it
+   * only where the caret ends its part of the math, so nothing is drawn over).
+   */
+  completion?: { text: string; builtin: boolean } | null;
   ref?: (handle: MathViewHandle) => void;
 }
 
@@ -640,6 +645,7 @@ export function MathView(props: MathViewProps) {
   const caretEl = el('span', 'm-caret');
   const selectionEl = el('span', 'm-selection');
   caretEl.setAttribute('aria-hidden', 'true');
+  const completionEl = el('span', 'm-completion');
 
   const measure = () => {
     const overflow = view.scrollWidth > view.clientWidth + 1;
@@ -708,6 +714,38 @@ export function MathView(props: MathViewProps) {
     }
   };
 
+  /**
+   * Draws the completion on offer right after the symbol before the caret, in line, so it
+   * pushes nothing but a closer: the caret is at the end of its part of the math there.
+   */
+  const placeCompletion = (caret: CaretView | null) => {
+    const completion = props.completion;
+    let lastEl: Element | undefined;
+    if (drawn && caret && completion && caret.anchor.offset === caret.focus.offset) {
+      const stop = resolveCaret(stopsOf(drawn.plan), caret.focus.offset, caret.focus.depth);
+      const last = stop.block.boxes[stop.index - 1];
+      if (last && !stop.inside && stop.index === stop.block.boxes.length) {
+        lastEl = drawn.boxEls.get(last)?.at(-1);
+      }
+    }
+    if (!completion || !lastEl) {
+      completionEl.remove();
+      return;
+    }
+    const cls = `m-completion ${completion.builtin ? 'm-fn' : 'm-var'}`;
+    // Left in place while it stays the same, so it fades in once, not at every key.
+    if (
+      completionEl.previousSibling === lastEl &&
+      completionEl.textContent === completion.text &&
+      completionEl.className === cls
+    ) {
+      return;
+    }
+    completionEl.className = cls;
+    completionEl.textContent = completion.text;
+    lastEl.after(completionEl);
+  };
+
   createEffect(() => {
     if (props.frozen) return;
     const caret = props.caret ?? null;
@@ -720,6 +758,7 @@ export function MathView(props: MathViewProps) {
     }
     view.classList.toggle('editing', ghosts);
     mark(drawn, props.errorSpan);
+    placeCompletion(caret);
     fontsVersion();
     paintCaret(caret);
     if (!frame) {

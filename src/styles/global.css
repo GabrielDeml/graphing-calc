@@ -804,6 +804,33 @@ button {
   color: var(--text-2);
 }
 
+/* A fix's new text (`x^2`, `<=`), in the math's face. */
+.quick-fix-text {
+  font-family: var(--math);
+  font-size: 14px;
+  font-weight: 400;
+}
+
+/*
+ * Unknown names in the row being edited, offered as sliders: one quiet chip that opens like the
+ * error line, without its alert (they become sliders by themselves when the edit ends).
+ */
+.expr-suggest {
+  display: grid;
+  grid-template-rows: 1fr;
+  animation: reveal var(--dur-2) var(--ease-out);
+}
+
+.expr-suggest-line {
+  min-height: 0;
+  overflow: hidden;
+  padding: 1px 2px 3px;
+}
+
+.expr-suggest .quick-fix {
+  margin-left: 0;
+}
+
 /* A value or slider held while its row is broken mid-edit: there, but quiet. */
 .expr-value.stale,
 .slider.stale {
@@ -1114,6 +1141,19 @@ button {
 /* The closer an open group will need, while the row is edited: there, but not yet typed. */
 .m-ghost {
   opacity: 0.3;
+}
+
+/* The rest of a function's name, offered after the caret (Tab or → takes it): muted, in line. */
+.m-completion {
+  color: var(--text-4);
+  pointer-events: none;
+  animation: fade-in var(--dur-2) var(--ease-out);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
 }
 
 .m-placeholder {
@@ -1956,6 +1996,50 @@ button {
 .trace.flip-y .trace-pill {
   bottom: auto;
   top: var(--space-3);
+}
+
+/* A pinned point's one-tap actions, after the coordinates: quiet, like the pill itself. */
+.trace-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  margin-right: -7px;
+  padding-left: 6px;
+  border-left: 1px solid var(--hairline);
+  animation: fade-in var(--dur-2) var(--ease-out);
+}
+
+.trace-action {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 7px 0 5px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12.5px;
+  pointer-events: auto;
+  transition:
+    background-color var(--dur-1) var(--ease-out),
+    color var(--dur-1) var(--ease-out);
+}
+
+.trace-action:hover {
+  background: var(--hover);
+  color: var(--text-1);
+}
+
+/* A finger needs more room than the pill shows: the button reaches past it, unseen. */
+@media (pointer: coarse) {
+  .trace-action::before {
+    content: "";
+    position: absolute;
+    inset: -11px -1px;
+  }
 }
 
 .debug-overlay {

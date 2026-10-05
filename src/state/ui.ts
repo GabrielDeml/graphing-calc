@@ -34,8 +34,17 @@ export const ui = createRoot(() => {
   const [tracedRowId, setTracedRowId] = createSignal<string | null>(null);
   /** The row whose text (its math or a range field) has focus: see state/steady.ts. */
   const [editingRowId, setEditingRowId] = createSignal<string | null>(null);
-  /** Requests to scroll a row into view and pulse it (a curve was picked on the graph). */
-  const [flash, setFlash] = createSignal<{ id: string; seq: number } | null>(null);
+  /**
+   * Requests to pulse rows: a curve picked on the graph (scrolled into view too), rows that were
+   * just added for the user (sliders for unknown names, a tangent).
+   */
+  const [flash, setFlash] = createSignal<{
+    ids: readonly string[];
+    reveal: boolean;
+    seq: number;
+  } | null>(null);
+  const flashRows = (ids: readonly string[], reveal: boolean) =>
+    setFlash((f) => ({ ids, reveal, seq: (f?.seq ?? 0) + 1 }));
   createEffect(() => {
     const ids = new Set(doc.rows.map((r) => r.id));
     for (const [get, set] of [
@@ -70,10 +79,12 @@ export const ui = createRoot(() => {
     /** The row the graph emphasises: the one pointed at in the list, else the selected one. */
     emphasizedRowId: () => hoveredRowId() ?? selectedRowId(),
     flash,
+    /** Pulse rows once (`reveal`: scrolled into view too). */
+    flashRows,
     /** Select a row from the graph: it scrolls into view and pulses, without taking focus. */
     pickRow: (id: string) => {
       setSelectedRowId(id);
-      setFlash((f) => ({ id, seq: (f?.seq ?? 0) + 1 }));
+      flashRows([id], true);
     },
     homeRequests,
     /** Back to the home view, as "Reset view" does (New graph starts over there). */
