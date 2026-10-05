@@ -100,6 +100,17 @@ queueMicrotask(() => {
   inStep = false;
 });
 let restoring = false;
+/** An undo or redo is being shown (its rows put back, the caret moved): see isRestoring. */
+let showingRestore = false;
+
+/**
+ * Whether an undo or redo is in progress, focus moves included. What a row does when it loses
+ * focus (making sliders of its unknown names) must not run then: it would be a new step, and
+ * would clear the redo history.
+ */
+export function isRestoring(): boolean {
+  return showingRestore;
+}
 
 /**
  * Counts undo steps taken and undone (not slider frames or automatic colors), so UI that offers
@@ -170,11 +181,20 @@ export interface Restored {
  * so unless the step puts the caret back in a row, it goes to the row the step changed.
  */
 export function undo(focusChanged = false): Restored | null {
-  return restore(history.undo(snapshot()), focusChanged);
+  return showRestore(() => restore(history.undo(snapshot()), focusChanged));
 }
 
 export function redo(): Restored | null {
-  return restore(history.redo(snapshot()), false);
+  return showRestore(() => restore(history.redo(snapshot()), false));
+}
+
+function showRestore(run: () => Restored | null): Restored | null {
+  showingRestore = true;
+  try {
+    return run();
+  } finally {
+    showingRestore = false;
+  }
 }
 
 function sameBounds(a: Row, b: Row): boolean {

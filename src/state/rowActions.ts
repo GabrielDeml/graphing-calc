@@ -3,7 +3,15 @@ import { formatSliderValue } from '../engine/format';
 import type { QuickFix } from '../engine/types';
 import { analysis, engine, evalNumber } from './analysis';
 import { type AutoTrigger, autoSliderNames, smartRange } from './autoSlider';
-import { addRowAfter, type ChangeOrigin, doc, getRow, removeRow, updateSource } from './doc';
+import {
+  addRowAfter,
+  type ChangeOrigin,
+  doc,
+  getRow,
+  isRestoring,
+  removeRow,
+  updateSource,
+} from './doc';
 import { focusedRow, focusRow, rowInput } from './focus';
 import { ui } from './ui';
 
@@ -135,7 +143,7 @@ export function autoAddSliders(
 ): { names: string[]; ids: string[] } {
   const row = getRow(id);
   const error = analysis().byId.get(id)?.error;
-  if (!row || error?.code !== 'unknown-name') return { names: [], ids: [] };
+  if (!row || error?.code !== 'unknown-name' || isRestoring()) return { names: [], ids: [] };
   const names = autoSliderNames(row.source, engine.unknownUses(id), trigger, {
     selection,
     skip: tried,

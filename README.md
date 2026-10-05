@@ -170,7 +170,7 @@ Syntax notes:
   typing for a moment and the caret isn't on a name. The new rows pulse once, and a toast says
   "Added sliders m, b" with an Undo button; `Ctrl+Z` undoes them too, in one step, and the row
   keeps its caret. Meanwhile, the letters are offered quietly as an "Add sliders: m, b" chip under
-  the row (no error), which adds them at once. A pause never makes a slider of a letter that may
+  the row (no error; not the name you are still typing), which adds them at once. A pause never makes a slider of a letter that may
   be on its way to a function (`s` before `sin`; leaving the row or `Enter` does), a name followed
   by `(` (`f(x)`, a function still to define) is never made one, and nor is a name in a slider's
   bounds or a t range. Sliders you undo or delete aren't made again for that row; it says the name

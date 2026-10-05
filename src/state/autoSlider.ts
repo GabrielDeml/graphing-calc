@@ -45,6 +45,37 @@ export function caretTouchesName(text: string, caret: number): boolean {
 }
 
 /**
+ * The name the caret is typing: the run of letters (and a subscript) it touches, as a span of
+ * the text; null when it touches none. Digits before the letters (`2co‸`) are not part of it.
+ */
+export function nameRunAt(text: string, caret: number): { start: number; end: number } | null {
+  if (!caretTouchesName(text, caret)) return null;
+  let start = caret;
+  while (start > 0 && NAME_CHAR.test(text[start - 1] ?? '')) start--;
+  while (start < caret && !/\p{L}/u.test(text[start] ?? '')) start++;
+  let end = caret;
+  while (end < text.length && NAME_CHAR.test(text[end] ?? '')) end++;
+  return { start, end };
+}
+
+/**
+ * The unknown names to offer as sliders while the row is being edited: all but the one the
+ * caret is typing (`co‸` may be on its way to `cos`), unless it is used elsewhere too.
+ */
+export function offeredNames(
+  source: string,
+  uses: readonly UnknownUse[],
+  names: readonly string[],
+  caret: number | null,
+): string[] {
+  const run = caret === null ? null : nameRunAt(source, caret);
+  if (!run) return [...names];
+  return names.filter((name) =>
+    uses.some((u) => u.name === name && (u.span.end <= run.start || u.span.start >= run.end)),
+  );
+}
+
+/**
  * The unknown names to make sliders of, in order of first use. `uses` is where the row's text
  * uses the names its error offers sliders for (DocumentEngine.unknownUses). Never a name in
  * `skip` (made once already, and undone or deleted since), nor one followed by `(` (`f(x)`: a

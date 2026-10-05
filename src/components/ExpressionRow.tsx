@@ -13,7 +13,8 @@ import {
 import { errorFixes, sliderFixNames } from '../engine/errors';
 import { formatValue } from '../engine/format';
 import type { MathError, QuickFix } from '../engine/types';
-import { analysis, nameContext, steadyRows } from '../state/analysis';
+import { analysis, engine, nameContext, steadyRows } from '../state/analysis';
+import { offeredNames } from '../state/autoSlider';
 import { doc, type Row, removeRow, setColor, toggleHidden, updateSource } from '../state/doc';
 import { focusRow, registerRowInput, rowCaretX, unregisterRowInput } from '../state/focus';
 import { offerUndo } from '../state/historyUi';
@@ -96,12 +97,19 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
     { equals: (a, b) => a === b || (!!a && !!b && a.join() === b.join()) },
   );
   const [suggestion, setSuggestion] = createSignal<readonly string[] | null>(null);
+  /** Offer the names, but not one the caret is typing (`co‸` may become `cos`). */
+  const offer = (names: readonly string[]) => {
+    const el = input;
+    const caret = typedSinceFocus && el && document.activeElement === el ? el.selectionEnd : null;
+    const shown = offeredNames(props.row.source, engine.unknownUses(props.row.id), names, caret);
+    setSuggestion(shown.length > 0 ? shown : null);
+  };
   createEffect(
     on([unknownNames, () => props.row.source], ([names]) => {
       clearTimeout(suggestTimer);
       if (!names) setSuggestion(null);
-      else if (untrack(suggestion)) setSuggestion(names);
-      else suggestTimer = setTimeout(() => setSuggestion(names), SUGGEST_MS);
+      else if (untrack(suggestion)) offer(names);
+      else suggestTimer = setTimeout(() => offer(names), SUGGEST_MS);
     }),
   );
 
@@ -109,7 +117,7 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
   // Unknown names in the row being edited are a suggestion meanwhile, not an error.
   createEffect(
     on(
-      [() => props.row.source, () => result()?.error, quiet, () => suggestion() !== null],
+      [() => props.row.source, () => result()?.error, quiet, () => unknownNames() !== null],
       ([, error, isQuiet, suggested]) => {
         clearTimeout(timer);
         if (!error || isQuiet || suggested) setErrorVisible(false);
@@ -248,8 +256,9 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
       applyTextFix(props.row.id, fix, focus);
       return;
     }
-    // The names unknown now (the error line may still show while it closes).
-    const names = sliderFixNames(result()?.error);
+    // Those still unknown (the error line may still show while it closes).
+    const unknown = sliderFixNames(result()?.error);
+    const names = fix.names.filter((n) => unknown.includes(n));
     if (names.length === 0) return;
     ui.flashRows(addSliders(props.row.id, names), false);
     if (focus && input && document.activeElement !== input) focusRow(props.row.id, 'end');
@@ -356,8 +365,9 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
         <MathField
           value={props.row.source}
           onChange={(text, kind) => {
-            updateSource(props.row.id, text, 'edit', kind);
+            // First, so what reacts to the new text knows it was typed.
             onEdit();
+            updateSource(props.row.id, text, 'edit', kind);
           }}
           // Keypad ↵ (the hardware key goes through onKeyDown): on the empty last row, where
           // Enter has nowhere to go, it means "done" and puts the keypad away.

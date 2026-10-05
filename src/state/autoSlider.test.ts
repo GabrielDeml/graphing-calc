@@ -5,6 +5,8 @@ import {
   autoSliderNames,
   caretTouchesName,
   isBuiltinPrefix,
+  nameRunAt,
+  offeredNames,
   smartRange,
 } from './autoSlider';
 
@@ -89,6 +91,47 @@ describe('caretTouchesName', () => {
   ])('%s: %s', (marked, expected) => {
     const caret = marked.indexOf('‸');
     expect(caretTouchesName(marked.replace('‸', ''), caret)).toBe(expected);
+  });
+});
+
+describe('nameRunAt', () => {
+  it.each([
+    ['y = 2co‸', 'co'],
+    ['y = c‸o + 1', 'co'],
+    ['y = a_1‸ + b', 'a_1'],
+    ['y = k x‸', 'x'],
+    ['y = k ‸x', 'x'],
+    ['y = 2‸', null],
+    ['y = k ‸', null],
+  ])('%s: %s', (marked, expected) => {
+    const caret = marked.indexOf('‸');
+    const text = marked.replace('‸', '');
+    const run = nameRunAt(text, caret);
+    expect(run ? text.slice(run.start, run.end) : null).toBe(expected);
+  });
+});
+
+describe('offeredNames', () => {
+  /** The names offered for a row, its caret at ‸ (none: the row has no focus). */
+  function offered(marked: string): string[] {
+    const caret = marked.indexOf('‸');
+    const source = marked.replace('‸', '');
+    const engine = new DocumentEngine();
+    engine.update([{ id: 'r0', source }]);
+    const uses = engine.unknownUses('r0');
+    const all = [...new Set(uses.map((u) => u.name))];
+    return offeredNames(source, uses, all, caret < 0 ? null : caret);
+  }
+
+  it.each([
+    ['y = k x + 2co‸', ['k']],
+    ['y = k x + 2co', ['k', 'c', 'o']],
+    ['y = k x + q ‸', ['k', 'q']],
+    ['y = k‸', []],
+    // Used elsewhere too: offered.
+    ['y = k x + k‸', ['k']],
+  ])('%s: %j', (marked, expected) => {
+    expect(offered(marked)).toEqual(expected);
   });
 });
 
