@@ -1,6 +1,6 @@
 import { MathSyntaxError, syntaxError } from './errors';
 import type { Token, TokenKind } from './tokens';
-import type { MathError } from './types';
+import type { MathError, Span } from './types';
 
 const DIGIT_0 = 48;
 const DIGIT_9 = 57;
@@ -101,13 +101,58 @@ export function tokenizeLenient(source: string): LenientTokens {
   return { tokens, error };
 }
 
+export interface TolerantTokens {
+  /** Every token outside the lexical errors, in order, followed by an 'eof' at source.length. */
+  tokens: Token[];
+  /** Lexical errors in source order, each with a span that no token overlaps. */
+  errors: MathError[];
+}
+
+/**
+ * Like tokenize(), but reads past lexical errors: each one is reported and skipped, and the scan
+ * resumes after it, so `y == 2x` still yields y, 2 and x. The typeset view draws the skipped text
+ * as error atoms.
+ */
+export function tokenizeTolerant(source: string): TolerantTokens {
+  const tokens: Token[] = [];
+  const errors: MathError[] = [];
+  let from = 0;
+  for (;;) {
+    try {
+      scan(source, tokens, from);
+      break;
+    } catch (e) {
+      if (!(e instanceof MathSyntaxError) || e.error.span === undefined) throw e;
+      const error = e.error;
+      const span = error.span as Span;
+      // The lexeme that failed may start before its error (an identifier before a bad
+      // subscript, `a_`): its good part becomes tokens, scanned on its own.
+      const lexeme = Math.max(from, tokens.at(-1)?.end ?? 0);
+      if (span.start > lexeme) {
+        const count = tokens.length;
+        try {
+          scan(source.slice(0, span.start), tokens, lexeme);
+        } catch {
+          tokens.length = count;
+          span.start = lexeme;
+        }
+      }
+      errors.push(error);
+      from = Math.max(span.end, span.start + 1);
+    }
+  }
+  tokens.push({ kind: 'eof', text: '', start: source.length, end: source.length });
+  return { tokens, errors };
+}
+
 function push(tokens: Token[], kind: TokenKind, text: string, start: number, end: number): void {
   tokens.push({ kind, text, start, end });
 }
 
-function scan(source: string, tokens: Token[]): void {
+/** Appends the tokens of `source` from offset `from` on; throws at the first lexical error. */
+function scan(source: string, tokens: Token[], from = 0): void {
   const n = source.length;
-  let i = 0;
+  let i = from;
   while (i < n) {
     const c = source.charCodeAt(i);
     if (isSpace(c)) {

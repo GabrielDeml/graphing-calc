@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MathSyntaxError } from './errors';
-import { tokenize, tokenizeLenient } from './tokenizer';
+import { tokenize, tokenizeLenient, tokenizeTolerant } from './tokenizer';
 import type { Token } from './tokens';
 import type { MathError } from './types';
 
@@ -394,5 +394,84 @@ describe('tokenizeLenient', () => {
     expect(error?.code).toBe('unexpected-char');
     expect(tokens.map((t) => t.text)).toEqual(['a', '=', '2', '']);
     expect(tokens.at(-1)).toMatchObject({ kind: 'eof', start: 5, end: 5 });
+  });
+});
+
+describe('tokenizeTolerant', () => {
+  /** Tokens (without eof) as kind:text, and errors as [code, start, end]. */
+  function tolerant(source: string) {
+    const { tokens, errors } = tokenizeTolerant(source);
+    expect(tokens.at(-1)).toEqual({
+      kind: 'eof',
+      text: '',
+      start: source.length,
+      end: source.length,
+    });
+    return {
+      tokens: tokens.slice(0, -1).map((t) => `${t.kind}:${t.text}`),
+      errors: errors.map((e) => [e.code, e.span?.start, e.span?.end]),
+    };
+  }
+
+  it('matches tokenize() on valid input', () => {
+    for (const source of ['', 'y = x^2', 'v_{max} ≤ 2πr', 'x² + sin θ', '1.5e - 3']) {
+      expect(tokenizeTolerant(source)).toEqual({ tokens: tokenize(source), errors: [] });
+    }
+  });
+
+  it('skips each lexical error and goes on after it', () => {
+    expect(tolerant('y == 2x')).toEqual({
+      tokens: ['ident:y', 'num:2', 'ident:x'],
+      errors: [['double-equals', 2, 4]],
+    });
+    expect(tolerant('a $ b # c')).toEqual({
+      tokens: ['ident:a', 'ident:b', 'ident:c'],
+      errors: [
+        ['unexpected-char', 2, 3],
+        ['unexpected-char', 6, 7],
+      ],
+    });
+    expect(tolerant('y = 1e-3x').errors).toEqual([['bad-number', 4, 8]]);
+    expect(tolerant('y = 1e-3x').tokens).toEqual(['ident:y', 'rel:=', 'ident:x']);
+    expect(tolerant('x^{2}')).toEqual({
+      tokens: ['ident:x', 'op:^', 'num:2'],
+      errors: [
+        ['unsupported', 2, 3],
+        ['unsupported', 4, 5],
+      ],
+    });
+  });
+
+  it('keeps the good start of a lexeme whose error comes later', () => {
+    expect(tolerant('a_ + 1')).toEqual({
+      tokens: ['ident:a', 'op:+', 'num:1'],
+      errors: [['bad-subscript', 1, 2]],
+    });
+    expect(tolerant('theta_{ab')).toEqual({
+      tokens: ['ident:θ'],
+      errors: [['bad-subscript', 5, 9]],
+    });
+    expect(tolerant('v_{}x').tokens).toEqual(['ident:v', 'ident:x']);
+  });
+
+  it('never throws, and tokens and errors never overlap', () => {
+    const pieces = ['x', '_', '{', '}', '$', '==', '=<', '!=', '1.2.3', '😀', ' ', '2', 'e-', 'é'];
+    let seed = 7;
+    for (let k = 0; k < 2000; k++) {
+      let source = '';
+      for (let j = 0; j < 8; j++) {
+        seed = (seed * 1103515245 + 12345) % 2147483648;
+        source += pieces[seed % pieces.length];
+      }
+      const { tokens, errors } = tokenizeTolerant(source);
+      const spans = [
+        ...tokens.slice(0, -1),
+        ...errors.map((e) => e.span as { start: number; end: number }),
+      ];
+      spans.sort((a, b) => a.start - b.start || a.end - b.end);
+      for (let i = 1; i < spans.length; i++) {
+        expect(spans[i].start, source).toBeGreaterThanOrEqual(spans[i - 1].end);
+      }
+    }
   });
 });

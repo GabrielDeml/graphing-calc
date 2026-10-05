@@ -1,6 +1,8 @@
-import { createEffect, createMemo, on, onCleanup, Show } from 'solid-js';
+import { createEffect, createMemo, createSignal, on, onCleanup, Show } from 'solid-js';
 import type { Span } from '../engine/types';
+import type { Names } from '../mathedit';
 import { type EditTarget, keypad } from '../state/keypad';
+import { MathView, type MathViewHandle } from './MathView';
 
 /**
  * ↵ handler for small fields (slider bounds, t/θ ranges): finish editing. The keypad closes too,
@@ -41,8 +43,22 @@ export function revealCaret(el: HTMLInputElement): void {
   else if (x + margin > el.scrollLeft + el.clientWidth) el.scrollLeft = x + margin - el.clientWidth;
 }
 
-/** Where a left-aligned input's text ends on screen (client x), within the field's box. */
+/**
+ * Where a left-aligned input's text ends on screen (client x), within the field's box: the
+ * typeset math's end while that is what shows.
+ */
 export function textEndX(el: HTMLInputElement): number {
+  const field = el.parentElement;
+  const math =
+    field?.classList.contains('typeset') && document.activeElement !== el
+      ? field.querySelector('.math-view > *')
+      : null;
+  if (math?.parentElement) {
+    return Math.min(
+      math.getBoundingClientRect().right,
+      math.parentElement.getBoundingClientRect().right,
+    );
+  }
   const rect = el.getBoundingClientRect();
   const style = getComputedStyle(el);
   const width = textWidth(style, el.value);
@@ -72,6 +88,12 @@ export interface MathFieldProps {
   placeholder?: string;
   class?: string;
   testId?: string;
+  /**
+   * Typeset the math, grouping letters with these names, while the field isn't focused
+   * (expression rows). The input then lies over the typeset view, invisible, and still takes
+   * every click and key; focused, it shows and edits the plain text.
+   */
+  names?: Names;
 }
 
 /**
@@ -82,6 +104,10 @@ export interface MathFieldProps {
 export function MathField(props: MathFieldProps) {
   let input!: HTMLInputElement;
   let mirror: HTMLDivElement | undefined;
+  let view: MathViewHandle | undefined;
+  const [focused, setFocused] = createSignal(false);
+  /** Where a click on the typeset math puts the caret, once the click has focused the input. */
+  let pendingCaret: number | null = null;
 
   const target: EditTarget = {
     get el() {
@@ -118,13 +144,43 @@ export function MathField(props: MathFieldProps) {
     if (keypad.enabled() && keypad.nativeEl() !== input) keypad.setOpen(true);
   };
 
+  /**
+   * A click on the typeset math lands on the invisible input, whose own text is laid out
+   * differently: the browser puts the caret by that. Once the click has focused the field, the
+   * caret goes where the clicked symbol is in the text instead: on the click, or in the task
+   * after the focus (a tap's click can land elsewhere once the keypad opens and moves the list).
+   * Only after a press on the typeset math, and only over a collapsed caret: Playwright's fill()
+   * selects everything, then focuses.
+   */
+  const placeCaret = () => {
+    const at = pendingCaret;
+    pendingCaret = null;
+    if (at === null || input.selectionStart !== input.selectionEnd) return;
+    input.setSelectionRange(at, at);
+    revealCaret(input);
+  };
+
   onCleanup(() => {
     if (keypad.target()?.el === input) keypad.setTarget(null);
     if (keypad.nativeEl() === input) keypad.setNativeEl(null);
   });
 
   return (
-    <div class={`math-field ${props.class ?? ''}`}>
+    <div class={`math-field ${props.class ?? ''}`} classList={{ typeset: !!props.names }}>
+      <Show when={props.names}>
+        {(names) => (
+          <MathView
+            source={props.value}
+            names={names()}
+            errorSpan={props.errorSpan ?? null}
+            placeholder={props.placeholder}
+            frozen={focused()}
+            ref={(handle) => {
+              view = handle;
+            }}
+          />
+        )}
+      </Show>
       <Show when={underline()}>
         {(u) => (
           <div class="math-mirror" aria-hidden="true" ref={mirror}>
@@ -165,15 +221,31 @@ export function MathField(props: MathFieldProps) {
           } else if (e.key === 'Escape') e.currentTarget.blur();
         }}
         onFocus={() => {
+          setFocused(true);
+          if (pendingCaret !== null) setTimeout(placeCaret, 0);
           keypad.setTarget(target);
           openKeypad();
           props.onFocus?.();
         }}
         onBlur={() => {
+          setFocused(false);
+          pendingCaret = null;
           if (keypad.nativeEl() === input) keypad.setNativeEl(null);
           props.onBlur?.();
         }}
-        onClick={openKeypad}
+        onPointerDown={(e) => {
+          pendingCaret =
+            view && e.button === 0 && document.activeElement !== input
+              ? view.offsetAt(e.clientX, e.clientY)
+              : null;
+        }}
+        onPointerCancel={() => {
+          pendingCaret = null;
+        }}
+        onClick={() => {
+          placeCaret();
+          openKeypad();
+        }}
       />
     </div>
   );

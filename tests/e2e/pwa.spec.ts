@@ -1,4 +1,4 @@
-import { countColor, expect, openApp, RED, setExpr, test } from './helpers';
+import { countColor, expect, exprInput, openApp, RED, setExpr, test } from './helpers';
 
 test.describe('PWA', () => {
   test.skip(({ isMobile }) => isMobile, 'service worker behaviour is the same on mobile');
@@ -48,6 +48,22 @@ test.describe('PWA', () => {
           await document.fonts.ready;
           return [...document.fonts].some(
             (f) => f.family.replace(/"/g, '') === 'STIX Math Letters' && f.status === 'loaded',
+          );
+        }),
+      )
+      .toBe(true);
+    // Left, the row shows typeset in STIX Two Text, offline too.
+    await exprInput(page, 0).press('Enter');
+    await expect(page.locator('.math-view').first().locator('.m-fn')).toHaveText('sin');
+    await expect
+      .poll(() =>
+        page.evaluate(async () => {
+          await document.fonts.ready;
+          return [...document.fonts].some(
+            (f) =>
+              f.family.replace(/"/g, '') === 'STIX Two Text' &&
+              f.style === 'italic' &&
+              f.status === 'loaded',
           );
         }),
       )

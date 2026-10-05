@@ -11,7 +11,7 @@ import {
 } from 'solid-js';
 import { formatValue } from '../engine/format';
 import type { MathError } from '../engine/types';
-import { analysis, steadyRows } from '../state/analysis';
+import { analysis, nameContext, steadyRows } from '../state/analysis';
 import { doc, type Row, removeRow, setColor, toggleHidden, updateSource } from '../state/doc';
 import { focusRow, registerRowInput, unregisterRowInput } from '../state/focus';
 import { offerUndo } from '../state/historyUi';
@@ -252,6 +252,7 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
           ariaLabel={`Expression ${props.index + 1}`}
           placeholder={props.index === 0 ? 'Try y = sin(x)' : ''}
           testId="expr-input"
+          names={nameContext()}
         />
 
         {/* Outside the error gate: a bad t/θ range is reported as a row error, and the fields

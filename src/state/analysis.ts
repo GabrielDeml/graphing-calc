@@ -59,6 +59,22 @@ export const steadyRows = createRoot(() => {
   });
 });
 
+/**
+ * The document's names table (which letters are sliders, which are functions), for typesetting
+ * rows the way the engine reads them: `asin` shows as a·sin once a slider a exists. Only
+ * notifies when the names change, not on every edit.
+ */
+export const nameContext = createRoot(() =>
+  createMemo(
+    () => {
+      analysis();
+      return engine.names();
+    },
+    undefined,
+    { equals: (a, b) => a.signature === b.signature },
+  ),
+);
+
 /** Evaluate a constant expression (slider bounds, domains); NaN when invalid. */
 export function evalNumber(source: string): number {
   // Track analysis so callers re-evaluate when variables change.

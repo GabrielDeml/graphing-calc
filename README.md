@@ -25,6 +25,7 @@ scratch in plain TypeScript.
 | `k = 2a + 1` | Derived variable, shows its value |
 | `f(x) = x^2`, `g(u, v) = u v` | Functions you can call from other rows: `y = f(x - 1)` |
 | `2^10`, `sqrt(2)` | Shows the value |
+| `y = (x+1)/(x^2+1)`, `sqrt(x)`, `e^(-x^2)` | Typed as plain text, shown typeset once you leave the row: a stacked fraction, a radical, a raised exponent |
 
 Syntax notes:
 
@@ -70,6 +71,16 @@ Syntax notes:
   that would crowd the graph are left out whole, extrema first and then crossings of the axes
   (zoomed out on `sin(x)`, its extrema go, then its roots), until you zoom in. While you type in
   the selected row, its rings stay, faded, until the new ones are found.
+- **Typeset math:** rows you aren't editing show their math typeset, as in a textbook: stacked
+  fractions, raised exponents (and `x²` typed with a superscript), subscripts, square and cube
+  roots under a radical sign, parentheses and `|x|` bars that grow around a fraction, function
+  names upright and letters in italic, `≤` `≥` `−` `·` `π` `θ` for `<=` `>=` `-` `*` `pi` `theta`
+  (only on screen: the text stays as typed). Letters group the way the graph reads them, so
+  `asin(x)` shows as a·sin once there is a slider `a`, and `pix` as πx. Click or tap a symbol to
+  edit the row with the caret right there; the row you edit shows its plain text and keeps its
+  height. A row with an error underlines the mistake in the typeset math too, and a missing part
+  (`y = 2 +`, `x^`) shows as a faint box. The empty first row shows "Try y = sin(x)". A row too
+  long for the list fades out at its end.
 - **Rows:**
   - `Enter` starts a new row. On an empty row it moves on to the next one instead, and on the
     empty row at the end it stays put (the keypad's ↵ puts the keypad away there).
@@ -114,7 +125,8 @@ Syntax notes:
   of the graph's controls brings it back.
 - **Look:** follows the system's light or dark setting. Math is set in STIX Two Text (with `≤`,
   `≥`, `√` and superscripts from STIX Two Math), bundled with the app so it works offline: letters
-  in italic, digits and operators upright. With reduced motion turned on in the system,
+  in italic, digits, operators and function names upright; radical signs and tall parentheses are
+  drawn to fit. With reduced motion turned on in the system,
   transitions, the zoom animation and the points of interest's bloom are skipped.
 - **Math keypad:** on touch devices, tapping a row opens the built-in keypad, which has three pages:
   numbers, functions and letters. The keyboard key on the letters page switches that row to the
@@ -146,6 +158,8 @@ src/engine/       math language: tokenizer, parser, classifier, compiler, docume
 src/plot/         geometry: viewport, ticks, adaptive samplers, marching squares, points of
                   interest (pure TS)
 src/keypad/       on-screen keypad layouts and text-editing logic (pure TS)
+src/mathedit/     typeset rows: a tolerant parse that reads text exactly as the engine does,
+                  the render plan (boxes, spacing, error marks) and caret stops (pure TS)
 src/render/       canvas drawing and the render loop
 src/interaction/  pan / zoom / pinch gestures
 src/state/        Solid stores and signals; the undo history core, the autosave format and what
