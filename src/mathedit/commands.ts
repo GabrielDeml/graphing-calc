@@ -972,7 +972,11 @@ class Editor {
     return this.opening(this.first(tries, plain, 'insert'));
   }
 
-  /** `_` right after a letter: an empty subscript (in braces if letters or digits follow). */
+  /**
+   * `_` right after a letter: an empty subscript (in braces if letters or digits follow). Not on
+   * a function's name, except `log`: `log_2(x)` is how a base is written, which the row then
+   * offers to rewrite (a `log2(x)` would quietly be log of 2x).
+   */
   private subscript(sel: Sel, stop: CaretStop): EditorResult {
     const { doc } = sel;
     const { text } = doc;
@@ -984,7 +988,7 @@ class Editor {
       !isRunLetter(text.charCodeAt(p - 1)) ||
       name?.kind !== 'atom' ||
       name.sub ||
-      name.role === 'fn' ||
+      (name.role === 'fn' && text.slice(name.span.start, name.span.end) !== 'log') ||
       (!stop.inside && name.span.end !== p)
     ) {
       return this.same(sel);

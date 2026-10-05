@@ -1,6 +1,6 @@
 // Typeset math for the expression rows: the tolerant layout parse (layout.ts), the render plan
-// (plan.ts), caret stops (caret.ts) and the editing commands (commands.ts). Pure TS, like the
-// engine.
+// (plan.ts), caret stops (caret.ts) and the editing commands (commands.ts); and short math set in
+// a line of UI text (inline.ts). Pure TS, like the engine.
 
 import type { NameContext } from '../engine/names';
 import { layoutParse } from './layout';
@@ -22,7 +22,8 @@ export {
   runCommand,
   type Selection,
 } from './commands';
-export { type Completion, completionAt } from './complete';
+export { type Completion, completionAt, completionCommand } from './complete';
+export { type InlinePiece, inlineMath } from './inline';
 export { type Layout, layoutParse, printLayout } from './layout';
 export * from './plan';
 

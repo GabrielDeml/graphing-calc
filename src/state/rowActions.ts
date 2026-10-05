@@ -7,6 +7,7 @@ import {
   addRowAfter,
   type ChangeOrigin,
   doc,
+  endUndoStep,
   getRow,
   isRestoring,
   removeRow,
@@ -203,12 +204,21 @@ export function applyTextFix(
         : was;
   const focused = was !== null || (rowInput(id) !== undefined && focus);
   updateSource(id, text, 'edit', 'replace');
+  // Typing on after it is a step of its own.
+  endUndoStep();
   if (focused) focusRow(id, caret);
 }
 
-/** A row the trace adds (a tangent, a point), below the traced curve's row, pulsed into view. */
-export function addTraceRow(afterId: string, source: string): string {
-  const id = addRowAfter(afterId, source);
-  ui.flashRows([id], true);
-  return id;
+/**
+ * A row the trace adds (a tangent, a point), below the traced curve's row, pulsed into view. One
+ * already in the list (a second tap) is only pulsed. Returns whether a row was added.
+ */
+export function addTraceRow(afterId: string, source: string): boolean {
+  const same = doc.rows.find((r) => r.source.trim() === source);
+  if (same) {
+    ui.flashRows([same.id], true);
+    return false;
+  }
+  ui.flashRows([addRowAfter(afterId, source)], true);
+  return true;
 }

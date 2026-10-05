@@ -81,10 +81,17 @@ export function formatSliderValue(v: number, step: number, min: number, max: num
  * a pixel (clamp(ceil(log10 ppu) + 1, 0, 12)), trailing zeros trimmed, -0 as "0".
  */
 export function formatCoordinate(v: number, ppu: number): string {
-  if (!Number.isFinite(v)) return nonFinite(v);
   const raw = Math.ceil(Math.log10(ppu)) + 1;
-  const decimals = Number.isFinite(raw) ? Math.min(12, Math.max(0, raw)) : 0;
-  return trimFixed(toPlainFixed(v, decimals));
+  return formatDecimals(v, Number.isFinite(raw) ? raw : 0);
+}
+
+/**
+ * `v` rounded to `decimals` places (clamped to 0…12), plain ASCII decimals (never exponent
+ * form), trailing zeros trimmed, -0 as "0". "∞" / "-∞" / "undefined" when not finite.
+ */
+export function formatDecimals(v: number, decimals: number): string {
+  if (!Number.isFinite(v)) return nonFinite(v);
+  return trimFixed(toPlainFixed(v, Math.min(12, Math.max(0, decimals))));
 }
 
 /**

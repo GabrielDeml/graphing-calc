@@ -86,6 +86,21 @@ export function errorFixes(error: MathError | undefined): QuickFix[] {
   return [error.quickFix, ...(error.alternatives ?? [])];
 }
 
+/**
+ * What an error's hint says beside the rewrites offered as fixes, which show them: nothing for
+ * "Did you mean x^2 or 2x?" or "Write 1*10^-3…", "Logs with a base aren't supported yet" for
+ * "…; write log(x)/log(2)", nothing where that part only repeats the message. The whole hint
+ * when no rewrite is offered.
+ */
+export function hintBesideFixes(error: MathError): string | undefined {
+  const { hint } = error;
+  if (!hint || !errorFixes(error).some((fix) => fix.kind === 'replace')) return hint;
+  if (hint.startsWith('Did you mean ') || hint.startsWith('Write ')) return undefined;
+  const cut = hint.indexOf('; write ');
+  const rest = cut < 0 ? hint : hint.slice(0, cut);
+  return rest === error.message ? undefined : rest;
+}
+
 /** The unknown names an error offers sliders for (none when it offers none). */
 export function sliderFixNames(error: MathError | undefined): readonly string[] {
   for (const fix of errorFixes(error)) if (fix.kind === 'addSliders') return fix.names;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DocumentEngine } from './document';
-import { applyFix, errorFixes, sliderFixNames } from './errors';
+import { applyFix, errorFixes, hintBesideFixes, sliderFixNames } from './errors';
 import type { DocAnalysis, Fn1, MathError, PlotItem, RowInput, RowResult } from './types';
 
 /** Rows with ids r0, r1, … */
@@ -994,6 +994,20 @@ describe('quick fixes', () => {
     ['y = log_2(x) + c', ['y = log(x)/log(2) + c', '+c']],
   ])('%s', (source, expected) => {
     expect(fixed(source)).toEqual(expected);
+  });
+
+  it('a hint says only what the fixes offered do not', () => {
+    const hint = (source: string) =>
+      hintBesideFixes(err(new DocumentEngine().update(rows(source)), 'r0'));
+    expect(hint('y = x2')).toBeUndefined();
+    expect(hint('y = 1e-3x')).toBeUndefined();
+    expect(hint('y = 2e3')).toBe("Scientific notation isn't supported");
+    expect(hint('y = log_2(x)')).toBe("Logs with a base aren't supported yet");
+    expect(hint('y = sin^-1(x)')).toBe('For the reciprocal, write 1/sin(x)');
+    // No rewrite offered: all of it.
+    expect(hint('y = log_2 + 1')).toBe(
+      "Logs with a base aren't supported yet; write log(x)/log(2)",
+    );
   });
 
   it('labels a fix by its new text, or by what it starts', () => {

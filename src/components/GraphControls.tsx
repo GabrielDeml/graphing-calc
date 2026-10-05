@@ -9,9 +9,12 @@ import { Icon } from './icons';
  * Zoom to fit joins zoom and reset once there are bounds to fit (src/plot/bounds.ts, with
  * auto-framing): a fit from the sampled curves alone would fly off to the poles of y = 1/x.
  */
-export function GraphControls(props: { controller: GraphController }) {
+export function GraphControls(props: {
+  controller: GraphController;
+  ref?: (el: HTMLDivElement) => void;
+}) {
   return (
-    <div class="graph-controls">
+    <div class="graph-controls" ref={(el) => props.ref?.(el)}>
       <Show when={!ui.sidebarOpen()}>
         <button
           type="button"

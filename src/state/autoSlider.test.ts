@@ -34,6 +34,13 @@ describe('autoSliderNames', () => {
     // A name called like a function is one to define, not a slider.
     ['y = f(x) + k', ['k']],
     ['y = g (x)', []],
+    ['y = f_1(x + 1) + k', ['k']],
+    ['y = F(x) + c', ['c']],
+    ['y = p(x, x)', []],
+    // A coefficient times a group is a product: vertex form.
+    ['y = a(x - h)^2 + k', ['a', 'h', 'k']],
+    ['y = m(x - x_0) + 1', ['m', 'x_0']],
+    ['y = k (x + 1)', ['k']],
     ['y = log_2(x) + c', ['c']],
     ['y = x^2', []],
     ['y = (x', []],
@@ -49,10 +56,16 @@ describe('autoSliderNames', () => {
     ['y = k x + q‸', []],
     ['y = k x + q_1‸', []],
     ['y = k x^2‸', ['k']],
-    // Maybe on the way to a builtin: none yet, so a row's sliders come together.
-    ['y = s + 1‸', []],
+    // Letters the caret has left are done, even those a builtin starts with.
+    ['y = a x + 1‸', ['a']],
+    ['y = s + 1‸', ['s']],
+    ['y = m x + b + 1‸', ['m', 'b']],
+    ['y = a(x - h)^2 + k ‸', ['a', 'h', 'k']],
     ['y = sq + k‸ ', []],
+    // Just before the caret, a space away, they may still be on the way to one: none yet, so
+    // the row's sliders come together.
     ['y = k x + m ‸', []],
+    ['y = a x^2 + b x + c ‸', []],
     ['y = h x + n ‸', ['h', 'n']],
   ])('%s, when typing pauses: %j', (source, expected) => {
     expect(names(source, 'idle')).toEqual(expected);

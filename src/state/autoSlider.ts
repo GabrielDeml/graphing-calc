@@ -75,14 +75,31 @@ export function offeredNames(
   );
 }
 
+/** Letters conventionally used for functions: `f(x)` is one still to define, `a(x - h)` a product. */
+const FUNCTION_LETTER = /^[fgh](?:_|$)/;
+
+/**
+ * Whether the use of an unknown name at `span` looks like a call of a function still to define
+ * rather than a coefficient times a group: followed by `(`, and either named like a function
+ * (`f`, `g`, `h`, with any subscript) or given just names (`F(x)`, `p(t)`, `g(x, y)`). So
+ * `a(x - h)^2` and `m(x - 1)` are products, which a slider makes them.
+ */
+function looksCalled(source: string, span: { start: number; end: number }, name: string): boolean {
+  const rest = source.slice(span.end).trimStart();
+  if (!rest.startsWith('(')) return false;
+  if (FUNCTION_LETTER.test(name)) return true;
+  const close = rest.indexOf(')');
+  return close > 0 && /^\(\s*\p{L}+\s*(?:,\s*\p{L}+\s*)*\)$/u.test(rest.slice(0, close + 1));
+}
+
 /**
  * The unknown names to make sliders of, in order of first use. `uses` is where the row's text
  * uses the names its error offers sliders for (DocumentEngine.unknownUses). Never a name in
- * `skip` (made once already, and undone or deleted since), nor one followed by `(` (`f(x)`: a
- * function still to be defined, more likely). A pause in typing (`idle`, with the selection)
- * makes none while the caret touches a name or text is selected, nor while any of them could be
- * a builtin on its way (`s`, `sq` on the way to `sqrt`): the rest wait for the edit to end, so
- * one row's sliders come as one step.
+ * `skip` (made once already, and undone or deleted since), nor one that looks called
+ * (`f(x)`: a function still to be defined, more likely; see looksCalled). A pause in typing
+ * (`idle`, with the selection) makes none while the caret touches a name or text is selected,
+ * nor while the letters just before it, a space or more away, could be on their way to a
+ * builtin (`s ` before `sin`): the edit ending makes them then, all in one step.
  */
 export function autoSliderNames(
   source: string,
@@ -91,16 +108,15 @@ export function autoSliderNames(
   options: { selection?: { start: number; end: number }; skip?: ReadonlySet<string> } = {},
 ): string[] {
   const calls = new Set<string>();
-  for (const use of uses) {
-    if (source.slice(use.span.end).trimStart().startsWith('(')) calls.add(use.name);
-  }
+  for (const use of uses) if (looksCalled(source, use.span, use.name)) calls.add(use.name);
   const names = [...new Set(uses.map((u) => u.name))].filter(
     (name) => !calls.has(name) && !options.skip?.has(name),
   );
   if (trigger === 'idle') {
     const sel = options.selection;
     if (!sel || sel.start !== sel.end || caretTouchesName(source, sel.end)) return [];
-    if (names.some(isBuiltinPrefix)) return [];
+    const last = /\p{L}+$/u.exec(source.slice(0, sel.end).trimEnd())?.[0];
+    if (last !== undefined && isBuiltinPrefix(last)) return [];
   }
   return names;
 }

@@ -17,9 +17,10 @@ export interface EditTarget {
   deleteEmpty?(): void;
   /**
    * Make an edit itself (rows edited in their typeset form, by their editor's rules); without
-   * it, the keypad applies plain text edits (applyEdit) and commits the result.
+   * it, the keypad applies plain text edits (applyEdit) and commits the result. `repeated`: the
+   * key is held down (a held → only moves the caret).
    */
-  apply?(op: EditOp): void;
+  apply?(op: EditOp, repeated?: boolean): void;
 }
 
 const coarsePointer = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;

@@ -180,6 +180,9 @@ describe('typing', () => {
     ['x‸y', '_', 'x_{‸}y:1'],
     ['2‸', '_', '2‸:0'],
     ['sin‸', '_', 'sin‸:0'],
+    // A log's base.
+    ['y = log‸', '_2(x', 'y = log_2(x‸:1'],
+    ['y = log‸', '_{10} x', 'y = log_10 x‸:0'],
     ['a_1‸:1', '_', 'a_1‸:1'],
     ['a_1‸:1', '2', 'a_12‸:1'],
     // Letters and digits stay in a subscript, the rest leave it.

@@ -47,7 +47,7 @@ function runEdit(op: EditOp, repeated: boolean): boolean {
   // A row edited in its typeset form makes the edit by its own rules (and keeps its caret in
   // view itself).
   if (t.apply) {
-    t.apply(op);
+    t.apply(op, repeated);
     revealRow(el);
     return true;
   }

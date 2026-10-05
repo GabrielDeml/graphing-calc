@@ -5,6 +5,7 @@ import {
   type Caret,
   caretAt,
   completionAt,
+  completionCommand,
   type EditKind,
   type EditorCommand,
   type EditorOptions,
@@ -351,7 +352,7 @@ export function MathField(props: MathFieldProps) {
   /** Tab or → takes the completion on offer: the rest of the name, typed. */
   const accept = (): boolean => {
     const c = completion();
-    return c !== null && run({ type: 'type', text: c.text });
+    return c !== null && run(completionCommand(c));
   };
 
   /**
@@ -463,8 +464,8 @@ export function MathField(props: MathFieldProps) {
     deleteEmpty: () => props.onDeleteEmpty?.(),
     get apply() {
       if (!inPlace()) return undefined;
-      return (op: EditOp) => {
-        if (op.type === 'right' && accept()) return;
+      return (op: EditOp, repeated = false) => {
+        if (op.type === 'right' && !repeated && accept()) return;
         const cmd = keypadCommand(op);
         if (cmd) run(cmd);
       };
@@ -675,7 +676,8 @@ export function MathField(props: MathFieldProps) {
         onKeyDown={(e) => {
           // Keys an IME uses to pick and commit (↑, ↓, Enter) are its own while it composes.
           if (composing || e.isComposing) return;
-          const plainKey = !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey;
+          // Only a fresh press: holding → moves the caret, it never types.
+          const plainKey = !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat;
           if ((e.key === 'Tab' || e.key === 'ArrowRight') && plainKey && accept()) {
             e.preventDefault();
             return;

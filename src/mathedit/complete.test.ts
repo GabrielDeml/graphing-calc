@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { EMPTY_CONTEXT, type NameContext } from '../engine/names';
 import { caretAt, runCommand } from './commands';
-import { completionAt } from './complete';
+import { completionAt, completionCommand } from './complete';
 import { layoutParse } from './layout';
 import { renderPlan } from './plan';
 
@@ -93,26 +93,28 @@ describe('completionAt', () => {
       from: 4,
       text: 'ea(',
       builtin: false,
+      close: false,
     });
   });
 
-  it('taken by typing it, it leaves the caret in the parentheses', () => {
+  it('taken, it leaves the caret in the parentheses, and the group around keeps its own', () => {
     const opts = { names: EMPTY_CONTEXT };
-    for (const [from, expected] of [
+    for (const [marked, expected] of [
       ['y = si', 'y = sin('],
       ['y = sq', 'y = sqrt()'],
-      ['y = (si)', 'y = (sin()'],
+      ['y = (si‸)', 'y = (sin())'],
+      ['y = 2(co‸)x', 'y = 2(cos())x'],
+      ['y = sqrt(si‸) + 1', 'y = sqrt(sin()) + 1'],
+      ['y = 2(sq‸)x', 'y = 2(sqrt())x'],
+      ['y = max(1, si‸ )', 'y = max(1, sin() )'],
     ] as const) {
-      const at = from.endsWith(')') ? from.length - 1 : from.length;
-      const caret = caretAt(from, at, opts);
+      const at = marked.indexOf('‸');
+      const from = marked.replace('‸', '');
+      const caret = caretAt(from, at < 0 ? from.length : at, opts);
       const plan = renderPlan(layoutParse(from, EMPTY_CONTEXT));
       const c = completionAt(plan, caret, EMPTY_CONTEXT);
       if (!c) throw new Error(`nothing offered for ${from}`);
-      const r = runCommand(
-        { text: from, anchor: caret, focus: caret },
-        { type: 'type', text: c.text },
-        opts,
-      );
+      const r = runCommand({ text: from, anchor: caret, focus: caret }, completionCommand(c), opts);
       expect(r?.state.text).toBe(expected);
       const f = r?.state.focus.offset ?? -1;
       expect(r?.state.text.slice(0, f).endsWith('(')).toBe(true);

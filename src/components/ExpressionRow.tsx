@@ -10,15 +10,25 @@ import {
   Switch,
   untrack,
 } from 'solid-js';
-import { errorFixes, sliderFixNames } from '../engine/errors';
+import { errorFixes, hintBesideFixes, sliderFixNames } from '../engine/errors';
 import { formatValue } from '../engine/format';
 import type { MathError, QuickFix } from '../engine/types';
+import { inlineMath } from '../mathedit';
 import { analysis, engine, nameContext, steadyRows } from '../state/analysis';
 import { offeredNames } from '../state/autoSlider';
-import { doc, type Row, removeRow, setColor, toggleHidden, updateSource } from '../state/doc';
+import {
+  doc,
+  isRestoring,
+  type Row,
+  removeRow,
+  setColor,
+  toggleHidden,
+  updateSource,
+} from '../state/doc';
 import { focusRow, registerRowInput, rowCaretX, unregisterRowInput } from '../state/focus';
 import { offerUndo } from '../state/historyUi';
 import { isCoarsePointer } from '../state/keypad';
+import { afterPress } from '../state/press';
 import {
   addSliders,
   applyTextFix,
@@ -76,8 +86,14 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
   let edited = false;
   /** Typed into since it took focus: Tab takes the fix offered (else it moves on). */
   let typedSinceFocus = false;
-  /** Names this row made sliders of by itself: never again (undone, or deleted since). */
+  /** The window, not the row, lost focus (the field is still the page's active element). */
+  let windowLeft = false;
+  /** The text the last edit made (other changes come from undo, a fix, another window). */
+  let typed: string | null = null;
+  /** Names this row made sliders of (by itself, or with a fix): never again by itself. */
   const tried = new Set<string>();
+  /** Cancels the end of an edit waiting for a click to finish (see onBlur). */
+  let cancelEnd = () => {};
 
   /**
    * Unknown names while the row is being edited: offered quietly as sliders (a chip, no alert),
@@ -131,6 +147,7 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
     clearTimeout(pulseTimer);
     clearTimeout(idleTimer);
     clearTimeout(suggestTimer);
+    cancelEnd();
     if (input) unregisterRowInput(props.row.id, input);
     if (ui.hoveredRowId() === props.row.id) ui.setHoveredRowId(null);
     if (ui.editingRowId() === props.row.id) ui.setEditingRowId(null);
@@ -189,6 +206,27 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
     }
   });
   onCleanup(() => clearTimeout(closeTimer));
+
+  // The chip closes like the error line (taken, made into sliders, or the error's line instead).
+  const [shownSuggestion, setShownSuggestion] = createSignal<readonly string[] | null>(null);
+  const [suggestClosing, setSuggestClosing] = createSignal(false);
+  let suggestCloseTimer: ReturnType<typeof setTimeout> | undefined;
+  createEffect(() => {
+    const names = shownError() ? null : suggestion();
+    clearTimeout(suggestCloseTimer);
+    if (names) {
+      setShownSuggestion(names);
+      setSuggestClosing(false);
+    } else if (untrack(shownSuggestion)) {
+      setSuggestClosing(true);
+      suggestCloseTimer = setTimeout(() => {
+        setShownSuggestion(null);
+        setSuggestClosing(false);
+      }, ERROR_CLOSE_MS);
+    }
+  });
+  onCleanup(() => clearTimeout(suggestCloseTimer));
+
   const rangeVariable = (): 't' | 'θ' | null => {
     const kind = shown()?.kind;
     return kind === 'parametric' ? 't' : kind === 'polar' ? 'θ' : null;
@@ -210,7 +248,8 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
   };
 
   /** A text edit by the user (keys, the keypad, a paste): sliders may follow (see autoSlider.ts). */
-  const onEdit = () => {
+  const onEdit = (text: string) => {
+    typed = text;
     edited = true;
     typedSinceFocus = true;
     clearTimeout(idleTimer);
@@ -222,6 +261,22 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
       if (made.names.length > 0) offerUndo(sliderToast(made.names));
     }, IDLE_SLIDERS_MS);
   };
+
+  // The text changed some other way. A pause no longer follows typing; and after an undo or a redo
+  // the text is what the history holds, so leaving the row doesn't make sliders (which would be a
+  // new step, and clear what there is to redo).
+  createEffect(
+    on(
+      () => props.row.source,
+      (source) => {
+        if (source === typed) return;
+        clearTimeout(idleTimer);
+        idleTimer = undefined;
+        if (isRestoring()) edited = false;
+      },
+      { defer: true },
+    ),
+  );
 
   /** The edit ended (Enter, or the row lost focus): unknown names typed in it become sliders. */
   const commitSliders = () => {
@@ -260,6 +315,8 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
     const unknown = sliderFixNames(result()?.error);
     const names = fix.names.filter((n) => unknown.includes(n));
     if (names.length === 0) return;
+    // Taken by hand: undone, they don't come back by themselves when the edit ends.
+    for (const n of names) tried.add(n);
     ui.flashRows(addSliders(props.row.id, names), false);
     if (focus && input && document.activeElement !== input) focusRow(props.row.id, 'end');
   };
@@ -366,7 +423,7 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
           value={props.row.source}
           onChange={(text, kind) => {
             // First, so what reacts to the new text knows it was typed.
-            onEdit();
+            onEdit(text);
             updateSource(props.row.id, text, 'edit', kind);
           }}
           // Keypad ↵ (the hardware key goes through onKeyDown): on the empty last row, where
@@ -375,15 +432,31 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
           onDeleteEmpty={() => deleteEmptyBackward(props.row.id)}
           onKeyDown={onKeyDown}
           onFocus={() => {
-            typedSinceFocus = false;
+            cancelEnd();
+            // Back from another window or app: the edit goes on.
+            if (!windowLeft) typedSinceFocus = false;
+            windowLeft = false;
           }}
           onBlur={() => {
-            const made = commitSliders();
-            if (made.names.length > 0) offerUndo(sliderToast(made.names));
-            if (result()?.error && !quiet()) {
-              clearTimeout(timer);
-              setErrorVisible(true);
+            // Another window or app took the focus (it comes back here): the edit isn't over,
+            // and a name may be half typed.
+            if (input && document.activeElement === input) {
+              windowLeft = true;
+              return;
             }
+            // Once the press that took the focus has made its click: sliders added now would move
+            // what it pressed out from under it.
+            cancelEnd();
+            cancelEnd = afterPress(() => {
+              cancelEnd = () => {};
+              if (input && document.activeElement === input) return;
+              const made = commitSliders();
+              if (made.names.length > 0) offerUndo(sliderToast(made.names));
+              if (result()?.error && !quiet()) {
+                clearTimeout(timer);
+                setErrorVisible(true);
+              }
+            });
           }}
           ref={(el) => {
             input = el;
@@ -417,8 +490,17 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
                   <Icon name="alert" size={15} />
                 </span>
                 <span>{err().message}</span>
-                <Show when={err().hint}>
-                  <span class="expr-hint">{err().hint}</span>
+                {/* The rewrites it names show as chips: only what it says beside them shows, the
+                    whole of it is read out. */}
+                <Show when={hintBesideFixes(err())}>
+                  {(hint) => (
+                    <span class="expr-hint" aria-hidden={hint() !== err().hint || undefined}>
+                      {hint()}
+                    </span>
+                  )}
+                </Show>
+                <Show when={err().hint !== hintBesideFixes(err()) && err().hint}>
+                  {(hint) => <span class="visually-hidden">{hint()}</span>}
                 </Show>
                 <For each={errorFixes(err())}>
                   {(fix) => <FixChip fix={fix} onMouseDown={keepFocus} onTake={takeFix} />}
@@ -428,9 +510,14 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
           )}
         </Show>
 
-        <Show when={!shownError() && suggestion()}>
+        <Show when={shownSuggestion()}>
           {(names) => (
-            <div class="expr-suggest">
+            <div
+              class="expr-suggest"
+              classList={{ closing: suggestClosing() }}
+              aria-hidden={suggestClosing() || undefined}
+              inert={suggestClosing() || undefined}
+            >
               <div class="expr-suggest-line">
                 <FixChip
                   fix={{ kind: 'addSliders', names: [...names()] }}
@@ -511,19 +598,26 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
 }
 
 /**
- * A fix offered with an error, or for unknown names while the row is edited: "→ x^2" rewrites
+ * A fix offered with an error, or for unknown names while the row is edited: "→ x²" rewrites
  * the text, "+ Add sliders: m, b" adds them. Neutral, like a suggestion; the error line says
- * what is wrong. `onTake` gets whether the button had focus (a keyboard press).
+ * what is wrong. Its name says it in the row's own syntax ("Write x^2"). `onTake` gets whether
+ * the button had focus (a keyboard press).
  */
 function FixChip(props: {
   fix: QuickFix;
   onMouseDown: (e: MouseEvent) => void;
   onTake: (fix: QuickFix, focus: boolean) => void;
 }) {
+  const label = () => {
+    const fix = props.fix;
+    if (fix.kind === 'replace') return `Write ${fix.label}`;
+    return `Add slider${fix.names.length > 1 ? 's' : ''}: ${fix.names.join(', ')}`;
+  };
   return (
     <button
       type="button"
       class="quick-fix"
+      aria-label={label()}
       onMouseDown={(e) => props.onMouseDown(e)}
       onClick={(e) => props.onTake(props.fix, e.detail === 0)}
     >
@@ -532,8 +626,7 @@ function FixChip(props: {
           {(fix) => (
             <>
               <Icon name="arrow-right" size={13} />
-              <span class="visually-hidden">Write </span>
-              <span class="quick-fix-text">{fix().label}</span>
+              <InlineMath text={fix().label} />
             </>
           )}
         </Match>
@@ -541,11 +634,34 @@ function FixChip(props: {
           {(fix) => (
             <>
               <Icon name="plus" size={13} />
-              Add slider{fix().names.length > 1 ? 's' : ''}: {fix().names.join(', ')}
+              Add slider{fix().names.length > 1 ? 's' : ''}:
+              <InlineMath text={fix().names.join(', ')} />
             </>
           )}
         </Match>
       </Switch>
     </button>
+  );
+}
+
+/** Short math set in the chip's line: italic letters, upright names, raised exponents. */
+function InlineMath(props: { text: string }) {
+  return (
+    <span class="quick-fix-text">
+      <For each={inlineMath(props.text)}>
+        {(piece) => (
+          <span
+            class={`m-a qm-${piece.role}`}
+            classList={{
+              'm-var': piece.role === 'var',
+              'qm-sup': piece.script === 'sup',
+              'qm-sub': piece.script === 'sub',
+            }}
+          >
+            {piece.text}
+          </span>
+        )}
+      </For>
+    </span>
   );
 }

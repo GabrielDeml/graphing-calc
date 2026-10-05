@@ -10,11 +10,12 @@ import {
 } from 'solid-js';
 import { attachGestures } from '../interaction/gestures';
 import type { Poi, PoiKind } from '../plot/poi';
-import { pointRow, slopeAt, tangentRow } from '../plot/tangent';
+import { isStraight, pointRow, slopeAt, tangentRow } from '../plot/tangent';
 import { GraphController, type SceneRow, type TraceHit } from '../render/controller';
 import { analysis, steadyRows } from '../state/analysis';
 import { noteView } from '../state/autosave';
 import { doc } from '../state/doc';
+import { offerUndo } from '../state/historyUi';
 import { isCoarsePointer, keypad } from '../state/keypad';
 import { savedState } from '../state/persist';
 import { addTraceRow } from '../state/rowActions';
@@ -22,7 +23,7 @@ import { palette } from '../state/theme';
 import { ui } from '../state/ui';
 import { GraphControls } from './GraphControls';
 import { PoiLayer, type PoiLayerHandle, type PoiSet } from './PoiLayer';
-import { type TraceActions, type TraceKind, TraceMarker } from './TraceMarker';
+import { type Rect, type TraceActions, type TraceKind, TraceMarker } from './TraceMarker';
 
 const debug = typeof location !== 'undefined' && new URLSearchParams(location.search).has('debug');
 
@@ -76,6 +77,19 @@ export function GraphView() {
   const [scrubbing, setScrubbing] = createSignal(false);
   /** The trace is pinned (not following a hovering mouse). */
   const [pinned, setPinned] = createSignal(false);
+  /** Where the floating controls are, for the trace pill to keep clear of. */
+  const [controlsBox, setControlsBox] = createSignal<Rect | null>(null);
+  const watchControls = (el: HTMLElement) => {
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      const [left, top] = [el.offsetLeft, el.offsetTop];
+      setControlsBox({ left, top, right: left + el.offsetWidth, bottom: top + el.offsetHeight });
+    });
+    // Its own size, and the graph's (it sits at the graph's right edge).
+    ro.observe(el);
+    ro.observe(container);
+    onCleanup(() => ro.disconnect());
+  };
 
   /** A row's math as shown in labels ("y = x/3"). */
   const rowText = (id: string) => doc.rows.find((r) => r.id === id)?.source.trim() ?? '';
@@ -99,8 +113,9 @@ export function GraphView() {
 
   /**
    * At a pinned point of an explicit curve: "Tangent here" adds the tangent line there (its slope
-   * by central differences), "Keep point" the point, as rows below the curve's, written as the
-   * trace shows the numbers.
+   * by central differences; not on a line, its own tangent), "Keep point" the point, as rows
+   * below the curve's, written as the trace shows the numbers. On touch, with no undo key, a
+   * toast offers to undo it; a second tap adds nothing more.
    */
   const traceActions = createMemo((): TraceActions | null => {
     const hit = trace();
@@ -112,10 +127,16 @@ export function GraphView() {
     const [u, v] = variable === 'x' ? [hit.x, hit.y] : [hit.y, hit.x];
     const m = slopeAt(plot.f, u);
     const { rowId, x, y, ppu } = hit;
+    const span = Math.hypot(hit.viewWidth, hit.viewHeight);
+    const add = (source: string, message: string) => {
+      if (addTraceRow(rowId, source) && isCoarsePointer) offerUndo(message);
+    };
     return {
       tangent:
-        m === null ? undefined : () => addTraceRow(rowId, tangentRow(variable, u, v, m, ppu)),
-      keep: () => addTraceRow(rowId, pointRow(x, y, ppu)),
+        m === null || isStraight(plot.f, u, m)
+          ? undefined
+          : () => add(tangentRow(variable, u, v, m, { ppu, span }), 'Added tangent'),
+      keep: () => add(pointRow(x, y, ppu), 'Added point'),
     };
   });
 
@@ -292,11 +313,13 @@ export function GraphView() {
         if (touch || isCoarsePointer) leaveEditing();
         // A tap on a curve selects its row (without editing it); away from every curve it
         // deselects.
+        const selected = ui.selectedRowId();
         const hit = pickAt(sx, sy, touch);
         if (!hit) ui.setSelectedRowId(null);
-        if (pointerType === 'mouse' && !hit?.poi) {
-          // A mouse traces by hovering; a click (or double-click zoom) must not pin it, except
-          // on a point of interest it can see.
+        if (pointerType === 'mouse' && !hit?.poi && hit?.rowId !== selected) {
+          // A mouse traces by hovering; a click that picks a curve (or a double-click zoom)
+          // must not pin it, except on a point of interest it can see. A click on the curve
+          // already selected pins it there (for its one-tap actions).
           anchor = { mode: 'hover', sx, sy };
           retrace();
           return;
@@ -377,8 +400,11 @@ export function GraphView() {
         kind={traceKind()}
         scrubbing={scrubbing()}
         actions={traceActions()}
+        avoid={controlsBox()}
       />
-      <Show when={controller()}>{(c) => <GraphControls controller={c()} />}</Show>
+      <Show when={controller()}>
+        {(c) => <GraphControls controller={c()} ref={watchControls} />}
+      </Show>
       <Show when={debug}>
         <div class="debug-overlay" ref={debugEl} />
       </Show>

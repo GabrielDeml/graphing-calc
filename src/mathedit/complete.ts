@@ -5,7 +5,7 @@ import { BUILTIN_FUNCTION_NAMES } from '../engine/builtinNames';
 import { type NameContext, resolveName, splitIdentifier } from '../engine/names';
 import type { Caret } from './caret';
 import { resolveCaret } from './caret';
-import { analyze } from './commands';
+import { analyze, type EditorCommand } from './commands';
 import type { Plan } from './plan';
 
 /** Builtins offered first when several fit (the rest follow in the engine's order). */
@@ -56,6 +56,16 @@ export interface Completion {
   text: string;
   /** A builtin (drawn upright) rather than a function the user defined (italic). */
   builtin: boolean;
+  /**
+   * A `)` or `,` of the group around follows: taking it adds the call's `)` too, so that one
+   * keeps closing its own group (`(si‸)` → `(sin(‸))`, not `(sin(‸)`).
+   */
+  close: boolean;
+}
+
+/** What taking a completion runs in the row's editor. */
+export function completionCommand(c: Completion): EditorCommand {
+  return c.close ? { type: 'wrap', before: c.text, after: ')' } : { type: 'type', text: c.text };
 }
 
 /** Function names that start with `prefix` and are longer, the likeliest first. */
@@ -82,7 +92,8 @@ export function completionAt(plan: Plan, caret: Caret, ctx: NameContext): Comple
   const text = plan.source;
   const offset = caret.offset;
   if (offset < MIN_PREFIX || offset > text.length) return null;
-  if (!/^\s*(?:$|[),])/.test(text.slice(offset))) return null;
+  const after = /^\s*(?:$|[),])/.exec(text.slice(offset))?.[0];
+  if (after === undefined) return null;
   const before = text.slice(0, offset);
   const run = /[A-Za-z]+$/.exec(before)?.[0] ?? '';
   if (run.length < MIN_PREFIX) return null;
@@ -115,6 +126,7 @@ export function completionAt(plan: Plan, caret: Caret, ctx: NameContext): Comple
         from: offset - len,
         text: `${best.name.slice(len)}(`,
         builtin: best.builtin,
+        close: after.trim() !== '',
       };
     }
   }
