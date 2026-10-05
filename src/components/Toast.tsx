@@ -14,6 +14,11 @@ export function ToastCard(props: {
   onDismiss: () => void;
   /** Called with true while the pointer is over the toast or focus is in it, false after. */
   onHold?: (held: boolean) => void;
+  /**
+   * Just a note that goes by itself: smaller, no Dismiss button, and taps go through it to
+   * whatever is under it.
+   */
+  quiet?: boolean;
   testId: string;
 }) {
   let card!: HTMLDivElement;
@@ -37,6 +42,7 @@ export function ToastCard(props: {
   return (
     <div
       class="toast"
+      classList={{ quiet: props.quiet }}
       data-testid={props.testId}
       ref={card}
       onPointerEnter={() => {
@@ -71,14 +77,16 @@ export function ToastCard(props: {
           </button>
         )}
       </Show>
-      <button
-        type="button"
-        class="toast-close"
-        aria-label="Dismiss"
-        onClick={() => run(() => props.onDismiss())}
-      >
-        <Icon name="close" size={16} />
-      </button>
+      <Show when={!props.quiet}>
+        <button
+          type="button"
+          class="toast-close"
+          aria-label="Dismiss"
+          onClick={() => run(() => props.onDismiss())}
+        >
+          <Icon name="close" size={16} />
+        </button>
+      </Show>
     </div>
   );
 }

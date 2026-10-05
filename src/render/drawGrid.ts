@@ -41,6 +41,12 @@ function isOneTwoFive(v: number): boolean {
   return [1, 2, 5, 10].some((n) => Math.abs(m - n) < 1e-6);
 }
 
+/** A tick's label, its sign a true minus (−2, not -2), as the math elsewhere is set. */
+function tickText(value: number, step: number): string {
+  const text = formatTick(value, step);
+  return text.startsWith('-') ? `−${text.slice(1)}` : text;
+}
+
 /**
  * Label every k-th major x tick so labels `widthPx` wide don't overprint each other: zoomed in
  * far from the origin they need many digits ("13.5999980") and outgrow the ~100px tick spacing.
@@ -159,7 +165,7 @@ export function drawGrid(
     if (x === 0) continue;
     const sx = toScreenX(view, x);
     if (sx < 0 || sx > w) continue;
-    const text = formatTick(x, tx.step);
+    const text = tickText(x, tx.step);
     const width = ctx.measureText(text).width;
     widest = Math.max(widest, width);
     xLabels.push({ i: Math.round(x / tx.step), text, sx, width });
@@ -179,7 +185,7 @@ export function drawGrid(
     if (y === 0) continue;
     const sy = toScreenY(view, y);
     if (sy < 8 || sy > h - 8) continue;
-    const text = formatTick(y, ty.step);
+    const text = tickText(y, ty.step);
     widestY = Math.max(widestY, ctx.measureText(text).width);
     yLabels.push({ text, sy });
   }

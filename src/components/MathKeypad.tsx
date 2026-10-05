@@ -13,6 +13,12 @@ const REPEAT_EVERY_MS = 60;
 
 const PAGE_LABELS: Record<PageId, string> = { '123': '123', fx: 'f(x)', abc: 'ABC' };
 
+/**
+ * A pointer press on a key already ran its action, so the click that follows it must not, on
+ * whichever key it lands: a tap while the sheet slides up can press one key and click the next.
+ */
+let pressPending = false;
+
 /** The field keys should act on; falls back to the last (empty) expression row. */
 function currentTarget(): EditTarget | null {
   const t = keypad.target();
@@ -107,8 +113,6 @@ function useNativeKeyboard(): void {
 
 function Key(props: { def: KeyDef }) {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  /** A pointer press already ran the action, so the click that follows it must not. */
-  let pressed = false;
   /** Held down: the key sinks a little (:active alone misses touches, whose press is prevented). */
   const [down, setDown] = createSignal(false);
   const stop = () => {
@@ -130,7 +134,7 @@ function Key(props: { def: KeyDef }) {
         // Keep focus (and the caret) in the field being edited.
         e.preventDefault();
         if (e.button !== 0) return;
-        pressed = true;
+        pressPending = true;
         stop();
         setDown(true);
         if (!runAction(props.def.action) || !props.def.repeat) return;
@@ -144,11 +148,11 @@ function Key(props: { def: KeyDef }) {
       onPointerLeave={stop}
       onPointerCancel={stop}
       onKeyDown={() => {
-        pressed = false;
+        pressPending = false;
       }}
       onClick={() => {
-        const handled = pressed;
-        pressed = false;
+        const handled = pressPending;
+        pressPending = false;
         if (props.def.action.type === 'native') useNativeKeyboard();
         // Keyboard or assistive-technology activation: a click without a pointer press. (Not
         // `detail === 0`: Chromium also reports 0 for the click ending a long touch press.)

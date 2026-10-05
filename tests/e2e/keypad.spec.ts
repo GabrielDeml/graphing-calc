@@ -81,6 +81,41 @@ test.describe('math keypad on touch devices', () => {
     await expect(page.getByTestId('expr-input')).toHaveCount(2);
   });
 
+  test('its Undo takes back the last edit, and is dimmed with nothing to undo', async ({
+    page,
+  }) => {
+    await openApp(page);
+    await exprInput(page, 0).tap();
+    const undo = page.getByTestId('keypad').getByRole('button', { name: 'Undo', exact: true });
+    await expect(undo).toHaveAttribute('aria-disabled', 'true');
+    await tapKeys(page, ['y', 'eq', 'x']);
+    await expect(exprInput(page, 0)).toHaveValue('y=x');
+    await expect(undo).toHaveAttribute('aria-disabled', 'false');
+    await undo.tap();
+    await expect(exprInput(page, 0)).toHaveValue('');
+    await expect(exprInput(page, 0)).toBeFocused();
+    await expect(page.getByTestId('keypad')).toBeVisible();
+    await expect(undo).toHaveAttribute('aria-disabled', 'true');
+    // Pressed then, it does nothing, and the field keeps its focus.
+    await undo.tap({ force: true });
+    await expect(exprInput(page, 0)).toBeFocused();
+    await expect(page.getByTestId('expr-input')).toHaveCount(1);
+  });
+
+  test('a key gives a little while it is held', async ({ page }) => {
+    await openApp(page);
+    await exprInput(page, 0).tap();
+    const key = page.getByTestId('key-7');
+    // Once the sheet has slid up.
+    await page.waitForTimeout(300);
+    const touch = await touchSession(page);
+    await touch.start(await center(page, '[data-testid="key-7"]'));
+    await expect(key).toHaveClass(/\bdown\b/);
+    await touch.end();
+    await expect(key).not.toHaveClass(/\bdown\b/);
+    await expect(exprInput(page, 0)).toHaveValue('7');
+  });
+
   test('hiding the keypad gives the graph more room', async ({ page }) => {
     await openApp(page);
     await exprInput(page, 0).tap();

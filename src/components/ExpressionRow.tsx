@@ -25,7 +25,13 @@ import {
   toggleHidden,
   updateSource,
 } from '../state/doc';
-import { focusRow, registerRowInput, rowCaretX, unregisterRowInput } from '../state/focus';
+import {
+  focusRow,
+  registerRowInput,
+  revealRow,
+  rowCaretX,
+  unregisterRowInput,
+} from '../state/focus';
 import { offerUndo } from '../state/historyUi';
 import { isCoarsePointer } from '../state/keypad';
 import { afterPress } from '../state/press';
@@ -167,7 +173,7 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
       ui.flash,
       (f) => {
         if (!f?.ids.includes(props.row.id)) return;
-        if (f.reveal) li.scrollIntoView({ block: 'nearest' });
+        if (f.reveal) revealRow(li);
         li.classList.remove('pulse');
         void li.offsetWidth; // restart the animation
         li.classList.add('pulse');

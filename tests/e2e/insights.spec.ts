@@ -231,6 +231,8 @@ test.describe('framing', () => {
     await page.getByTestId('graph').focus();
     await page.keyboard.press('ArrowRight');
     await expect.poll(() => place(page)).not.toEqual(home);
+    // (An arrow key's pan is a short animated step.)
+    await page.waitForTimeout(300);
     const panned = await place(page);
     await setExpr(page, 1, 'y = x - 100');
     await exprInput(page, 1).press('Escape');

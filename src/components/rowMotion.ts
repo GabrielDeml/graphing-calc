@@ -32,12 +32,18 @@ export function enterRow(el: HTMLElement): void {
     ],
     { duration: DUR_2, easing: EASE_OUT },
   );
+  // Scrolled into view as it opens (Enter made it, an undo brought it back: see focus.ts
+  // revealRow): it stays in view, frame by frame, as it grows to its height.
+  const follow = () => {
+    if (!el.classList.contains('entering')) return;
+    if (el.hasAttribute('data-reveal')) el.scrollIntoView({ block: 'nearest' });
+    requestAnimationFrame(follow);
+  };
+  requestAnimationFrame(follow);
   const done = () => {
     el.classList.remove('entering');
-    // Focused as it opened (Enter made it): in view now that it has its height.
-    if (el.isConnected && el.contains(document.activeElement)) {
-      el.scrollIntoView({ block: 'nearest' });
-    }
+    if (el.isConnected && el.hasAttribute('data-reveal')) el.scrollIntoView({ block: 'nearest' });
+    el.removeAttribute('data-reveal');
   };
   animation.addEventListener('finish', done);
   animation.addEventListener('cancel', done);

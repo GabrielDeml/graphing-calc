@@ -126,13 +126,13 @@ describe('drawGrid x labels', () => {
   it('keep every tick labelled at the home view, without cutting any off at the edges', () => {
     const width = 920;
     const labels = xLabels({ cx: 0, cy: 0, ppuX: 40, ppuY: 40, width, height: 800 });
-    // Major ticks every 2 units across ±11.5, minus 0 and the clipped ones.
+    // Major ticks every 2 units across ±11.5, minus 0 and the clipped ones, with true minuses.
     expect(labels.map((l) => l.text)).toEqual([
-      '-10',
-      '-8',
-      '-6',
-      '-4',
-      '-2',
+      '−10',
+      '−8',
+      '−6',
+      '−4',
+      '−2',
       '2',
       '4',
       '6',
@@ -140,5 +140,17 @@ describe('drawGrid x labels', () => {
       '10',
     ]);
     assertReadable(labels, width);
+  });
+
+  it('set negative values with a true minus, on the y axis too', () => {
+    const { ctx, labels } = recordingContext();
+    drawGrid(ctx, { cx: 0, cy: 0, ppuX: 40, ppuY: 40, width: 920, height: 800 }, theme, {
+      x: 2,
+      y: 2,
+    });
+    const y = labels.filter((l) => l.align !== 'center').map((l) => l.text);
+    expect(y).toContain('−8');
+    expect(y).toContain('8');
+    expect(labels.some((l) => l.text.includes('-'))).toBe(false);
   });
 });

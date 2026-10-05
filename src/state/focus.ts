@@ -77,6 +77,7 @@ export function focusRow(
       if (depth !== undefined) carets.get(el)?.set(depth);
     }
     el.scrollIntoView({ block: 'nearest' });
+    followOpening(el);
     return true;
   };
   if (!apply()) queueMicrotask(() => apply() || requestAnimationFrame(apply));
@@ -85,5 +86,15 @@ export function focusRow(
 /** Scroll the expression row holding `el` (any of its fields) into view, if it isn't already. */
 export function revealRow(el: Element | null): void {
   const row = el?.closest('.expr-row');
-  if (row) row.scrollIntoView({ block: 'nearest' });
+  if (!row) return;
+  row.scrollIntoView({ block: 'nearest' });
+  followOpening(row);
+}
+
+/**
+ * A row just added is still opening to its height (components/rowMotion.ts): scrolled into view
+ * now, it is kept in view as it opens.
+ */
+function followOpening(el: Element): void {
+  el.closest('.expr-row.entering')?.setAttribute('data-reveal', '');
 }
