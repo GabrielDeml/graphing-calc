@@ -360,6 +360,41 @@ describe('findPois: density', () => {
       { census: none },
     );
     expect(none.kinds).toEqual({});
+    expect(none.partial).toBeUndefined();
+  });
+
+  it('says when it ran out of time before counting every curve it meets', () => {
+    const lines = Array.from({ length: 60 }, (_, k) => fx((x) => x / (k + 2) + 1));
+    const others = lines.map((p, i) => curve(`o${i}`, p));
+    const target = curve(
+      't',
+      fx((x) => (x * x) / 7 - 3 * Math.sin(x)),
+    );
+    const all: PoiCensus = { kinds: {}, meets: new Map() };
+    findPois(target, others, view, { census: all });
+    expect(all.partial).toBeUndefined();
+    expect(all.meets.size).toBe(60);
+    const short: PoiCensus = { kinds: {}, meets: new Map() };
+    findPois(target, others, view, { census: short, maxEvals: 6000 });
+    expect(short.meets.size).toBeLessThan(60);
+    expect(short.partial).toBe(true);
+  });
+
+  it("many curves crossing it leave the curve's own points their dots", () => {
+    // 30 lines crossing the parabola y = x²/4 - 2: more crossings than there are dots.
+    const lines = Array.from({ length: 30 }, (_, k) => fx((x) => (k - 15) / 4 + x / 8));
+    const list = findPois(
+      curve(
+        't',
+        fx((x) => (x * x) / 4 - 2),
+      ),
+      lines.map((p, i) => curve(`o${i}`, p)),
+      view,
+    );
+    expect(list.length).toBeLessThanOrEqual(20);
+    expect(ofKind(list, 'intersection').length).toBeGreaterThan(10);
+    expect(ofKind(list, 'min')).toHaveLength(1);
+    expect(ofKind(list, 'root')).toHaveLength(2);
   });
 
   it('caps the number of points', () => {

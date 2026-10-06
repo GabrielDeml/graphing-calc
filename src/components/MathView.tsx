@@ -642,6 +642,11 @@ export function MathView(props: MathViewProps) {
   let frame = 0;
   let holdTimer: ReturnType<typeof setTimeout> | undefined;
   let lastSeq = -1;
+  /**
+   * The math may be scrolled sideways (to its caret, or by a wheel or finger): known without
+   * reading it back, which would lay the page out between one row's drawing and the next.
+   */
+  let scrolled = false;
   const caretEl = el('span', 'm-caret');
   const selectionEl = el('span', 'm-selection');
   caretEl.setAttribute('aria-hidden', 'true');
@@ -666,7 +671,10 @@ export function MathView(props: MathViewProps) {
       caretEl.remove();
       selectionEl.remove();
       lastSeq = -1;
-      if (view.scrollLeft !== 0) view.scrollLeft = 0;
+      if (scrolled) {
+        view.scrollLeft = 0;
+        scrolled = false;
+      }
       return;
     }
     const plan = drawn.plan;
@@ -708,9 +716,12 @@ export function MathView(props: MathViewProps) {
     // Keep the caret in view, with some room on its side.
     const x = box.x - ox;
     const margin = Math.min(24, view.clientWidth / 4);
-    if (x - margin < view.scrollLeft) view.scrollLeft = Math.max(0, x - margin);
-    else if (x + margin > view.scrollLeft + view.clientWidth) {
+    if (x - margin < view.scrollLeft) {
+      view.scrollLeft = Math.max(0, x - margin);
+      scrolled = x - margin > 0;
+    } else if (x + margin > view.scrollLeft + view.clientWidth) {
       view.scrollLeft = x + margin - view.clientWidth;
+      scrolled = true;
     }
   };
 
@@ -803,6 +814,7 @@ export function MathView(props: MathViewProps) {
       const before = view.scrollLeft;
       view.scrollLeft = before + dx;
       if (view.scrollLeft === before) return false;
+      scrolled = true;
       measure();
       return true;
     },

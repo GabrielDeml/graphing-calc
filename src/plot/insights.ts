@@ -79,8 +79,10 @@ export interface InViewFacts {
   bounds: Bounds;
   /** Points of each kind in view; a kind missing was not found (or too many to count). */
   counts: Partial<Record<PoiKind, number>>;
-  /** How many points it meets each other curve at in view, by row id. */
+  /** How many points it meets each other curve at in view, by row id… */
   meets: ReadonlyMap<string, number>;
+  /** …which leaves out some curves, not counted (too many to search in time). */
+  partial?: boolean;
 }
 
 export interface InsightInput {
@@ -914,11 +916,11 @@ function meetsFacts(input: InsightInput): InsightFact[] {
   const meets = [...exact, ...inView];
   if (meets.length <= MAX_MEETS + 1) return [...same, ...meets];
   const more = meets.length - MAX_MEETS;
-  return [
-    ...same,
-    ...meets.slice(0, MAX_MEETS),
-    { label: `meets ${count(more, 'more curve', 'more curves')}` },
-  ];
+  // Not every curve was counted in view: at least that many.
+  const label = input.inView?.partial
+    ? `meets ${more}+ more curves`
+    : `meets ${count(more, 'more curve', 'more curves')}`;
+  return [...same, ...meets.slice(0, MAX_MEETS), { label }];
 }
 
 type ExplicitPlot = Extract<PlotItem, { kind: 'explicitY' | 'explicitX' }>;

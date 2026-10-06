@@ -398,6 +398,10 @@ describe('names and curves together', () => {
       'Line · slope 1 · meets y = 1 at 1 point · meets y = 2 at 1 point · ' +
         'meets y = -x at 1 point · meets 2 more curves · through (0, 0)',
     );
+    // Not every curve counted in view: at least that many.
+    expect(said(sources, selected(sources, { ...inView, partial: true }))).toContain(
+      'meets 2+ more curves',
+    );
     // One more is named rather than counted.
     const five = sources.filter((s) => s !== 'y = 5 - x');
     expect(said(five, selected(five, inView))).toBe(

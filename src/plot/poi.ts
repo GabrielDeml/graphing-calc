@@ -21,9 +21,9 @@
 // the end of a parameter range, ends with a root when f goes to zero there.
 //
 // The result is capped and kept calm: kinds of points are shown or left out as a whole, most
-// notable first (intersections, then crossings of the axes, then extrema), while they stay few
-// and far enough apart to read; so zooming out on sin x drops its extrema, then its roots,
-// rather than thinning them at random. Evaluations are budgeted (sin(1/x) cannot hang).
+// notable first (intersections, then crossings of the axes, then extrema; the curve's own keep
+// some room however many curves cross it), while they stay few and far enough apart to read; so
+// zooming out on sin x drops its extrema, then its roots, rather than thinning them at random. Evaluations are budgeted (sin(1/x) cannot hang).
 
 import type { Fn1, Fn2, PlotItem } from '../engine/types';
 import type { RowGeometry, Viewport } from './types';
@@ -64,6 +64,11 @@ export interface PoiOptions {
 export interface PoiCensus {
   kinds: Partial<Record<PoiKind, number>>;
   meets: Map<string, number>;
+  /**
+   * Some other curves were not counted (the search ran out of time, or one met it too often to
+   * find): `meets` may leave out some that meet it.
+   */
+  partial?: boolean;
 }
 
 const DEFAULT_MAX_POIS = 20;
@@ -842,16 +847,19 @@ export function findPois(
 
   // Each class (a kind, or the intersections with one curve) is found whole or not at all.
   const classes: { kind: PoiKind; other: string | null; points: Candidate[] }[] = [];
+  const uncounted = (other: string | null) => {
+    if (other !== null && opts.census) opts.census.partial = true;
+  };
   const add: AddFn = (kind, other, find) => {
-    if (ctx.budget.left <= 0) return;
+    if (ctx.budget.left <= 0) return uncounted(other);
     let found: [number, number][];
     try {
       found = find();
     } catch (e) {
-      if (e instanceof TooMany) return;
+      if (e instanceof TooMany) return uncounted(other);
       throw e;
     }
-    if (ctx.budget.left < 0) return;
+    if (ctx.budget.left < 0) return uncounted(other);
     const points: Candidate[] = [];
     for (const [x, y] of found) {
       if (Number.isFinite(x) && Number.isFinite(y) && inView(x, y)) {
@@ -896,16 +904,24 @@ export function findPois(
   }
   const ranked = [...groups.values()].sort((p, q) => p.rank - q.rank);
 
-  // The intersections first, as many as fit, nearest the middle of the view…
+  // The curve's own points (its roots, extrema, intercepts) keep some room, as far as they would
+  // show on their own: many other curves crossing it leave its vertex its dot. (Up to half: a
+  // curve with many of its own still shows where it meets the others.)
+  let own: Candidate[] = [];
+  for (const g of ranked) {
+    if (g.rank !== 0 && !crowded(own, g.points, view, maxPois)) own = [...own, ...g.points];
+  }
+  const room = maxPois - Math.min(spots(own, view).length, Math.floor(maxPois / 2));
+  // The intersections first, as many as fit beside those, nearest the middle of the view…
   const d = (p: Candidate) => Math.hypot((p.x - view.cx) * view.ppuX, (p.y - view.cy) * view.ppuY);
   let shown: Candidate[] = [];
   for (const g of ranked) {
     if (g.rank === 0 && !crowded([], g.points, view, maxPois)) shown.push(...g.points);
   }
-  if (spots(shown, view).length > maxPois) {
+  if (spots(shown, view).length > room) {
     const kept: Candidate[] = [];
     for (const p of shown.sort((p, q) => d(p) - d(q))) {
-      if (spots([...kept, p], view).length <= maxPois) kept.push(p);
+      if (spots([...kept, p], view).length <= room) kept.push(p);
     }
     shown = kept;
   }

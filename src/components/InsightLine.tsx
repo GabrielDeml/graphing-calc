@@ -241,7 +241,17 @@ export function InsightLine(props: {
     line.classList.toggle('overflowing', overflow);
     line.classList.toggle('scrolled', overflow && line.scrollLeft > 0);
   };
-  createEffect(on(shown, measure));
+  // Once the frame's drawing is done, with every other line's (not between one and the next).
+  let frame = 0;
+  createEffect(
+    on(shown, () => {
+      frame ||= requestAnimationFrame(() => {
+        frame = 0;
+        measure();
+      });
+    }),
+  );
+  onCleanup(() => cancelAnimationFrame(frame));
   const watch = (el: HTMLParagraphElement) => {
     line = el;
     if (typeof ResizeObserver === 'undefined') return;

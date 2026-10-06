@@ -3,6 +3,7 @@ import { createStore, produce, reconcile, unwrap } from 'solid-js/store';
 import { focusedRow, focusRow } from './focus';
 import { caretAfterChange, type EditKind, editGroup, History } from './history';
 import { type SavedRow, savedState } from './persist';
+import { matchRowIds } from './rowMatch';
 
 export interface SliderSettings {
   /** Bounds are expression strings (e.g. "2pi"), evaluated against current variables. */
@@ -334,13 +335,19 @@ export function clearRows(): void {
 
 /**
  * Take the rows another window saved (this window has no unsaved edits). Rows keep the ids of
- * the rows at the same place, so their components and a focused input stay. Not an undo step:
+ * the rows they continue (see matchRowIds: the same text, or an edit of the row in its place),
+ * so their components and state stay, and a focused input stays in its row even when a row was
+ * inserted above it. Not an undo step:
  * this window's history was of a document that is gone, so it is cleared, unless the rows are
  * the same anyway (the other window only saved its view). Returns whether anything changed.
  */
 export function adoptRows(saved: readonly SavedRow[]): boolean {
   const current = unwrap(doc).rows;
-  const rows = saved.map((r, i) => fromSaved(r, current[i]?.id));
+  const ids = matchRowIds(
+    saved.map((r) => r.source),
+    current,
+  );
+  const rows = saved.map((r, i) => fromSaved(r, ids[i]));
   if (rows.length === current.length && rows.every((r, i) => sameRow(r, current[i]))) return false;
   if (rows.length === 0) rows.push(newRow());
   history.clear();

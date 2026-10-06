@@ -195,6 +195,31 @@ test.describe('autosave on desktop', () => {
     await other.close();
   });
 
+  test("a row one tab inserts above leaves the other tab's caret in its row", async ({
+    page,
+    context,
+  }) => {
+    await openApp(page);
+    await setExpr(page, 0, 'y = x');
+    await setExpr(page, 1, 'y = 2x');
+    await expect.poll(() => stored(page)).toContain('"y = 2x"');
+    const other = await context.newPage();
+    await openApp(other);
+    await exprInput(other, 1).click();
+    await expect(exprInput(other, 1)).toBeFocused();
+
+    await exprInput(page, 0).click();
+    await exprInput(page, 0).press('End');
+    await exprInput(page, 0).press('Enter');
+    await expect(page.getByTestId('expr-input')).toHaveCount(4);
+    await expect(other.getByTestId('expr-input')).toHaveCount(4);
+    await expect(exprInput(other, 1)).toHaveValue('');
+    // Still in `y = 2x`, now a row further down.
+    await expect(exprInput(other, 2)).toHaveValue('y = 2x');
+    await expect(exprInput(other, 2)).toBeFocused();
+    await other.close();
+  });
+
   test('a slider playing in one tab plays on when another saves only its view', async ({
     page,
     context,
