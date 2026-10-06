@@ -169,7 +169,8 @@ export function InsightLine(props: {
     const shownBefore = untrack(shown) !== null && !untrack(closing);
     batch(() => {
       setDim(false);
-      setInsight(next);
+      // The same words and places (a slider moving what the line doesn't name): left as it is.
+      if (!sameInsight(next, untrack(insight))) setInsight(next);
     });
     // A new line over an old one fades in (a first one opens: see .expr-insight).
     if (fresh && next && shownBefore && line) {
@@ -317,9 +318,15 @@ function Fact(props: {
   return (
     <span class="insight-fact">
       <Show when={items().length === 0}>{label()}</Show>
+      {/*
+        Each item in its own span: its words and comma are then text updated in place, beside a
+        chip that stays put. (Bare strings in a fragment are made anew on every update, and the
+        chip between them is taken out and put back: a press on it while a slider plays is lost,
+        and its focus with it.)
+      */}
       <Index each={items()}>
         {(item, j) => (
-          <>
+          <span>
             {j > 0 ? ' ' : ''}
             {j === 0 && label() !== '' ? `${label()}\u00a0` : ''}
             <Show when={item().value} fallback={<RowRef id={item().row ?? ''} />}>
@@ -328,7 +335,7 @@ function Fact(props: {
               )}
             </Show>
             {j < items().length - 1 ? ',' : ''}
-          </>
+          </span>
         )}
       </Index>
       {/* (An expression, not a <Show> callback: that would keep the first tail it was given.) */}
@@ -389,6 +396,29 @@ function sameReading(a: Reading, b: Reading): boolean {
     sameList(p.usedBy, q.usedBy, (x, y) => x === y) &&
     sameList(p.others, q.others, (x, y) => x.id === y.id && x.plot === y.plot) &&
     sameList(a.values, b.values, (x, y) => x === y || (Number.isNaN(x) && Number.isNaN(y)))
+  );
+}
+
+function sameInsight(a: Insight | null, b: Insight | null): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.title !== b.title) return false;
+  return sameList(
+    a.facts,
+    b.facts,
+    (f, g) =>
+      f.label === g.label &&
+      f.tail === g.tail &&
+      sameList(f.rows, g.rows, (x, y) => x === y) &&
+      sameList(
+        f.values,
+        g.values,
+        (v, w) =>
+          v.text === w.text &&
+          v.name === w.name &&
+          v.offCurve === w.offCurve &&
+          v.at?.x === w.at?.x &&
+          v.at?.y === w.at?.y,
+      ),
   );
 }
 

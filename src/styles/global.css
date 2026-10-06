@@ -239,6 +239,30 @@ button {
 
 /* ---------- Layout ---------- */
 
+/*
+ * Set on .app on every frame of a drag (the phone list's handle, the sidebar's edge) and read by
+ * .app alone: not inherited, so a drag restyles .app rather than everything in it.
+ */
+@property --graph-row {
+  syntax: "*";
+  inherits: false;
+}
+
+@property --panel-row {
+  syntax: "*";
+  inherits: false;
+}
+
+@property --sidebar-w {
+  syntax: "*";
+  inherits: false;
+}
+
+@property --sidebar-col {
+  syntax: "*";
+  inherits: false;
+}
+
 .app {
   /* The sidebar's width, leaving the graph room in a narrow window (--sidebar-w is set inline). */
   --sidebar-col: min(var(--sidebar-w, 400px), calc(100vw - 360px));
@@ -2009,6 +2033,19 @@ button {
     min-width: 28px;
     max-width: 120px;
   }
+
+  /*
+   * Edited, a bound is its text, sized to it: the input steps into the flow, and the typeset
+   * view (which would pin it to its own width, `2π`'s) out of it.
+   */
+  .range-control .range-bound.typeset:not(.in-place):focus-within .math-input {
+    position: relative;
+    inset: auto;
+  }
+
+  .range-control .range-bound.typeset:not(.in-place):focus-within .math-view {
+    display: none;
+  }
 }
 
 .range-var {
@@ -2059,15 +2096,10 @@ button {
 }
 
 /*
- * Points of interest: grey rings that bloom in when found. The layer's --kx/--ky/--ox/--oy map
- * each ring's position in the view it was found in (--sx0, --sy0) to the current view, so a pan
- * is one style write for the whole layer (PoiLayer.place).
+ * Points of interest: grey rings that bloom in when found. Each is placed by a transform of its
+ * own (PoiLayer.place), so a pan restyles nothing else.
  */
 .poi-layer {
-  --kx: 1;
-  --ky: 1;
-  --ox: 0;
-  --oy: 0;
   --poi-stagger: 18ms;
   position: absolute;
   inset: 0;
@@ -2087,10 +2119,6 @@ button {
   background: transparent;
   pointer-events: auto;
   cursor: pointer;
-  transform: translate(
-    calc((var(--sx0) * var(--kx) + var(--ox)) * 1px),
-    calc((var(--sy0) * var(--ky) + var(--oy)) * 1px)
-  );
 }
 
 .poi::before {
@@ -2664,11 +2692,12 @@ button {
   pointer-events: none;
 }
 
-/* Beside the list, centered over the graph. */
+/* Beside the list, centered over the graph: placed in the graph's grid area (not by the sidebar's
+   width, which .app keeps to itself). */
 @media (min-width: 768px) {
-  .app:not(.sidebar-collapsed) .toasts {
-    left: calc(var(--sidebar-col) + (100% - var(--sidebar-col)) / 2);
-    max-width: calc(100% - var(--sidebar-col) - 32px);
+  .toasts {
+    position: absolute;
+    grid-area: graph;
   }
 }
 

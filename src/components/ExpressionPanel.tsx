@@ -35,6 +35,33 @@ export function ExpressionPanel() {
     onCleanup(() => ro.disconnect());
   });
 
+  // The row being edited grows once typing pauses (its error line, a fix chip, its insight line):
+  // kept in view as it does, rather than growing out under the keypad or the list's end.
+  onMount(() => {
+    if (typeof ResizeObserver === 'undefined') return;
+    let watched: Element | null = null;
+    let height = -1;
+    const ro = new ResizeObserver((entries) => {
+      const h = entries[entries.length - 1]?.contentRect.height ?? 0;
+      const active = document.activeElement;
+      if (height >= 0 && h > height + 0.5 && active && watched?.contains(active)) revealRow(active);
+      height = h;
+    });
+    const watch = (e: FocusEvent) => {
+      const row = (e.target as Element).closest('.expr-row');
+      if (row === watched) return;
+      if (watched) ro.unobserve(watched);
+      watched = row;
+      height = -1;
+      if (row) ro.observe(row);
+    };
+    scroller.addEventListener('focusin', watch);
+    onCleanup(() => {
+      scroller.removeEventListener('focusin', watch);
+      ro.disconnect();
+    });
+  });
+
   // Mobile: drag the handle to resize, tap it to cycle snap states.
   const onHandleDown = (e: PointerEvent) => {
     if (!mobileQuery?.matches) return;

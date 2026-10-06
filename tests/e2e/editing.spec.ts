@@ -37,6 +37,28 @@ test.describe('editing rows', () => {
     await expect(page.getByRole('textbox', { name: 't maximum' })).toHaveCSS('opacity', '0');
   });
 
+  test('a t bound being edited is as wide as its text', async ({ page }) => {
+    await openApp(page);
+    await setExpr(page, 0, '(cos(t), sin(2t))');
+    const max = page.getByRole('textbox', { name: 't maximum' });
+    await max.fill('2pi+1');
+    await max.blur();
+    await expect(page.locator('.range-bound .math-view').last()).toHaveText('2π+1');
+    await max.click();
+    await expect(max).toBeFocused();
+    await expect(max).toHaveCSS('opacity', '1');
+    // All of it in view, not cut to the typeset `2π+1`'s width and scrolled along.
+    const fits = () =>
+      max.evaluate(
+        (el: HTMLInputElement) => el.scrollWidth <= el.clientWidth && el.scrollLeft === 0,
+      );
+    await expect.poll(fits).toBe(true);
+    await max.press('End');
+    await max.pressSequentially('00', { delay: 30 });
+    await expect(max).toHaveValue('2pi+100');
+    await expect.poll(fits).toBe(true);
+  });
+
   test('the slider thumb follows bound changes', async ({ page }) => {
     await openApp(page);
     const range = page.getByTestId('slider-c');

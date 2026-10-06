@@ -279,6 +279,28 @@ test.describe('math keypad on touch devices: editing details', () => {
       .toBe(true);
   });
 
+  test("a typo's error line and fix chip open above the keypad, not under it", async ({ page }) => {
+    await openApp(page);
+    await exprInput(page, 0).tap();
+    await tapKeys(page, ['y', 'eq', 'x', 'pow', '2', 'enter', 'y', 'eq', '2', 'x', 'enter']);
+    await tapKeys(page, ['y', 'eq', '2', 'x', '2', 'add', '1']);
+    await expect(exprInput(page, 2)).toHaveValue('y=2x2+1');
+    const row = page.locator('.expr-row').nth(2);
+    await expect(row.getByRole('alert')).toBeVisible();
+    const fix = row.locator('.quick-fix').first();
+    await expect(fix).toBeVisible();
+    const keypadTop = async () => (await box(page.getByTestId('keypad'))).y;
+    await expect
+      .poll(async () => {
+        const b = await box(fix);
+        return b.y + b.height <= (await keypadTop()) + 1;
+      })
+      .toBe(true);
+    await expect
+      .poll(async () => contains(await box(page.locator('.panel-scroll')), await box(fix)))
+      .toBe(true);
+  });
+
   test('pinching the list or the keypad does not zoom the page', async ({ page }) => {
     await openApp(page);
     await exprInput(page, 0).tap();

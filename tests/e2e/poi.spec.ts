@@ -208,6 +208,42 @@ test.describe('points of interest with a mouse', () => {
     await expect(traceStatus(page)).toHaveText('(1.414, 0)');
   });
 
+  test('the points stay on their spots as the graph pans', async ({ page }) => {
+    await openApp(page);
+    await setExpr(page, 0, 'y = x^2 - 2');
+    await expect.poll(async () => (await pois(page)).length).toBe(3);
+    const graph = page.getByTestId('graph');
+    const box = await graph.boundingBox();
+    if (!box) throw new Error('no graph box');
+    /** How far (px) the farthest dot is from where the view puts its point. */
+    const offBy = () =>
+      graph.evaluate((el) => {
+        const [xmin, xmax, ymin, ymax] = (el.getAttribute('data-view') ?? '')
+          .split(',')
+          .map(Number);
+        const g = el.getBoundingClientRect();
+        let worst = 0;
+        for (const dot of el.querySelectorAll('.poi')) {
+          const m = /\((-?[\d.]+), (-?[\d.]+)\)$/.exec(dot.getAttribute('aria-label') ?? '');
+          if (!m) return Number.POSITIVE_INFINITY;
+          const sx = g.left + ((Number(m[1]) - xmin) / (xmax - xmin)) * el.clientWidth;
+          const sy = g.top + ((ymax - Number(m[2])) / (ymax - ymin)) * el.clientHeight;
+          const r = dot.getBoundingClientRect();
+          worst = Math.max(worst, Math.hypot(r.left + r.width / 2 - sx, r.top + r.height / 2 - sy));
+        }
+        return worst;
+      });
+    expect(await offBy()).toBeLessThan(1.5);
+    // Held mid-drag: the dots have followed the view, frame by frame.
+    await page.mouse.move(box.x + box.width - 60, box.y + 60);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width - 140, box.y + 120, { steps: 6 });
+    await drawn(page);
+    await expect(page.locator('.poi')).toHaveCount(3);
+    expect(await offBy()).toBeLessThan(1.5);
+    await page.mouse.up();
+  });
+
   test('the keyboard reaches the points from the graph', async ({ page }) => {
     await openApp(page);
     await setExpr(page, 0, 'y = x^2 - 2');

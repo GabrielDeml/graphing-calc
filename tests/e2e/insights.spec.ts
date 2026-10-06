@@ -107,6 +107,43 @@ test.describe('the insight line', () => {
     await expect(page.getByRole('button', { name: 'Pause a' })).toBeVisible();
   });
 
+  test('a chip stays put while a slider plays: it takes presses and keeps focus', async ({
+    page,
+  }) => {
+    await openApp(page);
+    await setExpr(page, 0, 'a = 1');
+    await setExpr(page, 1, 'y = (a^2 + 1) x^2 - 2');
+    const line = insight(page, 1);
+    // The vertex holds still while the roots move.
+    const chip = line.getByRole('button', { name: 'Vertex (0, −2)' });
+    await expect(chip).toBeVisible();
+    const before = await line.textContent();
+    await line.evaluate((el) => {
+      const w = window as unknown as { chipsRemoved: number };
+      w.chipsRemoved = 0;
+      new MutationObserver((records) => {
+        for (const r of records) {
+          for (const n of r.removedNodes) {
+            if (
+              n instanceof Element &&
+              (n.matches('.insight-chip') || n.querySelector('.insight-chip'))
+            )
+              w.chipsRemoved++;
+          }
+        }
+      }).observe(el, { childList: true, subtree: true });
+    });
+    await page.getByRole('button', { name: 'Play a' }).click();
+    await chip.focus();
+    await expect(line).not.toHaveText(before ?? '');
+    await page.waitForTimeout(1000);
+    await expect(chip).toBeFocused();
+    expect(
+      await page.evaluate(() => (window as unknown as { chipsRemoved: number }).chipsRemoved),
+    ).toBe(0);
+    await expect(page.getByRole('button', { name: 'Pause a' })).toBeVisible();
+  });
+
   test('the selected row says where it meets the others', async ({ page }) => {
     await openApp(page);
     await setExpr(page, 0, 'y = x/3');

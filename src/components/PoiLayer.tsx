@@ -14,7 +14,10 @@ export interface PoiSet {
 }
 
 export interface PoiLayerHandle {
-  /** Move the dots to where `view` puts them: one style write for the whole layer per frame. */
+  /**
+   * Move the dots to where `view` puts them: a transform on each (not inherited properties on
+   * the layer, which would restyle every dot and its ring on every frame of a pan).
+   */
   place(view: Viewport): void;
 }
 
@@ -24,7 +27,18 @@ interface Item {
   setPoi: Setter<Poi>;
   /** Place among the dots that appeared with it, left to right: they bloom one after another. */
   order: number;
+  el?: HTMLButtonElement;
 }
+
+/** How positions in the view the dots were found in map to the current view's. */
+interface Mapping {
+  kx: number;
+  ky: number;
+  ox: number;
+  oy: number;
+}
+
+const IDENTITY: Mapping = { kx: 1, ky: 1, ox: 0, oy: 0 };
 
 /** Recomputed points within this many px of an old one, of the same kinds, are that one. */
 const SAME_PX = 2;
@@ -75,8 +89,15 @@ export function PoiLayer(props: {
   const [list, setList] = createSignal<Item[]>([]);
   /** The dot the Tab key lands on (roving tabindex): the last one focused, else the first. */
   const [active, setActive] = createSignal<Item | null>(null);
-  /** The view the dots' base positions were computed in. */
+  /** The view the dots' base positions were computed in… */
   const [ref, setRef] = createSignal<Viewport | null>(null);
+  /** …and how it maps to the current one. */
+  let map = IDENTITY;
+  const position = (el: HTMLElement, poi: Poi, r: Viewport) => {
+    const x = toScreenX(r, poi.x) * map.kx + map.ox;
+    const y = toScreenY(r, poi.y) * map.ky + map.oy;
+    el.style.transform = `translate(${x}px, ${y}px)`;
+  };
 
   createEffect(
     on(
@@ -112,9 +133,7 @@ export function PoiLayer(props: {
         items = next;
         setRef(view);
         // Found in the current view: the positions need no mapping until it moves.
-        const s = layer.style;
-        for (const v of ['--kx', '--ky']) s.setProperty(v, '1');
-        for (const v of ['--ox', '--oy']) s.setProperty(v, '0');
+        map = IDENTITY;
         setList(next);
       },
     ),
@@ -126,17 +145,13 @@ export function PoiLayer(props: {
       if (!r) return;
       const kx = view.ppuX / r.ppuX;
       const ky = view.ppuY / r.ppuY;
-      const s = layer.style;
-      s.setProperty('--kx', String(kx));
-      s.setProperty('--ky', String(ky));
-      s.setProperty(
-        '--ox',
-        String((r.cx - view.cx) * view.ppuX + view.width / 2 - (kx * r.width) / 2),
-      );
-      s.setProperty(
-        '--oy',
-        String(view.height / 2 - (r.cy - view.cy) * view.ppuY - (ky * r.height) / 2),
-      );
+      map = {
+        kx,
+        ky,
+        ox: (r.cx - view.cx) * view.ppuX + view.width / 2 - (kx * r.width) / 2,
+        oy: view.height / 2 - (r.cy - view.cy) * view.ppuY - (ky * r.height) / 2,
+      };
+      for (const it of items) if (it.el) position(it.el, it.poi(), r);
     },
   });
 
@@ -171,18 +186,21 @@ export function PoiLayer(props: {
             const c = props.current;
             return c !== null && c.x === item.poi().x && c.y === item.poi().y;
           };
+          // Placed when its point or the view it was found in changes (and by place, per frame).
+          createEffect(() => {
+            if (item.el) position(item.el, item.poi(), ref() ?? props.set?.view ?? ZERO);
+          });
           return (
             <button
+              ref={(el) => {
+                item.el = el;
+              }}
               type="button"
               class="poi"
               classList={{ current: current() }}
               tabindex={!props.set?.stale && item === (active() ?? list()[0]) ? 0 : -1}
               aria-label={poiLabel(item.poi(), ref()?.ppuX ?? 1, props.meets(item.poi()))}
-              style={{
-                '--sx0': String(toScreenX(ref() ?? props.set?.view ?? ZERO, item.poi().x)),
-                '--sy0': String(toScreenY(ref() ?? props.set?.view ?? ZERO, item.poi().y)),
-                '--i': String(item.order),
-              }}
+              style={{ '--i': String(item.order) }}
               onFocus={(e) => {
                 setActive(item);
                 // Keyboard focus pins the trace here; a click goes through the graph's tap.

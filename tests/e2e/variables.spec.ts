@@ -53,6 +53,10 @@ test('unknown names become sliders on Enter, and Undo brings the offer back', as
 test('circular definitions are reported', async ({ page }) => {
   await openApp(page);
   await setExpr(page, 0, 'a = b + 1');
+  // Enter makes the `b = 1` slider right away (leaving the row would make it a moment later,
+  // racing the next fill); then turn that slider into the circular definition.
+  await exprInput(page, 0).press('Enter');
+  await expect(exprInput(page, 1)).toHaveValue('b = 1');
   await setExpr(page, 1, 'b = a');
   await expect(page.locator('.expr-row').first().getByRole('alert')).toContainText(/ircular/);
 });
