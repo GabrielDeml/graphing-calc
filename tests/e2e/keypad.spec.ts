@@ -74,6 +74,84 @@ test.describe('math keypad on touch devices', () => {
     await expect(exprInput(page, 0)).toHaveValue('sin(x)');
     await page.getByTestId('key-enter').first().tap();
     await expect(exprInput(page, 1)).toBeFocused();
+    // ↵ on the empty last row has nowhere to go: it means done, and the keypad goes away.
+    await page.getByTestId('key-enter').first().tap();
+    await expect(page.getByTestId('keypad')).toHaveCount(0);
+    await expect(exprInput(page, 1)).not.toBeFocused();
+    await expect(page.getByTestId('expr-input')).toHaveCount(2);
+  });
+
+  test('its Undo takes back the last edit, and is dimmed with nothing to undo', async ({
+    page,
+  }) => {
+    await openApp(page);
+    await exprInput(page, 0).tap();
+    const undo = page.getByTestId('keypad').getByRole('button', { name: 'Undo', exact: true });
+    await expect(undo).toHaveAttribute('aria-disabled', 'true');
+    await tapKeys(page, ['y', 'eq', 'x']);
+    await expect(exprInput(page, 0)).toHaveValue('y=x');
+    await expect(undo).toHaveAttribute('aria-disabled', 'false');
+    await undo.tap();
+    await expect(exprInput(page, 0)).toHaveValue('');
+    await expect(exprInput(page, 0)).toBeFocused();
+    await expect(page.getByTestId('keypad')).toBeVisible();
+    await expect(undo).toHaveAttribute('aria-disabled', 'true');
+    // Pressed then, it does nothing, and the field keeps its focus.
+    await undo.tap({ force: true });
+    await expect(exprInput(page, 0)).toBeFocused();
+    await expect(page.getByTestId('expr-input')).toHaveCount(1);
+  });
+
+  test('after its Undo, a toast offers the step back', async ({ page }) => {
+    await openApp(page);
+    await exprInput(page, 0).tap();
+    await tapKeys(page, ['y', 'eq', 'x']);
+    await page.getByTestId('keypad-undo').tap();
+    await expect(exprInput(page, 0)).toHaveValue('');
+    const toast = page.getByTestId('toast');
+    await expect(toast).toContainText('Undone');
+    await toast.getByRole('button', { name: 'Redo', exact: true }).tap();
+    await expect(exprInput(page, 0)).toHaveValue('y=x');
+    await expect(toast).toHaveCount(0);
+    await expect(page.getByTestId('keypad')).toBeVisible();
+  });
+
+  test('a press counts on the button it began on, wherever its click lands', async ({ page }) => {
+    await openApp(page);
+    await exprInput(page, 0).tap();
+    await page.getByTestId('keypad-tab-fx').tap();
+    await expect(page.getByTestId('keypad-tab-fx')).toHaveAttribute('aria-selected', 'true');
+    // A press on the 123 tab whose click lands on a key that slid under the finger meanwhile
+    // (the sheet sliding up): the tab is chosen, the key does nothing.
+    await page.evaluate(() => {
+      const tab = document.querySelector('[data-testid="keypad-tab-123"]') as HTMLElement;
+      const init = { bubbles: true, cancelable: true, pointerType: 'touch' };
+      tab.dispatchEvent(new PointerEvent('pointerdown', init));
+      tab.dispatchEvent(new PointerEvent('pointerup', init));
+      const key = document.querySelector('[data-testid="key-7"]') as HTMLElement;
+      key.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+    await expect(page.getByTestId('keypad-tab-123')).toHaveAttribute('aria-selected', 'true');
+    await expect(exprInput(page, 0)).toHaveValue('');
+    // A click with no press before it (a screen reader) works the key.
+    await page.evaluate(() =>
+      (document.querySelector('[data-testid="key-7"]') as HTMLElement).click(),
+    );
+    await expect(exprInput(page, 0)).toHaveValue('7');
+  });
+
+  test('a key gives a little while it is held', async ({ page }) => {
+    await openApp(page);
+    await exprInput(page, 0).tap();
+    const key = page.getByTestId('key-7');
+    // Once the sheet has slid up.
+    await page.waitForTimeout(300);
+    const touch = await touchSession(page);
+    await touch.start(await center(page, '[data-testid="key-7"]'));
+    await expect(key).toHaveClass(/\bdown\b/);
+    await touch.end();
+    await expect(key).not.toHaveClass(/\bdown\b/);
+    await expect(exprInput(page, 0)).toHaveValue('7');
   });
 
   test('hiding the keypad gives the graph more room', async ({ page }) => {
@@ -128,13 +206,18 @@ test.describe('math keypad on touch devices: editing details', () => {
     const input = exprInput(page, 0);
     await input.tap();
     await tapKeys(page, ['y', 'eq', ...Array.from({ length: 14 }, () => ['x', 'add', '1']).flat()]);
-    const at = () =>
-      input.evaluate((el: HTMLInputElement) => ({
+    // The typeset math scrolls (the input under it holds the text and the caret's offset).
+    const math = page.locator('.expr-row').first().locator('.math-view').first();
+    const at = async () => ({
+      ...(await math.evaluate((el) => ({
         left: el.scrollLeft,
         max: el.scrollWidth - el.clientWidth,
+      }))),
+      ...(await input.evaluate((el: HTMLInputElement) => ({
         caret: el.selectionStart,
         length: el.value.length,
-      }));
+      }))),
+    });
     const end = await at();
     expect(end.max).toBeGreaterThan(100);
     expect(end.caret).toBe(end.length);
@@ -175,7 +258,8 @@ test.describe('math keypad on touch devices: editing details', () => {
 
   test('the tapped row stays in view when the keypad opens', async ({ page }) => {
     await openApp(page);
-    for (let i = 0; i < 10; i++) await setExpr(page, i, `y=${i}`);
+    // (All in view over the keypad: a new curve out of it would move the graph to frame it.)
+    for (let i = 0; i < 10; i++) await setExpr(page, i, `y=${i / 2}`);
     await page.getByTestId('keypad-hide').tap();
     await expect(page.getByTestId('keypad')).toHaveCount(0);
     const scroller = page.locator('.panel-scroll');
@@ -192,6 +276,28 @@ test.describe('math keypad on touch devices: editing details', () => {
     await expect(page.getByTestId('keypad')).toBeVisible();
     await expect
       .poll(async () => contains(await box(scroller), await box(exprInput(page, lowest))))
+      .toBe(true);
+  });
+
+  test("a typo's error line and fix chip open above the keypad, not under it", async ({ page }) => {
+    await openApp(page);
+    await exprInput(page, 0).tap();
+    await tapKeys(page, ['y', 'eq', 'x', 'pow', '2', 'enter', 'y', 'eq', '2', 'x', 'enter']);
+    await tapKeys(page, ['y', 'eq', '2', 'x', '2', 'add', '1']);
+    await expect(exprInput(page, 2)).toHaveValue('y=2x2+1');
+    const row = page.locator('.expr-row').nth(2);
+    await expect(row.getByRole('alert')).toBeVisible();
+    const fix = row.locator('.quick-fix').first();
+    await expect(fix).toBeVisible();
+    const keypadTop = async () => (await box(page.getByTestId('keypad'))).y;
+    await expect
+      .poll(async () => {
+        const b = await box(fix);
+        return b.y + b.height <= (await keypadTop()) + 1;
+      })
+      .toBe(true);
+    await expect
+      .poll(async () => contains(await box(page.locator('.panel-scroll')), await box(fix)))
       .toBe(true);
   });
 

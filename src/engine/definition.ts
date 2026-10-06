@@ -1,7 +1,7 @@
 // Recognizes definition rows (`a = 2`, `f(x) = x^2`) from raw tokens, before any parsing. The
 // document engine runs this over every row first to learn which names the user defines.
 
-import { isDefinableName, isPlotVariable } from './names';
+import { isDefinableName, isPlotVariable, type NameContext } from './names';
 import { tokenizeLenient } from './tokenizer';
 import type { Span } from './types';
 
@@ -59,4 +59,14 @@ export function detectDefinition(source: string): DefinitionHead | null {
   const eq = tokens[k];
   if (eq?.kind !== 'rel' || eq.text !== '=') return null;
   return { kind: 'fn', name: head.text, nameSpan, params, paramSpans };
+}
+
+/**
+ * The names a row sees: a function definition's parameters shadow the document's names, and a
+ * variable definition marks its own name (so `a = asin(0.5)` keeps asin whole).
+ */
+export function definitionContext(head: DefinitionHead | null, ctx: NameContext): NameContext {
+  if (head?.kind === 'fn') return { vars: ctx.vars, fns: ctx.fns, params: head.params };
+  if (head?.kind === 'var') return { vars: ctx.vars, fns: ctx.fns, self: head.name };
+  return ctx;
 }

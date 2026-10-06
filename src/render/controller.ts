@@ -1,18 +1,34 @@
 import type { PlotItem } from '../engine/types';
-import { nearestOnPolyline, nearestPoint, traceExplicit } from '../plot/nearest';
-import { SceneCache } from '../plot/scene';
-import type { Quality, RowGeometry, Viewport } from '../plot/types';
 import {
+  type CurveBounds,
+  curveBounds,
+  curvesBox,
+  drawsIn,
+  FIT_MIN_OPEN,
+  fitViewport,
+  fitWindow,
+  unionBounds,
+  windowSpan,
+} from '../plot/bounds';
+import { glideDuration, glideOffset, type Velocity } from '../plot/inertia';
+import { type NearestHit, nearestOnPolyline, nearestPoint, traceExplicit } from '../plot/nearest';
+import { findPois, type Poi, type PoiCensus, type PoiCurve } from '../plot/poi';
+import { SceneCache } from '../plot/scene';
+import type { Bounds, Quality, RowGeometry, ViewCenter, Viewport } from '../plot/types';
+import {
+  clampViewport,
   homeViewport,
   lerpViewport,
+  panBy,
   resizeViewport,
   toScreenX,
   toScreenY,
   viewBounds,
+  viewKey,
   zoomAt,
 } from '../plot/viewport';
 import { drawGrid } from './drawGrid';
-import { drawScene } from './drawScene';
+import { type DrawRow, drawScene } from './drawScene';
 import { onThemeChange, readTheme, type Theme } from './theme';
 
 export interface SceneRow {
@@ -20,6 +36,11 @@ export interface SceneRow {
   plot: PlotItem;
   deps: ReadonlySet<string>;
   colorIndex: number;
+  /**
+   * The row is broken while it is being edited, and this is its last good plot: drawn faintly,
+   * never traced, never a point of interest.
+   */
+  ghost?: boolean;
 }
 
 export interface TraceHit {
@@ -33,9 +54,60 @@ export interface TraceHit {
   ppu: number;
   viewWidth: number;
   viewHeight: number;
+  /** The trace snapped to this point of interest. */
+  poi?: Poi;
 }
 
+/**
+ * What a search for points of interest counted in view (PoiCensus), and what it searched: its
+ * row's plot, the other curves' and the values they were drawn with.
+ */
+export interface RowCensus extends PoiCensus {
+  plot: PlotItem;
+  others: readonly PlotItem[];
+  values: ReadonlyMap<string, number>;
+}
+
+export interface TraceOptions {
+  /** Trace only this row (scrubbing along one curve). */
+  rowId?: string;
+  /**
+   * Snap to a point of interest of the traced curve within this many px of (sx, sy). Without
+   * `rowId`, a shown point this close is traced first, on its own curve, whatever else is near.
+   */
+  snapPx?: number;
+}
+
+const reducedMotion =
+  typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
+
 const IDLE_MS = 150;
+/** Curves this much farther from the pointer than the nearest one still count as under it. */
+const TIE_PX = 2;
+/** Points of interest of a row being typed into wait until the typing pauses this long. */
+const POI_SETTLE_MS = 250;
+/** Typing switches to interactive quality after a frame slower than this… */
+const HEAVY_FRAME_MS = 16;
+/** …and settles to final quality once it pauses this long. */
+const TYPING_IDLE_MS = 300;
+/** Zoom to fit, framing a new curve and flying to a point take this long. */
+const FIT_MS = 220;
+/** A wheel notch's zoom step and an arrow key's pan step take this long. */
+const STEP_MS = 120;
+/** One frame at 60 Hz. */
+const FRAME_MS = 1000 / 60;
+/**
+ * The longest a layout transition around the graph runs (a panel snapping; --dur-3 in
+ * global.css, with room to spare): its resizes stay at interactive quality until it ends.
+ */
+const LAYOUT_MS = 400;
+/** A view the user moved this recently is theirs: a new curve out of sight doesn't move it. */
+const USER_MOVE_MS = 2000;
+/**
+ * Framing a new curve keeps what is in view too, unless that takes this much more zooming out
+ * than framing the curve alone (the new curve far away).
+ */
+const MAX_UNION_ZOOM_OUT = 8;
 
 /**
  * Owns the canvas, the viewport and the render loop. Deliberately not reactive: pans and zooms at
@@ -46,6 +118,22 @@ export class GraphController {
   onViewChange: ((v: Viewport) => void) | null = null;
   /** Called after every frame (trace re-targeting, debug stats). */
   onDraw: (() => void) | null = null;
+  /**
+   * Called when the points of interest change: found for the emphasised row (in `view`, at
+   * final quality; called for every search, even one that finds nothing), gone because what
+   * they were found on changed, or `stale`: kept, faded, while their row is being typed in.
+   * They are world points, so they stay valid while the view moves.
+   */
+  onPois:
+    | ((
+        pois: readonly Poi[],
+        view: Viewport,
+        rowId: string | null,
+        stale: boolean,
+        /** What the search counted in view, on which plot (null unless found just now). */
+        census: RowCensus | null,
+      ) => void)
+    | null = null;
   /** Milliseconds spent drawing the last frame (debug overlay). */
   lastFrameMs = 0;
 
@@ -56,6 +144,8 @@ export class GraphController {
   private values: ReadonlyMap<string, number> = new Map();
   private cache = new SceneCache();
   private geometries = new Map<string, RowGeometry>();
+  /** The view `geometries` were sampled for. */
+  private drawnView: Viewport | null = null;
   private theme: Theme;
   private frame = 0;
   private quality: Quality = 'final';
@@ -63,18 +153,46 @@ export class GraphController {
   private animation = 0;
   /** Where the running zoom/home animation ends, so repeated presses compose. */
   private animTarget: Viewport | null = null;
+  /** The frame of a fling's glide, while the view glides on after a finger let go. */
+  private glide = 0;
+  /** Until when the layout around the graph is animating (see layoutTransition). */
+  private layoutUntil = Number.NEGATIVE_INFINITY;
   private hasView = false;
+  /** When the last resize was drawn: a quick run of them (a list edge drag) is a gesture. */
+  private lastResize = -Infinity;
+  /** The view is the home view, or animating to it (a restored or moved view is not). */
+  private isHome: boolean;
+  /** When the user last moved the view (a pan, a zoom, a button). */
+  private userMoved = Number.NEGATIVE_INFINITY;
   private disposers: Array<() => void> = [];
+  /** The row drawn on top, thicker, whose points of interest are found. */
+  private emphasis: string | null = null;
+  private pois: readonly Poi[] = [];
+  /** What the current points of interest were found on (null: none were). */
+  private poiInputs: { view: string; plots: PlotItem[]; values: string; id: string } | null = null;
+  /** The points are from before an edit still in progress: shown faded, never snapped to. */
+  private poiStale = false;
+  /** Until when the points of interest wait for typing to pause. */
+  private poiSettle = 0;
+  /** The view the last Zoom to fit flew to. */
+  private fitted: string | null = null;
+  /** Rows that have just become curves, to frame once they are drawn (see frameNew). */
+  private toFrame: readonly string[] | null = null;
+  private frameTimer: ReturnType<typeof setTimeout> | undefined;
+  private poiTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
     private container: HTMLElement,
     private canvas: HTMLCanvasElement,
+    /** Where to start instead of the home view (the last session's view). */
+    private initialView: ViewCenter | null = null,
   ) {
     const ctx = canvas.getContext('2d', { alpha: false });
     if (!ctx) throw new Error('Canvas 2D is not available');
     this.ctx = ctx;
     this.theme = readTheme();
-    this.view = homeViewport(container.clientWidth || 1, container.clientHeight || 1);
+    this.isHome = initialView === null;
+    this.view = this.startView(container.clientWidth || 1, container.clientHeight || 1);
 
     const ro = new ResizeObserver((entries) => this.onResize(entries[0]));
     try {
@@ -94,7 +212,10 @@ export class GraphController {
   destroy(): void {
     cancelAnimationFrame(this.frame);
     cancelAnimationFrame(this.animation);
+    cancelAnimationFrame(this.glide);
     clearTimeout(this.idleTimer);
+    clearTimeout(this.poiTimer);
+    clearTimeout(this.frameTimer);
     for (const d of this.disposers) d();
   }
 
@@ -107,24 +228,86 @@ export class GraphController {
     return this.quality;
   }
 
-  setScene(rows: readonly SceneRow[], values: ReadonlyMap<string, number>): void {
-    // Same plots with new variable values (a slider playing or being dragged): sample the rows
-    // that depend on them at interactive quality, then settle to final once the values rest.
-    if (sameItems(rows, this.rows) && changedValues(values, this.values)) this.markInteractive();
+  /**
+   * Whether the view is the home view (or animating to it). Resizes keep a view's center and
+   * scale, so this is what a saved view should remember rather than the numbers: home follows
+   * the window it is restored into.
+   */
+  get atHome(): boolean {
+    return this.isHome;
+  }
+
+  /**
+   * `typing`: the change comes from editing a row, and every keystroke makes new plots. Once a
+   * frame is slow (a heavy implicit row), they are sampled at interactive quality while the
+   * typing goes on and at final quality when it pauses, instead of at final quality per key.
+   */
+  setScene(rows: readonly SceneRow[], values: ReadonlyMap<string, number>, typing = false): void {
+    if (sameItems(rows, this.rows)) {
+      // Same plots with new variable values (a slider playing or being dragged): sample the rows
+      // that depend on them at interactive quality, then settle to final once the values rest.
+      if (changedValues(values, this.values)) this.markInteractive();
+    } else {
+      if (typing && (this.quality === 'interactive' || this.lastFrameMs > HEAVY_FRAME_MS)) {
+        this.markInteractive(TYPING_IDLE_MS);
+      }
+      // Points of interest blooming at every keystroke would be busy: they wait for a pause.
+      if (typing) {
+        this.poiSettle = performance.now() + POI_SETTLE_MS;
+        clearTimeout(this.poiTimer);
+        this.poiTimer = setTimeout(() => this.invalidate(), POI_SETTLE_MS);
+      }
+    }
     this.rows = rows;
     this.values = values;
+    // What a fit showed may have moved.
+    this.fitted = null;
     this.invalidate();
+  }
+
+  /** The row to draw on top, thicker, and find points of interest on (null for none). */
+  setEmphasis(id: string | null): void {
+    if (id === this.emphasis) return;
+    this.emphasis = id;
+    this.invalidate();
+  }
+
+  /**
+   * Find the emphasised row's points of interest now rather than on the next frame, from the
+   * last frame's curves, so a tap that has just picked a curve can snap to one of them.
+   */
+  refreshPois(): void {
+    if (this.drawnView === this.view) this.updatePois();
+  }
+
+  /** Whether the points of interest shown are this row's, found on what it draws now. */
+  poisReady(rowId: string): boolean {
+    return this.poiInputs?.id === rowId && !this.poiStale;
   }
 
   /** A view change from user input; it overrides any running zoom/home animation. */
   setView(v: Viewport, interactive = true): void {
     this.cancelAnimation();
+    this.isHome = false;
+    this.userMoved = performance.now();
     this.applyView(v, interactive);
   }
 
-  /** Animate to a target view (zoom buttons, home). */
-  animateTo(target: Viewport, ms = 180): void {
+  /**
+   * Animate to a target view (zoom buttons, home); a jump when motion is reduced. `home`: the
+   * target is the home view, set before the first frame so even a jump reports it as home.
+   * `user`: the user asked for it (not so when the graph frames a new curve by itself).
+   */
+  animateTo(target: Viewport, ms = 180, home = false, user = true): void {
     cancelAnimationFrame(this.animation);
+    this.stop();
+    this.isHome = home;
+    if (user) this.userMoved = performance.now();
+    if (reducedMotion?.matches) {
+      this.cancelAnimation();
+      this.applyView(target);
+      return;
+    }
     const from = this.view;
     const start = performance.now();
     this.animTarget = target;
@@ -151,17 +334,191 @@ export class GraphController {
 
   /** Zoom about the center; a press during an animation zooms from where that one ends. */
   zoomCenter(factor: number): void {
+    this.zoomBy(factor);
+  }
+
+  /**
+   * Zoom about a point on screen (the center by default), animated. Like the zoom buttons, a
+   * step during an animation goes on from where that one ends, so wheel notches in quick
+   * succession compose, with the point under the cursor staying under it (see lerpViewport).
+   */
+  zoomBy(factor: number, sx?: number, sy?: number, ms?: number): void {
     const base = this.animTarget ?? this.view;
-    this.animateTo(zoomAt(base, base.width / 2, base.height / 2, factor));
+    const target = zoomAt(base, sx ?? base.width / 2, sy ?? base.height / 2, factor);
+    // At a zoom limit: nothing to animate (a running animation goes on).
+    if (target !== base || !this.animTarget) this.animateTo(target, ms);
+  }
+
+  /**
+   * One step of panning by (dx, dy) CSS px (the content moves that way: an arrow key), animated.
+   * Steps compose like zooms: three quick presses end exactly three steps away.
+   */
+  pan(dx: number, dy: number, ms = STEP_MS): void {
+    const base = this.animTarget ?? this.view;
+    this.animateTo(panBy(base, dx, dy), ms);
+  }
+
+  /** A wheel notch: zoom about the cursor in a short animated step (see zoomBy). */
+  wheelStep(factor: number, sx: number, sy: number): void {
+    this.zoomBy(factor, sx, sy, STEP_MS);
+  }
+
+  /**
+   * Let the view glide on after a finger or pen let go of a pan at this velocity (px/s), at
+   * `from` (performance.now()'s clock): it slows down exponentially and stops once barely moving
+   * (src/plot/inertia.ts). Any new input stops it (stop()), as does any animation. Not when
+   * motion is reduced.
+   */
+  fling(v: Velocity, from = performance.now()): void {
+    this.cancelAnimation();
+    const duration = glideDuration(v);
+    if (reducedMotion?.matches || !(duration > 0)) return;
+    this.isHome = false;
+    // From when the finger lifted, but no more than a frame back: a release handled late (a slow
+    // frame) doesn't lurch forward to catch up.
+    const start = Math.max(from, performance.now() - FRAME_MS);
+    let done = { x: 0, y: 0 };
+    const step = (now: number) => {
+      // A frame that began before the release moves nothing yet; the glide goes on regardless.
+      const t = Math.min(Math.max(0, now - start), duration);
+      const at = glideOffset(v, t);
+      const view = this.view;
+      const next = panBy(view, at.x - done.x, at.y - done.y);
+      done = at;
+      // A glide is the user's own move (a new curve out of sight doesn't take the view).
+      this.userMoved = performance.now();
+      if (next !== view) {
+        // Against the limits of the view along every way it glides: it stops there.
+        if (next.cx === view.cx && next.cy === view.cy) {
+          this.glide = 0;
+          return;
+        }
+        this.applyView(next);
+      }
+      // Slow enough to stop.
+      this.glide = t < duration ? requestAnimationFrame(step) : 0;
+    };
+    this.glide = requestAnimationFrame(step);
+  }
+
+  /**
+   * Stop a fling's glide where it is: a new press, a wheel or a key catches the view. Returns
+   * whether one was gliding (so a tap that catches it is no tap).
+   */
+  stop(): boolean {
+    if (!this.glide) return false;
+    cancelAnimationFrame(this.glide);
+    this.glide = 0;
+    return true;
+  }
+
+  /**
+   * The layout around the graph started animating (`moving`, a panel snapping), or came to rest.
+   * The graph resizes every frame meanwhile: it is drawn at interactive quality from the first
+   * of those frames until the layout rests, then once at final quality, instead of resampling
+   * every curve at final quality frame after frame.
+   */
+  layoutTransition(moving: boolean): void {
+    const now = performance.now();
+    this.layoutUntil = moving ? now + LAYOUT_MS : now;
+    if (moving) this.markInteractive(LAYOUT_MS + IDLE_MS);
+    else if (this.quality === 'interactive') this.markInteractive();
   }
 
   home(): void {
-    this.animateTo(homeViewport(this.view.width, this.view.height));
+    this.animateTo(homeViewport(this.view.width, this.view.height), undefined, true);
+  }
+
+  /**
+   * Fly to show every curve on the graph, with room around, equally scaled (src/plot/bounds.ts);
+   * home when there are none. A curve with no end (sin x) is read over the part of the view a
+   * fit fills, so a second press stays put; one that shows nothing to fit (a curve this can't
+   * find) leaves the view as it is.
+   */
+  zoomToFit(): void {
+    const base = this.animTarget ?? this.view;
+    if (this.fitted === viewKey(base)) return;
+    const rows = this.rows.filter((r) => !r.ghost);
+    if (rows.length === 0) {
+      this.home();
+      return;
+    }
+    const window = fitWindow(base);
+    const curves = rows.flatMap((row) => this.boundsOf(row, window) ?? []);
+    const box = curvesBox(curves, FIT_MIN_OPEN);
+    if (!box) return;
+    const target = fitViewport(box, base);
+    this.animateTo(target, FIT_MS);
+    this.fitted = viewKey(target);
+  }
+
+  /** Fly so that a world point is in view, well inside it (it stays put when it already is). */
+  flyTo(x: number, y: number): void {
+    const base = this.animTarget ?? this.view;
+    const b = viewBounds(base);
+    const [mx, my] = [(b.xmax - b.xmin) * 0.15, (b.ymax - b.ymin) * 0.15];
+    if (x >= b.xmin + mx && x <= b.xmax - mx && y >= b.ymin + my && y <= b.ymax - my) return;
+    this.animateTo(clampViewport({ ...base, cx: x, cy: y }), FIT_MS);
+  }
+
+  /**
+   * Rows that have just become curves (for the first time): once they are drawn, when none of
+   * them shows and the user has not moved the view for a while, frame them (see frameRows).
+   */
+  frameNew(ids: readonly string[]): void {
+    this.toFrame = [...(this.toFrame ?? []), ...ids];
+    this.invalidate();
+  }
+
+  /**
+   * Frame the new curves when none of them shows, together with what is in view when that is
+   * not much farther out. Never while the user has just moved the view or it is animating. A
+   * curve with no end (y = x + 100) is brought into view at the view's scale; one that closes is
+   * shown whole. Where they are is looked for after the frame (it can take a while: an implicit
+   * curve far off), and dropped if anything changed meanwhile.
+   */
+  private frameRows(ids: readonly string[]): void {
+    if (performance.now() - this.userMoved < USER_MOVE_MS || this.animTarget) return;
+    const bounds = viewBounds(this.view);
+    const rows = this.rows.filter((r) => ids.includes(r.id) && !r.ghost);
+    for (const row of rows) {
+      const geometry = this.geometries.get(row.id);
+      if (!geometry || drawsIn(geometry, bounds)) return;
+    }
+    if (rows.length === 0) return;
+    const shown = this.rows.some((r) => {
+      const g = !rows.includes(r) && !r.ghost && this.geometries.get(r.id);
+      return g && drawsIn(g, bounds);
+    });
+    const [view, scene] = [this.view, this.rows];
+    clearTimeout(this.frameTimer);
+    this.frameTimer = setTimeout(() => {
+      if (this.view !== view || this.rows !== scene || this.animTarget) return;
+      const curves = rows.flatMap((row) => this.boundsOf(row, view) ?? []);
+      const own = curvesBox(curves, windowSpan(view));
+      if (!own) return;
+      let target = fitViewport(own, view);
+      if (shown) {
+        const wide = fitViewport(unionBounds(own, bounds) as Bounds, view);
+        if (wide.ppuX * MAX_UNION_ZOOM_OUT >= target.ppuX) target = wide;
+      }
+      this.animateTo(target, FIT_MS, false, false);
+    });
+  }
+
+  /** Where a row's curve is (null where it draws nothing to be found, or fails). */
+  private boundsOf(row: SceneRow, view: Viewport): CurveBounds | null {
+    try {
+      return curveBounds(row.plot, view);
+    } catch (err) {
+      console.warn('Failed to find the bounds of row', row.id, err);
+      return null;
+    }
   }
 
   /** Whether a row is in the current scene (a pinned trace drops its anchor when it isn't). */
   hasRow(id: string): boolean {
-    return this.rows.some((r) => r.id === id);
+    return this.rows.some((r) => r.id === id && !r.ghost);
   }
 
   invalidate(): void {
@@ -172,49 +529,117 @@ export class GraphController {
     });
   }
 
-  /** Nearest curve point to a screen position, for tracing. */
-  trace(sx: number, sy: number, maxDistPx: number): TraceHit | null {
-    let best: TraceHit | null = null;
+  /**
+   * Nearest curve point to a screen position, for tracing, snapped to a point of interest of
+   * that curve near the position (see TraceOptions). Where curves meet, the emphasised one wins.
+   */
+  trace(sx: number, sy: number, maxDistPx: number, opts: TraceOptions = {}): TraceHit | null {
+    // A shown point of interest under the pointer: its ring is what the pointer is on.
+    if (opts.snapPx && opts.rowId === undefined) {
+      const ring = this.poiNear(sx, sy, opts.snapPx);
+      if (ring) {
+        const rowId = this.poiInputs?.id;
+        const hit = this.trace(ring.sx, ring.sy, Math.max(maxDistPx, 8), { rowId, snapPx: 1 });
+        if (hit?.poi) return hit;
+      }
+    }
+    let best: { row: SceneRow; hit: NearestHit } | null = null;
     let bestDist = maxDistPx;
     for (const row of this.rows) {
-      const geom = this.geometries.get(row.id);
-      if (!geom) continue;
-      const plot = row.plot;
-      let hit = null;
-      if ((plot.kind === 'explicitY' || plot.kind === 'explicitX') && !plot.ineq) {
-        hit = traceExplicit(
-          plot.f,
-          this.view,
-          plot.kind === 'explicitY' ? 'x' : 'y',
-          sx,
-          sy,
-          bestDist,
-        );
-      }
-      for (const curve of geom.curves) {
-        const h = nearestOnPolyline(curve, this.view, sx, sy, bestDist);
-        if (h && (!hit || h.distPx < hit.distPx)) hit = h;
-      }
-      if (geom.points) {
-        const h = nearestPoint(geom.points, this.view, sx, sy, Math.max(bestDist, 16));
-        if (h && (!hit || h.distPx < hit.distPx)) hit = h;
-      }
+      if (row.ghost || (opts.rowId !== undefined && row.id !== opts.rowId)) continue;
+      const hit = this.nearest(row, sx, sy, bestDist);
       if (hit && hit.distPx <= bestDist) {
         bestDist = hit.distPx;
-        best = {
-          rowId: row.id,
-          x: hit.x,
-          y: hit.y,
-          sx: toScreenX(this.view, hit.x),
-          sy: toScreenY(this.view, hit.y),
-          color: this.theme.palette[row.colorIndex] ?? this.theme.palette[0],
-          ppu: this.view.ppuX,
-          viewWidth: this.view.width,
-          viewHeight: this.view.height,
-        };
+        best = { row, hit };
+      }
+    }
+    // At an intersection, or curves running together: the emphasised one, whose points show.
+    if (best && opts.rowId === undefined && best.row.id !== this.emphasis) {
+      const row = this.rows.find((r) => r.id === this.emphasis && !r.ghost);
+      const hit = row && this.nearest(row, sx, sy, best.hit.distPx + TIE_PX);
+      if (row && hit) best = { row, hit };
+    }
+    if (!best) return null;
+    const { row, hit } = best;
+    const traced: TraceHit = {
+      rowId: row.id,
+      x: hit.x,
+      y: hit.y,
+      sx: toScreenX(this.view, hit.x),
+      sy: toScreenY(this.view, hit.y),
+      color: this.theme.palette[row.colorIndex] ?? this.theme.palette[0],
+      ppu: this.view.ppuX,
+      viewWidth: this.view.width,
+      viewHeight: this.view.height,
+    };
+    return opts.snapPx ? this.snap(traced, sx, sy, opts.snapPx) : traced;
+  }
+
+  /** The point of a row's curve nearest (sx, sy), within maxDistPx. */
+  private nearest(row: SceneRow, sx: number, sy: number, maxDistPx: number): NearestHit | null {
+    const geom = this.geometries.get(row.id);
+    if (!geom) return null;
+    const plot = row.plot;
+    let hit: NearestHit | null = null;
+    if ((plot.kind === 'explicitY' || plot.kind === 'explicitX') && !plot.ineq) {
+      const along = plot.kind === 'explicitY' ? 'x' : 'y';
+      hit = traceExplicit(plot.f, this.view, along, sx, sy, maxDistPx);
+    }
+    for (const curve of geom.curves) {
+      const h = nearestOnPolyline(curve, this.view, sx, sy, maxDistPx);
+      if (h && (!hit || h.distPx < hit.distPx)) hit = h;
+    }
+    if (geom.points) {
+      const h = nearestPoint(geom.points, this.view, sx, sy, Math.max(maxDistPx, 16));
+      if (h && (!hit || h.distPx < hit.distPx)) hit = h;
+    }
+    return hit && hit.distPx <= maxDistPx ? hit : null;
+  }
+
+  /** The shown point of interest nearest (sx, sy) within px, on screen. */
+  private poiNear(sx: number, sy: number, px: number): { sx: number; sy: number } | null {
+    if (this.poiStale || !this.poiInputs) return null;
+    let best: { sx: number; sy: number } | null = null;
+    let bestDist = px;
+    for (const poi of this.pois) {
+      const p = { sx: toScreenX(this.view, poi.x), sy: toScreenY(this.view, poi.y) };
+      const d = Math.hypot(p.sx - sx, p.sy - sy);
+      if (d <= bestDist) {
+        bestDist = d;
+        best = p;
       }
     }
     return best;
+  }
+
+  /** The hit moved onto the nearest point of interest on its curve within snapPx of (sx, sy). */
+  private snap(hit: TraceHit, sx: number, sy: number, snapPx: number): TraceHit {
+    if (this.poiStale) return hit;
+    const own = this.poiInputs?.id === hit.rowId;
+    let best: Poi | null = null;
+    let bestDist = snapPx;
+    for (const poi of this.pois) {
+      if (!own && !poi.with.includes(hit.rowId)) continue;
+      const d = Math.hypot(toScreenX(this.view, poi.x) - sx, toScreenY(this.view, poi.y) - sy);
+      if (d <= bestDist) {
+        bestDist = d;
+        best = poi;
+      }
+    }
+    if (!best) return hit;
+    return {
+      ...hit,
+      x: best.x,
+      y: best.y,
+      sx: toScreenX(this.view, best.x),
+      sy: toScreenY(this.view, best.y),
+      poi: best,
+    };
+  }
+
+  private startView(width: number, height: number): Viewport {
+    const v = this.initialView;
+    return v ? clampViewport({ ...v, width, height }) : homeViewport(width, height);
   }
 
   private applyView(v: Viewport, interactive = true): void {
@@ -224,19 +649,21 @@ export class GraphController {
     this.invalidate();
   }
 
+  /** Stop a running animation or glide where it is (input takes over from here). */
   private cancelAnimation(): void {
     cancelAnimationFrame(this.animation);
     this.animation = 0;
     this.animTarget = null;
+    this.stop();
   }
 
-  private markInteractive(): void {
+  private markInteractive(idleMs = IDLE_MS): void {
     this.quality = 'interactive';
     clearTimeout(this.idleTimer);
     this.idleTimer = setTimeout(() => {
       this.quality = 'final';
       this.invalidate();
-    }, IDLE_MS);
+    }, idleMs);
   }
 
   private onResize(entry: ResizeObserverEntry | undefined): void {
@@ -259,13 +686,20 @@ export class GraphController {
     this.canvas.height = devH;
     this.view = this.hasView
       ? resizeViewport(this.view, width, height)
-      : homeViewport(width, height);
+      : this.startView(width, height);
     this.hasView = true;
+    // Resizes in quick succession (dragging the list's edge, resizing the window, a panel
+    // snapping) sample at interactive quality, like a pan, and settle to final once they stop.
+    const now = performance.now();
+    if (now < this.layoutUntil) this.markInteractive(this.layoutUntil - now + IDLE_MS);
+    else if (now - this.lastResize < IDLE_MS) this.markInteractive();
     this.onViewChange?.(this.view);
     // Resizing clears the canvas; redraw synchronously to avoid a blank flash.
     cancelAnimationFrame(this.frame);
     this.frame = 0;
     this.draw();
+    // After drawing, so a slow frame doesn't break up the run.
+    this.lastResize = performance.now();
   }
 
   private draw(): void {
@@ -274,7 +708,7 @@ export class GraphController {
     ctx.setTransform(this.scale.x, 0, 0, this.scale.y, 0, 0);
     drawGrid(ctx, view, this.theme, this.scale);
 
-    const drawRows = [];
+    const drawRows: DrawRow[] = [];
     const geometries = new Map<string, RowGeometry>();
     for (const row of this.rows) {
       let geometry: RowGeometry;
@@ -284,28 +718,123 @@ export class GraphController {
         console.warn('Failed to sample row', row.id, err);
         continue;
       }
-      geometries.set(row.id, geometry);
+      if (!row.ghost) geometries.set(row.id, geometry);
       drawRows.push({
         geometry,
         color: this.theme.palette[row.colorIndex] ?? this.theme.palette[0],
+        ghost: row.ghost,
+        emphasis: row.id === this.emphasis,
       });
     }
     this.geometries = geometries;
-    drawScene(ctx, view, drawRows, this.theme.background);
+    this.drawnView = view;
+    drawScene(ctx, view, drawRows, this.theme);
 
     const b = viewBounds(view);
     this.container.dataset.view = [b.xmin, b.xmax, b.ymin, b.ymax]
       .map((n) => n.toPrecision(6))
       .join(',');
     this.lastFrameMs = performance.now() - t0;
+    this.updatePois();
     this.onDraw?.();
+    const toFrame = this.toFrame;
+    if (toFrame) {
+      this.toFrame = null;
+      this.frameRows(toFrame);
+    }
+  }
+
+  /**
+   * Find the emphasised row's points of interest when what they depend on changed: at final
+   * quality only, and not while typing goes on. Old points stay while only the view moves (they
+   * are world points). They go as soon as the plots or values they were found on change, except
+   * while their row is being typed in: then they stay, faded, until the new ones are found, so
+   * a keystroke that leaves them where they were does not make them blink and bloom again.
+   */
+  private updatePois(): void {
+    const row = this.rows.find((r) => r.id === this.emphasis);
+    const geometry = row && !row.ghost ? this.geometries.get(row.id) : undefined;
+    const last = this.poiInputs;
+    const typing = performance.now() < this.poiSettle;
+    const fade = () => {
+      if (row && last?.id === row.id && (row.ghost || typing)) this.setPois(this.pois, last, true);
+      else this.setPois([], null);
+    };
+    if (!row || !geometry) {
+      fade();
+      return;
+    }
+    const others = this.rows.filter((r) => !r.ghost && r !== row && this.geometries.has(r.id));
+    const plots = [row.plot, ...others.map((r) => r.plot)];
+    let values = '';
+    for (const r of [row, ...others]) {
+      for (const dep of r.deps) values += `|${this.values.get(dep)}`;
+    }
+    const view = viewKey(this.view);
+    const same =
+      last !== null &&
+      last.id === row.id &&
+      last.values === values &&
+      last.plots.length === plots.length &&
+      last.plots.every((p, i) => p === plots[i]);
+    const ready = this.quality === 'final' && !typing;
+    if (same && (last.view === view || !ready)) {
+      // Typed back to what they were found on.
+      if (this.poiStale && ready) this.setPois(this.pois, last);
+      return;
+    }
+    if (!ready) {
+      fade();
+      return;
+    }
+    const curve = (r: SceneRow): PoiCurve => ({
+      id: r.id,
+      plot: r.plot,
+      geometry: this.geometries.get(r.id) as RowGeometry,
+    });
+    let pois: Poi[] = [];
+    const census: RowCensus = {
+      kinds: {},
+      meets: new Map(),
+      plot: row.plot,
+      others: others.map((r) => r.plot),
+      values: this.values,
+    };
+    try {
+      pois = findPois(curve(row), others.map(curve), this.view, { census });
+    } catch (err) {
+      console.warn('Failed to find points of interest', row.id, err);
+    }
+    this.setPois(pois, { view, plots, values, id: row.id }, false, census);
+  }
+
+  private setPois(
+    pois: readonly Poi[],
+    inputs: GraphController['poiInputs'],
+    stale = false,
+    census: RowCensus | null = null,
+  ): void {
+    const found = inputs !== null && !stale;
+    const unchanged =
+      (pois === this.pois && stale === this.poiStale) ||
+      (pois.length === 0 && this.pois.length === 0);
+    this.pois = pois;
+    this.poiInputs = inputs;
+    this.poiStale = stale;
+    if (found || !unchanged) this.onPois?.(pois, this.view, inputs?.id ?? null, stale, census);
   }
 }
 
 function sameItems(a: readonly SceneRow[], b: readonly SceneRow[]): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
-    if (a[i].plot !== b[i].plot || a[i].colorIndex !== b[i].colorIndex) return false;
+    if (
+      a[i].plot !== b[i].plot ||
+      a[i].colorIndex !== b[i].colorIndex ||
+      !a[i].ghost !== !b[i].ghost
+    ) {
+      return false;
+    }
   }
   return true;
 }

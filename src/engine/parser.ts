@@ -12,7 +12,7 @@
 
 import type { CallNode, NameNode, NameNodeKind, Node, NumNode, RelOp, Statement } from './ast';
 import { BUILTIN_FUNCTIONS, isBuiltinFunction, PREFIXABLE_FUNCTIONS } from './builtinNames';
-import { MathSyntaxError, mathError, syntaxError } from './errors';
+import { MathSyntaxError, mathError, replaceFix, syntaxError } from './errors';
 import {
   EMPTY_CONTEXT,
   type NameContext,
@@ -22,18 +22,19 @@ import {
 } from './names';
 import { tokenize } from './tokenizer';
 import type { Token } from './tokens';
-import type { MathError, Span } from './types';
+import type { MathError, QuickFix, Span } from './types';
 
 export type ParseResult = { ok: true; statement: Statement } | { ok: false; error: MathError };
 
-const BP_ADD = 10;
-const BP_MUL = 20;
+// Exported so the typeset editor can mirror the parser's extents exactly.
+export const BP_ADD = 10;
+export const BP_MUL = 20;
 /** Implicit products inside an unparenthesized builtin argument bind tighter: sin 2x = sin(2x). */
-const BP_IMPLICIT_ARG = 21;
-const BP_PREFIX = 25;
-const BP_POW = 30;
-const BP_POW_RIGHT = 29;
-const BP_POSTFIX = 40;
+export const BP_IMPLICIT_ARG = 21;
+export const BP_PREFIX = 25;
+export const BP_POW = 30;
+export const BP_POW_RIGHT = 29;
+export const BP_POSTFIX = 40;
 /** Nesting limit, so pathological input gets an error instead of a stack overflow. */
 const MAX_DEPTH = 256;
 
@@ -340,6 +341,8 @@ class Parser {
     const prev = this.toks[this.pos - 1] as PTok;
     const beforePrev = this.pos >= 2 ? (this.toks[this.pos - 2] as PTok) : null;
     let hint: string;
+    // The rewrites the hint names, as fixes.
+    const fixes: QuickFix[] = [];
     if (
       prev.kind === 'ident' &&
       (prev.text === 'e' || prev.text === 'E') &&
@@ -347,17 +350,29 @@ class Parser {
       beforePrev?.kind === 'num' &&
       beforePrev.end === prev.start
     ) {
-      hint = `Scientific notation isn't supported; write ${this.sourceText(beforePrev)}*10^${numText}`;
+      const power = `${this.sourceText(beforePrev)}*10^${numText}`;
+      hint = `Scientific notation isn't supported; write ${power}`;
+      fixes.push(replaceFix({ start: beforePrev.start, end: num.end }, power));
     } else if (prev.kind === 'num') {
       hint = 'Use * to multiply numbers';
+      const product = `${this.sourceText(prev)}*${numText}`;
+      fixes.push(replaceFix({ start: prev.start, end: num.end }, product));
     } else {
       const left = this.source.slice(leftStart, prev.end);
-      hint =
-        left.length <= 16
-          ? `Did you mean ${left}^${numText} or ${numText}${left}?`
-          : `Write the number first, or put * before ${numText}`;
+      if (left.length <= 16) {
+        hint = `Did you mean ${left}^${numText} or ${numText}${left}?`;
+        const span = { start: leftStart, end: num.end };
+        fixes.push(replaceFix(span, `${left}^${numText}`));
+        // The number first, unless it would run into what comes before (`3x2` is not `32x`).
+        const before = this.source.slice(0, leftStart).trimEnd().at(-1);
+        if (before === undefined || '+-−*·×/÷=<>≤≥(,'.includes(before)) {
+          fixes.push(replaceFix(span, `${numText}${left}`));
+        }
+      } else {
+        hint = `Write the number first, or put * before ${numText}`;
+      }
     }
-    syntaxError('missing-operator', `Missing operator before ${numText}`, spanOf(num), hint);
+    syntaxError('missing-operator', `Missing operator before ${numText}`, spanOf(num), hint, fixes);
   }
 
   /** `(e)` grouping, `(a, b, …)` tuple. */
@@ -390,7 +405,11 @@ class Parser {
   private expectClose(open: PTok): PTok {
     const t = this.peek();
     if (t.kind === 'rparen') return this.advance();
-    if (t.kind === 'eof') syntaxError('missing-rparen', "Missing ')'", spanOf(open));
+    if (t.kind === 'eof') {
+      // Closed at the end, every group still open (the editor draws them there already).
+      const close = replaceFix({ start: t.start, end: t.start }, ')'.repeat(this.parenDepth));
+      syntaxError('missing-rparen', "Missing ')'", spanOf(open), undefined, [close]);
+    }
     syntaxError(
       'unexpected-token',
       `Unexpected '${this.sourceText(t)}' inside parentheses`,
@@ -517,7 +536,9 @@ class Parser {
     const reciprocal = `For the reciprocal, write 1/${name}(x)`;
     if (!isUser && isBuiltinFunction(inverse)) {
       const what = INVERSE_NAMES[name] ?? `of ${name}`;
-      syntaxError('use-inverse', `Use ${inverse}(x) for the inverse ${what}`, span, reciprocal);
+      syntaxError('use-inverse', `Use ${inverse}(x) for the inverse ${what}`, span, reciprocal, [
+        replaceFix(span, inverse),
+      ]);
     }
     syntaxError('use-inverse', `${name}^-1 isn't supported`, span, reciprocal);
   }

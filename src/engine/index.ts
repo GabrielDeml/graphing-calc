@@ -11,8 +11,20 @@ export {
   PREFIXABLE_FUNCTIONS,
 } from './builtinNames';
 export { DocumentEngine } from './document';
-export { formatCoordinate, formatSliderValue, formatValue } from './format';
-export { type ParseResult, parse } from './parser';
+export { applyFix, errorFixes, sliderFixNames } from './errors';
+export { formatCoordinate, formatPlain, formatSliderValue, formatValue } from './format';
+export type { NameContext } from './names';
+export {
+  BP_ADD,
+  BP_IMPLICIT_ARG,
+  BP_MUL,
+  BP_POSTFIX,
+  BP_POW,
+  BP_POW_RIGHT,
+  BP_PREFIX,
+  type ParseResult,
+  parse,
+} from './parser';
 export { printNode, printStatement } from './print';
 export type {
   DocAnalysis,
@@ -27,4 +39,5 @@ export type {
   RowKind,
   RowResult,
   Span,
+  UnknownUse,
 } from './types';

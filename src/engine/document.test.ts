@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DocumentEngine } from './document';
+import { applyFix, errorFixes, hintBesideFixes, sliderFixNames } from './errors';
 import type { DocAnalysis, Fn1, MathError, PlotItem, RowInput, RowResult } from './types';
 
 /** Rows with ids r0, r1, … */
@@ -184,7 +185,7 @@ describe('definitions', () => {
   it('splits unknown letter runs into single-letter slider names', () => {
     const engine = new DocumentEngine();
     const a = engine.update(rows('y = abc x'));
-    expect(err(a, 'r0').quickFix?.names).toEqual(['a', 'b', 'c']);
+    expect(sliderFixNames(err(a, 'r0'))).toEqual(['a', 'b', 'c']);
   });
 
   it('propagates dependency errors transitively', () => {
@@ -230,14 +231,14 @@ describe('definitions', () => {
     const engine = new DocumentEngine();
     // Without a definition, `ab` reads as a·b.
     const a = engine.update(rows('y = ab x'));
-    expect(err(a, 'r0').quickFix?.names).toEqual(['a', 'b']);
+    expect(sliderFixNames(err(a, 'r0'))).toEqual(['a', 'b']);
     // Defining `ab` later in the list changes how row 0 parses.
     const b = engine.update(rows('y = ab x', 'ab = 3'));
     expect(curve(b, 'r0')(2)).toBe(6);
     expect(ok(b, 'r0').deps).toEqual(new Set(['ab']));
     // Renaming the definition re-parses row 0 again.
     const c = engine.update(rows('y = ab x', 'ac = 3'));
-    expect(err(c, 'r0').quickFix?.names).toEqual(['a', 'b']);
+    expect(sliderFixNames(err(c, 'r0'))).toEqual(['a', 'b']);
     expect(c.structureVersion).toBeGreaterThan(b.structureVersion);
   });
 
@@ -246,6 +247,22 @@ describe('definitions', () => {
     const a = engine.update(rows('a = 100', 'f(a) = a + 1', 'f(2)', 'y = f(x) + a'));
     expect(ok(a, 'r2').value).toBe(3);
     expect(curve(a, 'r3')(0)).toBe(101);
+  });
+
+  it('exposes the names table, keeping the context while the signature holds', () => {
+    const engine = new DocumentEngine();
+    expect(engine.names().signature).toBe('');
+    engine.update(rows('a = 1', 'f(x, y) = x y', 'y = a x'));
+    const first = engine.names();
+    expect([...first.ctx.vars]).toEqual(['a']);
+    expect(first.ctx.fns.get('f')).toBe(2);
+    expect(first.signature).toBe('a:var,f:fn:2');
+    // A slider move keeps the context object; a new definition replaces it.
+    engine.update(rows('a = 2', 'f(x, y) = x y', 'y = a x'));
+    expect(engine.names().ctx).toBe(first.ctx);
+    engine.update(rows('a = 2', 'f(x, y) = x y', 'b = 3'));
+    expect(engine.names().ctx).not.toBe(first.ctx);
+    expect(engine.names().signature).toBe('a:var,b:var,f:fn:2');
   });
 });
 
@@ -571,6 +588,72 @@ describe('identity across rebuilds', () => {
     expect(curve(c, 'r1')(3)).toBe(9);
     expect(ok(c, 'r42').value).toBe(42);
   });
+
+  it('counts reallocations of the globals, which strand older closures', () => {
+    const engine = new DocumentEngine();
+    const a = engine.update(rows('a = 2', 'y = a x'));
+    const before = engine.globalsGeneration;
+    const f = curve(a, 'r1');
+    // Edits that keep the storage keep the generation: old closures still see new values.
+    engine.update(rows('a = 2', 'y = a x', 'b = 1'));
+    engine.update(rows('a = 5', 'y = a x', 'b = 1'));
+    expect(engine.globalsGeneration).toBe(before);
+    expect(f(1)).toBe(5);
+    const many = Array.from({ length: 40 }, (_, i) => `v_${i} = ${i}`);
+    engine.update(rows('a = 5', 'y = a x', ...many));
+    expect(engine.globalsGeneration).toBeGreaterThan(before);
+    engine.update(rows('a = 7', 'y = a x', ...many));
+    // The old closure reads the storage it was compiled against, which no longer changes.
+    expect(f(1)).toBe(5);
+  });
+});
+
+describe('variable slots', () => {
+  it('hand a freed slot to another name only once the storage has no fresh one', () => {
+    const engine = new DocumentEngine();
+    engine.update(rows('a = 1', 'y = a x'));
+    const slotA = engine.variableSlots.get('a');
+    engine.update(rows('k = 100', 'y = a x'));
+    expect(engine.variableSlots.has('a')).toBe(false);
+    expect(engine.variableSlots.get('k')).not.toBe(slotA);
+    // Full: the last name in takes the freed slot rather than growing the storage.
+    const many = Array.from({ length: 15 }, (_, i) => `v_${i} = ${i}`);
+    const generation = engine.globalsGeneration;
+    engine.update(rows('k = 100', ...many));
+    expect(engine.variableSlots.get('v_14')).toBe(slotA);
+    expect(engine.globalsGeneration).toBe(generation);
+    const slotK = engine.variableSlots.get('k');
+    engine.update(rows('m = 1', ...many));
+    expect(engine.variableSlots.get('m')).toBe(slotK);
+  });
+});
+
+describe('dependency errors', () => {
+  it('name the definition they come from', () => {
+    const engine = new DocumentEngine();
+    const a = engine.update(rows('a = (', 'b = 2a', 'y = b x', '(cos t, sin t)'));
+    expect(err(a, 'r1').dependsOn).toBe('a');
+    expect(err(a, 'r2').dependsOn).toBe('b');
+    expect(err(a, 'r0').dependsOn).toBeUndefined();
+  });
+
+  it('name it through a parameter range too', () => {
+    const engine = new DocumentEngine();
+    const a = engine.update([
+      { id: 'r0', source: 'k = (' },
+      { id: 'r1', source: '(cos t, sin t)', domain: { min: '0', max: 'k' } },
+    ]);
+    expect(err(a, 'r1')).toMatchObject({ code: 'bad-domain', dependsOn: 'k' });
+  });
+
+  it('are new results when the broken definition changes', () => {
+    const engine = new DocumentEngine();
+    const a = engine.update(rows('a = (', 'c = (', 'y = a c x'));
+    const b = engine.update(rows('a = 1', 'c = (', 'y = a c x'));
+    expect(err(a, 'r2').dependsOn).toBe('a');
+    expect(err(b, 'r2').dependsOn).toBe('c');
+    expect(row(b, 'r2')).not.toBe(row(a, 'r2'));
+  });
 });
 
 describe('robustness', () => {
@@ -764,17 +847,20 @@ describe('review regressions', () => {
     expect(e).toMatchObject({ code: 'unknown-name', quickFix: { names: ['e_1'] } });
   });
 
-  it('log_2(x) gets a hint instead of a nonsense add-slider fix', () => {
+  it('log_2(x) gets a hint and a rewrite instead of a nonsense add-slider fix', () => {
     const engine = new DocumentEngine();
-    for (const [source, base] of [
-      ['y = log_2(x)', '2'],
-      ['y = log_{10} x', '10'],
-      ['y = log_b(x)', 'b'],
+    for (const [source, base, text] of [
+      ['y = log_2(x)', '2', 'y = log(x)/log(2)'],
+      ['y = log_{10} x', '10', 'y = log(x)/log(10)'],
+      ['y = log_b(x)', 'b', 'y = log(x)/log(b)'],
     ]) {
       const e = err(engine.update(rows(source)), 'r0');
       expect(e.code).toBe('unknown-name');
       expect(e.hint).toBe(`Logs with a base aren't supported yet; write log(x)/log(${base})`);
-      expect(e.quickFix).toBeUndefined();
+      const fix = e.quickFix;
+      expect(fix?.kind).toBe('replace');
+      if (fix?.kind === 'replace') expect(applyFix(source, fix).text).toBe(text);
+      expect(e.alternatives).toBeUndefined();
     }
     // Defining it makes it an ordinary variable.
     expect(curve(engine.update(rows('log_2 = 3', 'y = log_2 x')), 'r1')(2)).toBe(6);
@@ -873,5 +959,157 @@ describe('function definitions draw their graph', () => {
     const a = new DocumentEngine().update(rows('f(x) = x + q', 'f(x) = 1'));
     expect(row(a, 'r0').plot).toBeUndefined();
     expect(row(a, 'r1').plot).toBeUndefined();
+  });
+});
+
+describe('quick fixes', () => {
+  /** What each of a row's fixes would make of it. */
+  function fixed(source: string, others: string[] = []): string[] {
+    const e = err(new DocumentEngine().update(rows(source, ...others)), 'r0');
+    return errorFixes(e).map((fix) =>
+      fix.kind === 'replace' ? applyFix(source, fix).text : `+${fix.names.join(',')}`,
+    );
+  }
+
+  it.each([
+    ['y =< x', ['y <= x']],
+    ['y => x', ['y >= x']],
+    ['y == 2x', ['y = 2x']],
+    ['y = 1e-3x', ['y = 1*10^-3x', 'y = 1e - 3x']],
+    ['y = 2e3', ['y = 2*10^3']],
+    ['y = 2 3', ['y = 2*3']],
+    ['y = x2', ['y = x^2', 'y = 2x']],
+    ['y = (x+1)2 + 1', ['y = (x+1)^2 + 1', 'y = 2(x+1) + 1']],
+    // The number first would run into the 3: only the power.
+    ['y = 3x2', ['y = 3x^2']],
+    ['y = sin^-1(x)', ['y = asin(x)']],
+    ['y = tanh^-1 x', ['y = atanh x']],
+    ['a = x^2', ['a(x) = x^2']],
+    ['b = 2t + 1', ['b(t) = 2t + 1']],
+    ['y = log_2(x) + 1', ['y = log(x)/log(2) + 1']],
+    ['y = 1/log_2(x)', ['y = 1/(log(x)/log(2))']],
+    ['y = log_2(x)^2', ['y = (log(x)/log(2))^2']],
+    ['y = log_{10} x', ['y = log(x)/log(10)']],
+    ['y = a log_2(x + 1)', ['+a']],
+    ['y = log_2(x) + c', ['y = log(x)/log(2) + c', '+c']],
+    // An unclosed group closes at the end, all of it; an empty one has nothing to close.
+    ['y = (x+1', ['y = (x+1)']],
+    ['(cos(t), sin(2t)', ['(cos(t), sin(2t))']],
+    ['y = sin((x+1', ['y = sin((x+1))']],
+    ['y = (', []],
+    ['y = sin(', []],
+  ])('%s', (source, expected) => {
+    expect(fixed(source)).toEqual(expected);
+  });
+
+  it('a hint says only what the fixes offered do not', () => {
+    const hint = (source: string) =>
+      hintBesideFixes(err(new DocumentEngine().update(rows(source)), 'r0'));
+    expect(hint('y = x2')).toBeUndefined();
+    expect(hint('y = 1e-3x')).toBeUndefined();
+    expect(hint('y = 2e3')).toBe("Scientific notation isn't supported");
+    expect(hint('y = log_2(x)')).toBe("Logs with a base aren't supported yet");
+    expect(hint('y = sin^-1(x)')).toBe('For the reciprocal, write 1/sin(x)');
+    // No rewrite offered: all of it.
+    expect(hint('y = log_2 + 1')).toBe(
+      "Logs with a base aren't supported yet; write log(x)/log(2)",
+    );
+  });
+
+  it('labels a fix by its new text, or by what it starts', () => {
+    const e = err(new DocumentEngine().update(rows('a = x^2')), 'r0');
+    expect(e.quickFix).toEqual({
+      kind: 'replace',
+      span: { start: 0, end: 1 },
+      text: 'a(x)',
+      label: 'a(x) = …',
+    });
+  });
+
+  it('every fix makes the row read as the hint says', () => {
+    for (const source of [
+      'y =< x',
+      'y == 2x',
+      'y = 1e-3x',
+      'y = x2',
+      'y = sin^-1(x)',
+      'a = x^2',
+      'y = (x+1',
+    ]) {
+      const e = err(new DocumentEngine().update(rows(source)), 'r0');
+      const fix = e.quickFix;
+      if (fix?.kind !== 'replace') throw new Error(`${source}: no replace fix`);
+      const after = new DocumentEngine().update(rows(applyFix(source, fix).text));
+      expect(ok(after, 'r0').status, source).toBe('ok');
+    }
+  });
+
+  it('unknownUses: where the names offered as sliders are used', () => {
+    const engine = new DocumentEngine();
+    engine.update(rows('y = m x + b + m', 'y = f(x) + log_2(x)', '(cos t, sin t)', 'k = 1'));
+    expect(engine.unknownUses('r0')).toEqual([
+      { name: 'm', span: { start: 4, end: 5 } },
+      { name: 'b', span: { start: 10, end: 11 } },
+      { name: 'm', span: { start: 14, end: 15 } },
+    ]);
+    // A log base is no slider.
+    expect(engine.unknownUses('r1')).toEqual([{ name: 'f', span: { start: 4, end: 5 } }]);
+    expect(engine.unknownUses('r3')).toEqual([]);
+    expect(engine.unknownUses('nope')).toEqual([]);
+    // Only the row's own text: a t range's names are its fields'.
+    engine.update([{ id: 'r0', source: '(cos t, sin t)', domain: { min: '0', max: 'k' } }]);
+    expect(engine.unknownUses('r0')).toEqual([]);
+  });
+
+  it('a t range offers sliders, never a rewrite of its own text', () => {
+    const e = err(
+      new DocumentEngine().update([
+        { id: 'r0', source: '(cos t, sin t)', domain: { min: '0', max: 'x2' } },
+      ]),
+      'r0',
+    );
+    expect(e.code).toBe('bad-domain');
+    expect(e.quickFix).toBeUndefined();
+  });
+
+  it('keeps an unchanged error (fixes and all) the same object', () => {
+    const engine = new DocumentEngine();
+    const a = engine.update(rows('y = x2', 'y = 1e-3x', 'y = m x'));
+    const b = engine.update(rows('y = x2', 'y = 1e-3x', 'y = m x', 'k = 1'));
+    for (const id of ['r0', 'r1', 'r2']) expect(row(b, id)).toBe(row(a, id));
+    // A fix that moves is a new result.
+    const c = engine.update(rows('y =  x2', 'y = 1e-3x', 'y = m x', 'k = 1'));
+    expect(row(c, 'r0')).not.toBe(row(b, 'r0'));
+  });
+});
+
+describe('what insights read from the engine', () => {
+  it('trigArguments: the trig calls a row plots, as functions of its variable', () => {
+    const engine = new DocumentEngine();
+    const a = engine.update(
+      rows('k = 3', 'y = 2sin(k x + 1) + cos^2(x/2)', 'r = cos(4θ)', '(cos 2t, sin t)', 'y = x'),
+    );
+    const args = (id: string) => engine.trigArguments(id, plot(a, id)) ?? [];
+    expect(args('r1').map((f) => f(1))).toEqual([4, 0.5]);
+    expect(args('r2').map((f) => f(1))).toEqual([4]);
+    expect(args('r3').map((f) => f(1))).toEqual([2, 1]);
+    expect(args('r4')).toEqual([]);
+    // Sliders move the arguments too.
+    const b = engine.update(
+      rows('k = 5', 'y = 2sin(k x + 1) + cos^2(x/2)', 'r = cos(4θ)', '(cos 2t, sin t)', 'y = x'),
+    );
+    expect(engine.trigArguments('r1', plot(b, 'r1'))?.[0]?.(1)).toBe(6);
+    // Not the row's plot (any more): nothing.
+    expect(engine.trigArguments('r2', plot(a, 'r1'))).toBeNull();
+    expect(engine.trigArguments('r0', plot(a, 'r1'))).toBeNull();
+  });
+
+  it('refsOf: the names a row uses directly', () => {
+    const engine = new DocumentEngine();
+    engine.update(rows('a = 1', 'k = 2a', 'f(x) = k x', 'y = f(x) + a'));
+    expect(engine.refsOf('r1')).toEqual(['a']);
+    expect(engine.refsOf('r2')).toEqual(['k']);
+    expect([...engine.refsOf('r3')].sort()).toEqual(['a', 'f']);
+    expect(engine.refsOf('nope')).toEqual([]);
   });
 });

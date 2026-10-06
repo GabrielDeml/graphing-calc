@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Viewport } from '../plot/types';
-import { drawGrid, labelStride } from './drawGrid';
+import { drawGrid, labelStride, minorGridAlpha } from './drawGrid';
 import type { Theme } from './theme';
 
 const theme: Theme = {
@@ -61,6 +61,31 @@ function assertReadable(labels: Label[], width: number) {
   }
 }
 
+describe('minorGridAlpha', () => {
+  it('hides dense minor lines and shows sparse ones in full', () => {
+    expect(minorGridAlpha(4)).toBe(0);
+    expect(minorGridAlpha(8)).toBe(0);
+    expect(minorGridAlpha(24)).toBe(1);
+    expect(minorGridAlpha(60)).toBe(1);
+  });
+
+  it('fades in between, never decreasing as the lines spread', () => {
+    let last = 0;
+    for (let px = 8; px <= 24; px += 0.5) {
+      const a = minorGridAlpha(px);
+      expect(a).toBeGreaterThanOrEqual(last);
+      expect(a).toBeLessThanOrEqual(1);
+      last = a;
+    }
+    expect(minorGridAlpha(16)).toBeCloseTo(0.5);
+  });
+
+  it('draws nothing for unusable spacings', () => {
+    expect(minorGridAlpha(Number.NaN)).toBe(0);
+    expect(minorGridAlpha(-5)).toBe(0);
+  });
+});
+
 describe('labelStride', () => {
   it('labels every tick when they fit', () => {
     expect(labelStride(1, 100, 20)).toBe(1);
@@ -101,13 +126,13 @@ describe('drawGrid x labels', () => {
   it('keep every tick labelled at the home view, without cutting any off at the edges', () => {
     const width = 920;
     const labels = xLabels({ cx: 0, cy: 0, ppuX: 40, ppuY: 40, width, height: 800 });
-    // Major ticks every 2 units across ±11.5, minus 0 and the clipped ones.
+    // Major ticks every 2 units across ±11.5, minus 0 and the clipped ones, with true minuses.
     expect(labels.map((l) => l.text)).toEqual([
-      '-10',
-      '-8',
-      '-6',
-      '-4',
-      '-2',
+      '−10',
+      '−8',
+      '−6',
+      '−4',
+      '−2',
       '2',
       '4',
       '6',
@@ -115,5 +140,17 @@ describe('drawGrid x labels', () => {
       '10',
     ]);
     assertReadable(labels, width);
+  });
+
+  it('set negative values with a true minus, on the y axis too', () => {
+    const { ctx, labels } = recordingContext();
+    drawGrid(ctx, { cx: 0, cy: 0, ppuX: 40, ppuY: 40, width: 920, height: 800 }, theme, {
+      x: 2,
+      y: 2,
+    });
+    const y = labels.filter((l) => l.align !== 'center').map((l) => l.text);
+    expect(y).toContain('−8');
+    expect(y).toContain('8');
+    expect(labels.some((l) => l.text.includes('-'))).toBe(false);
   });
 });

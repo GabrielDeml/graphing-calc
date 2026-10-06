@@ -1,14 +1,17 @@
 import { test as base, expect, type Page } from '@playwright/test';
 
-/** Every test fails on console errors (including CSP violations) or uncaught exceptions. */
+/**
+ * Every test fails on console errors (including CSP violations) or uncaught exceptions, in any
+ * page of its context (a second tab too).
+ */
 export const test = base.extend<{ consoleErrors: string[] }>({
   consoleErrors: [
-    async ({ page }, use) => {
+    async ({ context }, use) => {
       const errors: string[] = [];
-      page.on('console', (m) => {
+      context.on('console', (m) => {
         if (m.type() === 'error') errors.push(m.text());
       });
-      page.on('pageerror', (e) => errors.push(String(e)));
+      context.on('weberror', (e) => errors.push(String(e.error())));
       await use(errors);
       expect(errors, 'console errors').toEqual([]);
     },
@@ -21,6 +24,11 @@ export { expect };
 export const RED = '#c74440';
 export const BLUE = '#2d70b3';
 export const GREEN = '#388c46';
+/** The first curve color in the dark color scheme (src/state/colors.ts). */
+export const RED_DARK = '#f0605b';
+/** Axis colors (src/styles/global.css), counted with a tolerance of 20. */
+export const AXIS = '#3a3d44';
+export const AXIS_DARK = '#80868f';
 
 export function exprInput(page: Page, index: number) {
   return page.getByTestId('expr-input').nth(index);

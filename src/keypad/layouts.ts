@@ -11,10 +11,16 @@ export type KeyAction =
   /** Switch the field to the device keyboard; must run inside the tap's click handler (iOS). */
   | { type: 'native' };
 
+/** Icons drawn instead of a key's label (the components map them to SVGs). */
+export type KeyIcon = 'keyboard' | 'backspace' | 'arrow-left' | 'arrow-right' | 'enter' | 'shift';
+
 export interface KeyDef {
   /** Unique within a page and stable across shift states; rendered as `data-testid="key-<id>"`. */
   id: string;
+  /** Text on the key; with an `icon`, the text the icon stands for. */
   label: string;
+  /** Drawn in place of the label, for glyphs fonts render unevenly (⌫ ⌨ ↵ ⇧). */
+  icon?: KeyIcon;
   ariaLabel: string;
   action: KeyAction;
   variant: 'char' | 'op' | 'fn' | 'action' | 'primary';
@@ -81,12 +87,27 @@ function repeating(def: KeyDef): KeyDef {
 
 // Shared objects: the same right-hand column on every page, so its keys keep their place (and
 // their DOM nodes) when switching pages.
-const BACKSPACE = repeating(key('backspace', '⌫', 'backspace', { type: 'backspace' }, 'action'));
-const LEFT = repeating(key('left', '←', 'move left', { type: 'left' }, 'action'));
-const RIGHT = repeating(key('right', '→', 'move right', { type: 'right' }, 'action'));
+function withIcon(def: KeyDef, icon: KeyIcon): KeyDef {
+  def.icon = icon;
+  return def;
+}
+
+const BACKSPACE = withIcon(
+  repeating(key('backspace', '⌫', 'backspace', { type: 'backspace' }, 'action')),
+  'backspace',
+);
+const LEFT = withIcon(
+  repeating(key('left', '←', 'move left', { type: 'left' }, 'action')),
+  'arrow-left',
+);
+const RIGHT = withIcon(
+  repeating(key('right', '→', 'move right', { type: 'right' }, 'action')),
+  'arrow-right',
+);
 const ENTER: KeyDef = {
   id: 'enter',
   label: '↵',
+  icon: 'enter',
   ariaLabel: 'enter',
   action: { type: 'enter' },
   variant: 'primary',
@@ -120,7 +141,7 @@ const PAGE_123 = page('123', '123', [
   [
     X_KEY,
     ins('y', 'y', 'y', 'char'),
-    ins('sq', 'a²', 'squared', 'op', '^2'),
+    key('sq', 'a²', 'squared', { type: 'power', exponent: '2' }, 'op'),
     ins('pow', 'aᵇ', 'power', 'op', '^'),
     digit('7'),
     digit('8'),
@@ -220,6 +241,7 @@ function letter(ch: string, upper: boolean): KeyDef {
 const SHIFT_OFF: KeyDef = {
   id: 'shift',
   label: '⇧',
+  icon: 'shift',
   ariaLabel: 'shift',
   action: { type: 'shift' },
   variant: 'action',
@@ -231,6 +253,7 @@ const ABC_BOTTOM: KeyDef[] = [
   {
     id: 'native',
     label: '⌨',
+    icon: 'keyboard',
     ariaLabel: 'Use device keyboard',
     action: { type: 'native' },
     variant: 'action',

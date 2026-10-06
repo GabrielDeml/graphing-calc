@@ -4,6 +4,7 @@ import type { Viewport } from './types';
 import {
   clampViewport,
   homeViewport,
+  isWheelNotch,
   lerpViewport,
   MAX_CENTER,
   MAX_PPU,
@@ -245,6 +246,25 @@ describe('wheelZoomFactor', () => {
   });
 });
 
+describe('isWheelNotch', () => {
+  it('takes lines, pages and big pixel steps for a mouse wheel notch', () => {
+    expect(isWheelNotch(3, 1)).toBe(true);
+    expect(isWheelNotch(-1, 1)).toBe(true);
+    expect(isWheelNotch(0.5, 2)).toBe(true);
+    expect(isWheelNotch(100, 0)).toBe(true);
+    expect(isWheelNotch(-120, 0)).toBe(true);
+    expect(isWheelNotch(50, 0)).toBe(true);
+  });
+
+  it('takes small pixel deltas for a trackpad, followed as they come', () => {
+    expect(isWheelNotch(4, 0)).toBe(false);
+    expect(isWheelNotch(-49.5, 0)).toBe(false);
+    expect(isWheelNotch(0, 0)).toBe(false);
+    expect(isWheelNotch(0, 1)).toBe(false);
+    expect(isWheelNotch(Number.NaN, 0)).toBe(false);
+  });
+});
+
 describe('lerpViewport', () => {
   it('interpolates ppu geometrically and returns the end views', () => {
     const a = { ...base, cx: 0, cy: 0, ppuX: 10, ppuY: 10 };
@@ -268,6 +288,22 @@ describe('lerpViewport', () => {
         }
       }
     }
+  });
+
+  it('keeps the cursor anchored when wheel notches compose mid-animation', () => {
+    // A second notch before the first one's animation ends zooms on from where it would end.
+    const v = homeViewport(1600, 900);
+    const [sx, sy] = [1200, 300];
+    const [wx, wy] = [toWorldX(v, sx), toWorldY(v, sy)];
+    const first = zoomAt(v, sx, sy, 1.25);
+    const mid = lerpViewport(v, first, 0.4);
+    const second = zoomAt(first, sx, sy, 1.25);
+    for (let k = 0; k <= 20; k++) {
+      const m = lerpViewport(mid, second, k / 20);
+      expect(Math.abs(toScreenX(m, wx) - sx)).toBeLessThan(1e-6);
+      expect(Math.abs(toScreenY(m, wy) - sy)).toBeLessThan(1e-6);
+    }
+    expect(second.ppuX).toBeCloseTo(v.ppuX * 1.25 * 1.25, 9);
   });
 
   it('moves centers linearly when the scale does not change', () => {

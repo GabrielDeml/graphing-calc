@@ -7,7 +7,20 @@ export interface Span {
   end: number;
 }
 
-export type QuickFix = { kind: 'addSliders'; names: string[] };
+/**
+ * A one-tap fix offered with an error: add sliders for unknown names, or replace a span of the
+ * row's text (`=<` → `<=`, `x2` → `x^2`). `label` is what the fix shows, the new text itself
+ * when that reads well.
+ */
+export type QuickFix =
+  | { kind: 'addSliders'; names: string[] }
+  | { kind: 'replace'; span: Span; text: string; label: string };
+
+/** A use of a name nothing defines: the name, and where it is in the row's text. */
+export interface UnknownUse {
+  name: string;
+  span: Span;
+}
 
 export interface MathError {
   /** Stable machine-readable code, e.g. 'unexpected-char', 'missing-rparen', 'unknown-name'. */
@@ -17,7 +30,15 @@ export interface MathError {
   /** Where to draw the error underline; absent for whole-row errors. */
   span?: Span;
   hint?: string;
+  /** The fix to offer first (Tab applies it). */
   quickFix?: QuickFix;
+  /** Other fixes, where the hint names more than one rewrite (`x2`: `x^2` or `2x`). */
+  alternatives?: QuickFix[];
+  /**
+   * 'dependency-error' (also inside a 'bad-domain' error): the name whose definition the error
+   * comes from, so the UI can tell which row is to blame.
+   */
+  dependsOn?: string;
 }
 
 export type RowKind =

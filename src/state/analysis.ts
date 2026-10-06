@@ -1,7 +1,10 @@
-import { createMemo, createRoot } from 'solid-js';
+import { createEffect, createMemo, createRoot, untrack } from 'solid-js';
 import { DocumentEngine } from '../engine/document';
 import type { DocAnalysis } from '../engine/types';
-import { doc } from './doc';
+import { type ColorUse, colorChanges } from './colors';
+import { assignColor, doc } from './doc';
+import { EMPTY_STEADY, type Steady, steady } from './steady';
+import { ui } from './ui';
 
 export const engine = new DocumentEngine();
 
@@ -18,6 +21,57 @@ export const analysis = createRoot(() =>
         domain: { min: r.domain.min, max: r.domain.max },
       })),
     ),
+  ),
+);
+
+// A row gets its color when it first plots, and rows that draw nothing hold none (see
+// colorChanges). Runs in the same tick as the edit that made the row plot (or stop), so it is
+// part of that undo step.
+createRoot(() => {
+  createEffect(() => {
+    const a = analysis();
+    untrack(() => {
+      const rows = doc.rows.map((row) => {
+        const res = a.byId.get(row.id);
+        const use: ColorUse =
+          !res || res.status === 'error' ? 'broken' : res.plot ? 'plots' : 'none';
+        return { id: row.id, colorIndex: row.colorIndex, use };
+      });
+      for (const [i, color] of colorChanges(rows)) assignColor(rows[i].id, color);
+    });
+  });
+});
+
+/**
+ * What the row being edited breaks in passing, held at its last good result meanwhile (see
+ * state/steady.ts): the graph draws those curves as ghosts, the list keeps their color marks and
+ * sliders and quiets the errors they only have because of the edit.
+ */
+export const steadyRows = createRoot(() => {
+  let state = EMPTY_STEADY;
+  return createMemo<Steady>(() => {
+    const next = steady(state, doc.rows, analysis().byId, ui.editingRowId(), {
+      generation: engine.globalsGeneration,
+      slots: engine.variableSlots,
+    });
+    state = next.state;
+    return next;
+  });
+});
+
+/**
+ * The document's names table (which letters are sliders, which are functions), for typesetting
+ * rows the way the engine reads them: `asin` shows as a·sin once a slider a exists. Only
+ * notifies when the names change, not on every edit.
+ */
+export const nameContext = createRoot(() =>
+  createMemo(
+    () => {
+      analysis();
+      return engine.names();
+    },
+    undefined,
+    { equals: (a, b) => a.signature === b.signature },
   ),
 );
 

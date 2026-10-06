@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { Fn1 } from '../engine/types';
-import { MAX_PARAMETER_RANGE, sampleParametric, samplePolar } from './sampleParametric';
+import {
+  MAX_PARAMETER_RANGE,
+  parameterWindow,
+  sampleParametric,
+  samplePolar,
+} from './sampleParametric';
 import type { Polyline, Viewport } from './types';
 import { viewBounds } from './viewport';
 
@@ -288,6 +293,15 @@ describe('parametric sampling grid and budget', () => {
       expect(worst).toBeLessThan(2);
       expect(drawn).toBeGreaterThan(200);
     }
+  });
+
+  it('windows a huge parameter range around 0, inside the range', () => {
+    expect(parameterWindow(0, 2 * Math.PI)).toEqual([0, 2 * Math.PI]);
+    expect(parameterWindow(-1e7, 1e7)).toEqual([-5e5, 5e5]);
+    expect(parameterWindow(-1e9, 1e5)).toEqual([1e5 - 1e6, 1e5]);
+    expect(parameterWindow(3e6, 1e8)).toEqual([3e6, 4e6]);
+    expect(parameterWindow(1, 1)).toBeNull();
+    expect(parameterWindow(0, Number.POSITIVE_INFINITY)).toBeNull();
   });
 
   it('keeps the part of a huge range around 0', () => {

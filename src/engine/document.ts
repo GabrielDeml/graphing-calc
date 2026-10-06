@@ -32,14 +32,15 @@ import {
   compileExpr,
   type UserFunction,
 } from './compile';
-import { type DefinitionHead, detectDefinition } from './definition';
+import { type DefinitionHead, definitionContext, detectDefinition } from './definition';
 import { cyclePath, cyclicComponents, formatCycle, topologicalOrder } from './depgraph';
-import { mathError } from './errors';
+import { mathError, replaceFix, sliderFixNames } from './errors';
 import { EMPTY_CONTEXT, isDefinableName, type NameContext } from './names';
 import { type ParseResult, parse } from './parser';
 import type {
   DocAnalysis,
   Fn0,
+  Fn1,
   MathError,
   PlotItem,
   QuickFix,
@@ -47,8 +48,11 @@ import type {
   RowKind,
   RowResult,
   Span,
+  UnknownUse,
 } from './types';
 
+/** Trig functions whose argument sets a period (sin(kx) repeats every 2π/k). */
+const PERIODIC: ReadonlySet<string> = new Set(['sin', 'cos', 'tan', 'sec', 'csc', 'cot']);
 const DEFAULT_DOMAIN_MIN = '0';
 const DEFAULT_DOMAIN_MAX = '2pi';
 const EMPTY_DEPS: ReadonlySet<string> = new Set<string>();
@@ -67,6 +71,8 @@ interface RowAnalysis {
   readonly refs: readonly string[];
   /** 'unknown-name' error when the row uses names nothing defines. */
   readonly unknown: MathError | null;
+  /** Where the row uses the unknown names its error offers sliders for, in source order. */
+  readonly unknownUses: readonly UnknownUse[];
 }
 
 /** A standalone constant expression (domain bound, slider field). */
@@ -128,28 +134,99 @@ function userNames(nodes: readonly Node[]): string[] {
   return [...names];
 }
 
-/** 'unknown-name' error for `nodes`, offering sliders for every unknown name, in source order. */
-function unknownNames(nodes: readonly Node[]): MathError | null {
+/** The names in `nodes` that nothing defines, in source order. */
+function unknownNodes(nodes: readonly Node[]): NameNode[] {
   const unknown: NameNode[] = [];
   for (const node of nodes) {
     forEachNode(node, (n) => {
       if (n.type === 'name' && n.kind === 'unknown') unknown.push(n);
     });
   }
-  if (unknown.length === 0) return null;
-  unknown.sort((a, b) => a.span.start - b.span.start);
-  const first = unknown[0];
+  return unknown.sort((a, b) => a.span.start - b.span.start);
+}
+
+/** Whether a slider for an unknown name could fix it. */
+function sliderable(name: string): boolean {
   // `log_2(x)` is a log base, not a variable: a slider named log_2 would be no fix at all.
-  const names = [...new Set(unknown.map((n) => n.name))].filter(
-    (name) => isDefinableName(name) && !name.startsWith('log_'),
-  );
-  const extra: { hint?: string; quickFix?: QuickFix } = {};
-  if (names.length > 0) extra.quickFix = { kind: 'addSliders', names };
+  return isDefinableName(name) && !name.startsWith('log_');
+}
+
+/** 'unknown-name' error for `nodes`, offering sliders for every unknown name, in source order. */
+function unknownNames(nodes: readonly Node[], source: string): MathError | null {
+  const unknown = unknownNodes(nodes);
+  if (unknown.length === 0) return null;
+  const first = unknown[0];
+  const names = [...new Set(unknown.map((n) => n.name))].filter(sliderable);
+  const fixes: QuickFix[] = [];
+  let hint: string | undefined;
   if (first.name.startsWith('log_')) {
     const base = first.name.slice(4);
-    extra.hint = `Logs with a base aren't supported yet; write log(x)/log(${base})`;
+    hint = `Logs with a base aren't supported yet; write log(x)/log(${base})`;
+    const fix = logBaseFix(first, base, nodes, source);
+    if (fix) fixes.push(fix);
   }
-  return mathError('unknown-name', `'${first.name}' is not defined`, first.span, extra);
+  if (names.length > 0) fixes.push({ kind: 'addSliders', names });
+  const [quickFix, ...alternatives] = fixes;
+  return mathError('unknown-name', `'${first.name}' is not defined`, first.span, {
+    hint,
+    quickFix,
+    alternatives,
+  });
+}
+
+/** Characters around `log(x)/log(b)` that keep it reading as one quotient without parentheses. */
+const QUOTIENT_BEFORE = '=<>≤≥(,+-−';
+const QUOTIENT_AFTER = '=<>≤≥),+-−';
+
+/**
+ * `log_2(x)` (or `log_2 x`) rewritten as the hint says, `log(x)/log(2)`, in parentheses where the
+ * quotient would otherwise bind differently (`1/log_2(x)`, `log_2(x)^2`). Null when the log's
+ * argument can't be told.
+ */
+function logBaseFix(
+  name: NameNode,
+  base: string,
+  nodes: readonly Node[],
+  source: string,
+): QuickFix | null {
+  let end = -1;
+  let arg = '';
+  let k = name.span.end;
+  while (source[k] === ' ') k++;
+  if (source[k] === '(') {
+    // Its parenthesized argument.
+    let depth = 0;
+    for (let j = k; j < source.length; j++) {
+      if (source[j] === '(') depth++;
+      else if (source[j] === ')' && --depth === 0) {
+        end = j + 1;
+        arg = source.slice(k + 1, j);
+        break;
+      }
+    }
+  } else {
+    // `log_10 x`: the operand the name multiplies.
+    for (const node of nodes) {
+      const product = findNode(
+        node,
+        (n) => n.type === 'binary' && n.implicit === true && n.left === name,
+      );
+      if (product?.type === 'binary') {
+        end = product.span.end;
+        arg = source.slice(product.right.span.start, end);
+        break;
+      }
+    }
+  }
+  if (end < 0 || arg.trim() === '') return null;
+  let text = `log(${arg.trim()})/log(${base})`;
+  const before = source.slice(0, name.span.start).trimEnd().at(-1);
+  const after = source.slice(end).trimStart()[0];
+  const safe =
+    (before === undefined || QUOTIENT_BEFORE.includes(before)) &&
+    (after === undefined || QUOTIENT_AFTER.includes(after));
+  if (!safe) text = `(${text})`;
+  return replaceFix({ start: name.span.start, end }, text);
 }
 
 function analyzeRow(
@@ -163,7 +240,7 @@ function analyzeRow(
   } catch (e) {
     // Nothing here should throw; a bug must not take down the whole document.
     const parsed: ParseResult = { ok: false, error: internalError(e) };
-    return { key, head, parsed, cls: null, refs: [], unknown: null };
+    return { key, head, parsed, cls: null, refs: [], unknown: null, unknownUses: [] };
   }
 }
 
@@ -173,11 +250,8 @@ function analyzeRowUnsafe(
   head: DefinitionHead | null,
   ctx: NameContext,
 ): RowAnalysis {
-  let rowCtx = ctx;
-  if (head?.kind === 'fn') rowCtx = { vars: ctx.vars, fns: ctx.fns, params: head.params };
-  else if (head?.kind === 'var') rowCtx = { vars: ctx.vars, fns: ctx.fns, self: head.name };
-  const parsed = parse(source, rowCtx);
-  if (!parsed.ok) return { key, head, parsed, cls: null, refs: [], unknown: null };
+  const parsed = parse(source, definitionContext(head, ctx));
+  if (!parsed.ok) return { key, head, parsed, cls: null, refs: [], unknown: null, unknownUses: [] };
   const nodes = statementNodes(parsed.statement);
   const cls = classify(parsed.statement, head);
   let refNodes = nodes;
@@ -187,7 +261,17 @@ function analyzeRowUnsafe(
     else if (row.kind === 'funcDef') refNodes = [row.body];
     else if (row.kind === 'slider') refNodes = [];
   }
-  return { key, head, parsed, cls, refs: userNames(refNodes), unknown: unknownNames(nodes) };
+  return {
+    key,
+    head,
+    parsed,
+    cls,
+    refs: userNames(refNodes),
+    unknown: unknownNames(nodes, source),
+    unknownUses: unknownNodes(nodes)
+      .filter((n) => sliderable(n.name))
+      .map((n) => ({ name: n.name, span: { start: n.span.start, end: n.span.end } })),
+  };
 }
 
 function analyzeConstant(source: string, ctx: NameContext): ConstantAnalysis {
@@ -215,13 +299,15 @@ function analyzeConstant(source: string, ctx: NameContext): ConstantAnalysis {
     const [v, span] = plotVar;
     return { ok: false, error: mathError('plot-var-not-allowed', `Can't use ${v} here`, span) };
   }
-  const unknown = unknownNames([node]);
+  const unknown = unknownNames([node], source);
   if (unknown) return { ok: false, error: unknown };
   return { ok: true, node, refs: userNames([node]) };
 }
 
 function dependencyError(name: string): MathError {
-  return mathError('dependency-error', `Depends on '${name}', which has an error`);
+  return mathError('dependency-error', `Depends on '${name}', which has an error`, undefined, {
+    dependsOn: name,
+  });
 }
 
 function sameNumber(a: number | undefined, b: number | undefined): boolean {
@@ -246,6 +332,24 @@ function sameSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
   return true;
 }
 
+function sameFix(a: QuickFix | undefined, b: QuickFix | undefined): boolean {
+  if (a === b) return true;
+  if (a === undefined || b === undefined || a.kind !== b.kind) return false;
+  if (a.kind === 'addSliders') return b.kind === 'addSliders' && sameList(a.names, b.names);
+  return (
+    b.kind === 'replace' && a.text === b.text && a.label === b.label && sameSpan(a.span, b.span)
+  );
+}
+
+function sameFixes(
+  a: readonly QuickFix[] | undefined,
+  b: readonly QuickFix[] | undefined,
+): boolean {
+  if (a === b) return true;
+  if ((a?.length ?? 0) !== (b?.length ?? 0)) return false;
+  return (a ?? []).every((fix, i) => sameFix(fix, b?.[i]));
+}
+
 function sameError(a: MathError | undefined, b: MathError | undefined): boolean {
   if (a === b) return true;
   if (a === undefined || b === undefined) return false;
@@ -254,8 +358,9 @@ function sameError(a: MathError | undefined, b: MathError | undefined): boolean 
     a.message === b.message &&
     a.hint === b.hint &&
     sameSpan(a.span, b.span) &&
-    a.quickFix?.kind === b.quickFix?.kind &&
-    sameList(a.quickFix?.names, b.quickFix?.names)
+    sameFix(a.quickFix, b.quickFix) &&
+    sameFixes(a.alternatives, b.alternatives) &&
+    a.dependsOn === b.dependsOn
   );
 }
 
@@ -334,6 +439,10 @@ export class DocumentEngine {
     functions: new Map(),
   };
   private last: Build | null = null;
+  /** Each row's analysis in the last update, by id. */
+  private byRow = new Map<string, RowAnalysis>();
+  /** trigArguments() per plot (a plot is recompiled, as a new object, when they would change). */
+  private trigCache = new WeakMap<PlotItem, readonly Fn1[]>();
 
   /** Analyse all rows. Cheap enough to call on every keystroke. */
   update(rows: readonly RowInput[]): DocAnalysis {
@@ -375,12 +484,114 @@ export class DocumentEngine {
       ids[i] = rows[i].id;
     }
     this.analyses = nextAnalyses;
+    this.byRow = new Map(ids.map((id, i) => [id, analyses[i]]));
 
     const last = this.last;
     if (last && sameStrings(last.ids, ids) && sameStrings(last.keys, keys)) {
       return this.fastPath(analyses, last);
     }
     return this.rebuild(rows, analyses, defRows, ids, keys);
+  }
+
+  /**
+   * The names table from the last update() and its signature. The context object is kept while
+   * the signature is unchanged, so either one can key a cache of name-dependent work (the
+   * editor groups letter runs into names the same way the parser does).
+   */
+  names(): { ctx: NameContext; signature: string } {
+    return { ctx: this.ctx, signature: this.signature };
+  }
+
+  /**
+   * The user variables and functions a row's output uses directly (a definition's right side
+   * only), from the last update(): the rows a function is "used by".
+   */
+  refsOf(id: string): readonly string[] {
+    return this.byRow.get(id)?.refs ?? [];
+  }
+
+  /**
+   * Where a row's text uses the unknown names its error offers sliders for, from the last
+   * update(), in source order (a name used twice is there twice). Auto sliders read it: a name
+   * followed by `(` is more likely a function still to be defined.
+   */
+  unknownUses(id: string): readonly UnknownUse[] {
+    return this.byRow.get(id)?.unknownUses ?? [];
+  }
+
+  /**
+   * The arguments of the periodic trig calls (sin, cos, tan, sec, csc, cot, at any power) in what
+   * a row plots, compiled as functions of its variable: x for y = …, y for x = …, θ for r = …,
+   * t for both coordinates of a parametric curve, the parameter of a one-parameter function.
+   * Their slopes give a period to look for (src/plot/insights.ts). Only calls written in the row
+   * count, not those inside the user functions it calls. Null when `plot` is not what the row
+   * plots now (or it is implicit, or a point).
+   */
+  trigArguments(id: string, plot: PlotItem): readonly Fn1[] | null {
+    const last = this.last;
+    const i = last ? last.ids.indexOf(id) : -1;
+    if (!last || i < 0 || last.results[i].plot !== plot) return null;
+    const cached = this.trigCache.get(plot);
+    if (cached) return cached;
+    const cls = this.byRow.get(id)?.cls;
+    const row = cls?.ok ? cls.row : null;
+    let nodes: readonly Node[];
+    let variable: string;
+    switch (row?.kind) {
+      case 'explicitY':
+      case 'ineqY':
+        [nodes, variable] = [[row.expr], 'x'];
+        break;
+      case 'explicitX':
+      case 'ineqX':
+        [nodes, variable] = [[row.expr], 'y'];
+        break;
+      case 'polar':
+        [nodes, variable] = [[row.expr], 'θ'];
+        break;
+      case 'parametric':
+        [nodes, variable] = [[row.x, row.y], 't'];
+        break;
+      case 'funcDef':
+        if (row.params.length !== 1) return null;
+        [nodes, variable] = [[row.body], row.params[0] as string];
+        break;
+      default:
+        return null;
+    }
+    const args: Fn1[] = [];
+    try {
+      for (const node of nodes) {
+        forEachNode(node, (n) => {
+          if (n.type === 'call' && n.calleeKind === 'builtinFn' && PERIODIC.has(n.callee)) {
+            const [arg] = n.args;
+            if (arg) args.push(compile1(arg, variable, this.env));
+          }
+        });
+      }
+    } catch {
+      return null;
+    }
+    this.trigCache.set(plot, args);
+    return args;
+  }
+
+  /**
+   * Bumped whenever the shared variable storage is reallocated. Closures compiled before then
+   * read values that no longer change, so a PlotItem kept from an earlier update (the last good
+   * plot of a row being edited) is only usable while this is unchanged.
+   */
+  get globalsGeneration(): number {
+    return this.generation;
+  }
+
+  /**
+   * Which slot of the shared storage holds each defined variable. A slot stays with its name
+   * while the name is defined; once freed it can go to another name, so a kept closure reads its
+   * variables right only while each still owns its slot, or nobody does.
+   */
+  get variableSlots(): ReadonlyMap<string, number> {
+    return this.slotOf;
   }
 
   /**
@@ -449,7 +660,11 @@ export class DocumentEngine {
       }
     }
     for (const name of names) {
-      if (!this.slotOf.has(name)) this.slotOf.set(name, this.freeSlots.pop() ?? this.slotCount++);
+      if (this.slotOf.has(name)) continue;
+      // A fresh slot while the storage has room: a freed one goes to another name as late as
+      // possible (the longest freed first), since a kept closure may still read it.
+      const fresh = this.slotCount < this.globals.length || this.freeSlots.length === 0;
+      this.slotOf.set(name, fresh ? this.slotCount++ : (this.freeSlots.shift() as number));
     }
     if (this.slotCount > this.globals.length) {
       const grown = new Float64Array(Math.max(this.slotCount, this.globals.length * 2));
@@ -838,13 +1053,16 @@ function probe(c: Omit<CompiledRow, 'fp'>): void {
   }
 }
 
+/**
+ * A t or θ range's error, as the row's. Only its sliders are offered: a fix that rewrites text
+ * is for the range field's text, not the row's.
+ */
 function domainError(variable: string, inner: MathError): MathError {
-  return mathError(
-    'bad-domain',
-    `${variable} range: ${inner.message}`,
-    undefined,
-    inner.quickFix ? { quickFix: inner.quickFix } : undefined,
-  );
+  const names = sliderFixNames(inner);
+  return mathError('bad-domain', `${variable} range: ${inner.message}`, undefined, {
+    quickFix: names.length > 0 ? { kind: 'addSliders', names: [...names] } : undefined,
+    dependsOn: inner.dependsOn,
+  });
 }
 
 /**

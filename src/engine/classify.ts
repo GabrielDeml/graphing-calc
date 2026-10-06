@@ -6,8 +6,8 @@
 
 import type { BinaryNode, NameNode, Node, RelOp, Statement } from './ast';
 import type { DefinitionHead } from './definition';
-import { mathError } from './errors';
-import type { ExplicitInequality, MathError, Span } from './types';
+import { mathError, replaceFix } from './errors';
+import type { ExplicitInequality, MathError, QuickFix, Span } from './types';
 
 export interface PointNodes {
   readonly x: Node;
@@ -112,11 +112,14 @@ export function findTuple(node: Node): Node | null {
   return findNode(node, (n) => n.type === 'tuple');
 }
 
-function fail(code: string, message: string, span?: Span, hint?: string): ClassifyResult {
-  return {
-    ok: false,
-    error: mathError(code, message, span, hint === undefined ? undefined : { hint }),
-  };
+function fail(
+  code: string,
+  message: string,
+  span?: Span,
+  hint?: string,
+  quickFix?: QuickFix,
+): ClassifyResult {
+  return { ok: false, error: mathError(code, message, span, { hint, quickFix }) };
 }
 
 function ok(row: Classified): ClassifyResult {
@@ -316,10 +319,14 @@ function definitionRow(left: Node, right: Node, head: DefinitionHead): ClassifyR
     if (bad) return bad;
     const [v, span] = first(freePlotVars(right));
     if (v !== undefined) {
+      // A function of it, as the message suggests: `a = x^2` → `a(x) = x^2`.
+      const fn = `${head.name}(${v})`;
       return fail(
         'var-uses-plot-var',
-        `${head.name} can't depend on ${v}. Did you mean ${head.name}(${v}) = …?`,
+        `${head.name} can't depend on ${v}. Did you mean ${fn} = …?`,
         span,
+        undefined,
+        replaceFix(head.nameSpan, fn, `${fn} = …`),
       );
     }
     const literal = signedLiteral(right);

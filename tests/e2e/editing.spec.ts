@@ -1,4 +1,4 @@
-import { expect, exprInput, openApp, setExpr, test } from './helpers';
+import { contains, expect, exprInput, openApp, setExpr, test, worldToScreen } from './helpers';
 
 test.describe('editing rows', () => {
   test.skip(({ isMobile }) => isMobile, 'hardware keyboard and mouse');
@@ -31,6 +31,32 @@ test.describe('editing rows', () => {
     await expect(row.getByRole('alert')).toContainText("'k' is not defined");
     await page.getByRole('textbox', { name: 't maximum' }).fill('2pi');
     await expect(row.getByRole('alert')).toHaveCount(0);
+    // At rest, a bound shows typeset, its input over it unseen.
+    await page.getByRole('textbox', { name: 't maximum' }).blur();
+    await expect(page.locator('.range-bound .math-view').last()).toHaveText('2π');
+    await expect(page.getByRole('textbox', { name: 't maximum' })).toHaveCSS('opacity', '0');
+  });
+
+  test('a t bound being edited is as wide as its text', async ({ page }) => {
+    await openApp(page);
+    await setExpr(page, 0, '(cos(t), sin(2t))');
+    const max = page.getByRole('textbox', { name: 't maximum' });
+    await max.fill('2pi+1');
+    await max.blur();
+    await expect(page.locator('.range-bound .math-view').last()).toHaveText('2π+1');
+    await max.click();
+    await expect(max).toBeFocused();
+    await expect(max).toHaveCSS('opacity', '1');
+    // All of it in view, not cut to the typeset `2π+1`'s width and scrolled along.
+    const fits = () =>
+      max.evaluate(
+        (el: HTMLInputElement) => el.scrollWidth <= el.clientWidth && el.scrollLeft === 0,
+      );
+    await expect.poll(fits).toBe(true);
+    await max.press('End');
+    await max.pressSequentially('00', { delay: 30 });
+    await expect(max).toHaveValue('2pi+100');
+    await expect.poll(fits).toBe(true);
   });
 
   test('the slider thumb follows bound changes', async ({ page }) => {
@@ -40,6 +66,12 @@ test.describe('editing rows', () => {
     const max = page.getByRole('textbox', { name: 'c slider maximum' });
     await max.fill('5');
     await expect(range).toHaveJSProperty('value', '5');
+    await max.fill('10');
+    await expect(range).toHaveJSProperty('value', '7');
+    await max.fill('3pi');
+    await max.blur();
+    await expect(page.locator('.slider-max .math-view')).toHaveText('3π');
+    await expect(max).toHaveCSS('opacity', '0');
     await max.fill('10');
     await expect(range).toHaveJSProperty('value', '7');
 
@@ -81,6 +113,50 @@ test.describe('editing rows', () => {
     await expect.poll(() => input.inputValue()).not.toBe(held);
   });
 
+  test('a dragged slider shows its value over the thumb', async ({ page }) => {
+    await openApp(page);
+    await setExpr(page, 0, 'a = 0');
+    const range = page.getByTestId('slider-a');
+    const box = await range.boundingBox();
+    if (!box) throw new Error('no slider box');
+    const bubble = page.locator('.slider-bubble');
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.75, box.y + box.height / 2, { steps: 4 });
+    await expect(bubble).toBeVisible();
+    const value = (await exprInput(page, 0).inputValue()).split('=')[1].trim();
+    await expect(bubble).toHaveText(value);
+
+    // At the far end it stays inside the track (and the list doesn't scroll sideways).
+    await page.mouse.move(box.x + box.width + 20, box.y + box.height / 2, { steps: 4 });
+    await expect(exprInput(page, 0)).toHaveValue('a = 10');
+    const end = await bubble.boundingBox();
+    if (!end) throw new Error('no bubble box');
+    expect(end.x + end.width).toBeLessThanOrEqual(box.x + box.width + 1);
+    const scroller = page.locator('.panel-scroll');
+    expect(await scroller.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0);
+
+    // Near the start it would cover the row's own "a = -10", which shows the value right there.
+    await page.mouse.move(box.x + 2, box.y + box.height / 2, { steps: 8 });
+    await expect(exprInput(page, 0)).toHaveValue(/^a = -/);
+    await expect(bubble).toBeHidden();
+
+    await page.mouse.up();
+    await expect(bubble).toHaveCount(0);
+  });
+
+  test('a right click on a slider shows no bubble', async ({ page }) => {
+    await openApp(page);
+    await setExpr(page, 0, 'a = 0');
+    const box = await page.getByTestId('slider-a').boundingBox();
+    if (!box) throw new Error('no slider box');
+    // The context menu would take the button's release, leaving a bubble behind.
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down({ button: 'right' });
+    await expect(page.locator('.slider-bubble')).toHaveCount(0);
+    await page.mouse.up({ button: 'right' });
+  });
+
   test('moving a playing slider continues from the new value', async ({ page }) => {
     await openApp(page);
     await setExpr(page, 0, 'a = 0');
@@ -102,7 +178,7 @@ test.describe('editing rows', () => {
   }) => {
     await openApp(page);
     await setExpr(page, 0, 'y = x');
-    const toggle = page.getByRole('button', { name: 'Change color' });
+    const toggle = page.getByRole('button', { name: 'Change color', exact: true });
     await toggle.click();
     await expect(page.locator('.color-picker')).toBeVisible();
     await expect(toggle).toHaveAttribute('aria-expanded', 'true');
@@ -111,21 +187,49 @@ test.describe('editing rows', () => {
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
 
     await toggle.press('Enter');
-    await expect(page.getByRole('button', { name: 'Red' })).toBeFocused();
+    await expect(page.getByRole('button', { name: 'Red', exact: true })).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(page.locator('.color-picker')).toHaveCount(0);
     await expect(toggle).toBeFocused();
 
     await toggle.press('Enter');
-    await page.getByRole('button', { name: 'Purple' }).press('Enter');
+    await page.getByRole('button', { name: 'Purple', exact: true }).press('Enter');
     await expect(page.locator('.color-picker')).toHaveCount(0);
     await expect(toggle).toBeFocused();
+  });
+
+  test('every color can be picked, over the rows below the picker', async ({ page }) => {
+    await openApp(page);
+    const sources = ['y = x', 'y = 2x', 'y = 3x'];
+    for (const [i, text] of sources.entries()) await setExpr(page, i, text);
+    await exprInput(page, 0).click();
+    const toggle = page.locator('.expr-row').first().getByRole('button', { name: 'Change color' });
+    await toggle.click();
+    const names = await page
+      .locator('.color-choice')
+      .evaluateAll((els) => els.map((e) => e.getAttribute('aria-label') ?? ''));
+    expect(names.length).toBeGreaterThan(3);
+    await toggle.click();
+    for (const name of names) {
+      await toggle.click();
+      // The click fails if anything (the next row's buttons) lies over the swatch.
+      await page.getByRole('button', { name, exact: true }).click();
+      await expect(page.locator('.color-picker')).toHaveCount(0);
+      await toggle.click();
+      await expect(page.getByRole('button', { name, exact: true })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+      await toggle.click();
+    }
+    for (const [i, text] of sources.entries()) await expect(exprInput(page, i)).toHaveValue(text);
   });
 
   test('the color picker of a low row is scrolled into view', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 480 });
     await openApp(page);
-    for (let i = 0; i < 12; i++) await setExpr(page, i, `y = ${i}`);
+    // (All in view: a new curve out of it would move the graph to frame it.)
+    for (let i = 0; i < 12; i++) await setExpr(page, i, `y = ${i / 2}`);
     const scroller = page.locator('.panel-scroll');
     await scroller.evaluate((el) => {
       el.scrollTop = 0;
@@ -148,6 +252,63 @@ test.describe('editing rows', () => {
     if (!picker) throw new Error('no picker box');
     expect(picker.y + picker.height).toBeLessThanOrEqual(area.y + area.height + 1);
     expect(picker.y).toBeGreaterThanOrEqual(area.y - 1);
+  });
+
+  test('a focused row stays selected until Esc, a click on empty graph, or its deletion', async ({
+    page,
+  }) => {
+    await openApp(page);
+    await setExpr(page, 0, 'y = x');
+    const row = page.locator('.expr-row').first();
+    await expect(row).toHaveClass(/\bselected\b/);
+    // Clicking the curve moves focus to the graph, but the row stays selected; Esc there clears it.
+    const { sx, sy } = await worldToScreen(page, 1, 1);
+    await page.getByTestId('graph').click({ position: { x: sx, y: sy } });
+    await expect(exprInput(page, 0)).not.toBeFocused();
+    await expect(row).toHaveClass(/\bselected\b/);
+    await page.keyboard.press('Escape');
+    await expect(row).not.toHaveClass(/\bselected\b/);
+
+    await exprInput(page, 0).click();
+    await page.getByTestId('graph').click({ position: { x: 5, y: 5 } });
+    await expect(row).not.toHaveClass(/\bselected\b/);
+
+    await exprInput(page, 0).click();
+    await expect(row).toHaveClass(/\bselected\b/);
+    await exprInput(page, 0).press('Escape');
+    await expect(row).not.toHaveClass(/\bselected\b/);
+
+    // Esc that closes the color picker only closes the picker.
+    await exprInput(page, 0).click();
+    await row.getByRole('button', { name: 'Change color', exact: true }).click();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.color-picker')).toHaveCount(0);
+    await expect(row).toHaveClass(/\bselected\b/);
+
+    await page.getByRole('button', { name: 'Delete expression 1' }).click();
+    await expect(exprInput(page, 0)).toHaveValue('');
+    await expect(page.locator('.expr-row.selected')).toHaveCount(0);
+  });
+
+  test('Enter on an empty row moves on instead of adding more rows', async ({ page }) => {
+    await openApp(page);
+    await setExpr(page, 0, 'y = x');
+    await exprInput(page, 0).press('Enter');
+    await expect(exprInput(page, 1)).toBeFocused();
+    await exprInput(page, 1).press('Enter');
+    await exprInput(page, 1).press('Enter');
+    await expect(page.getByTestId('expr-input')).toHaveCount(2);
+    await expect(exprInput(page, 1)).toBeFocused();
+
+    // In the middle of the list, an empty row goes on to the next one.
+    await setExpr(page, 1, 'y = 2');
+    await exprInput(page, 0).press('Enter');
+    await expect(exprInput(page, 1)).toBeFocused();
+    await expect(exprInput(page, 1)).toHaveValue('');
+    await exprInput(page, 1).press('Enter');
+    await expect(exprInput(page, 2)).toBeFocused();
+    await expect(exprInput(page, 2)).toHaveValue('y = 2');
+    await expect(page.getByTestId('expr-input')).toHaveCount(4);
   });
 
   test('deleting a row from the keyboard keeps focus in the list', async ({ page }) => {
@@ -189,20 +350,25 @@ test.describe('editing rows', () => {
     await expect(exprInput(page, 0)).toHaveValue('y = x + 1');
   });
 
-  test('the error underline lines up in a scrolled input', async ({ page }) => {
+  test('the error underline lines up in a scrolled row', async ({ page }) => {
     await openApp(page);
     const input = exprInput(page, 0);
     await input.click();
-    await input.pressSequentially(`y = ${'x + '.repeat(16)}(x`);
-    await expect(page.locator('.expr-row').first().getByRole('alert')).toBeVisible();
-    const scroll = await page
-      .locator('.expr-row')
-      .first()
-      .evaluate((row) => ({
-        input: (row.querySelector('.math-input') as HTMLElement).scrollLeft,
-        mirror: (row.querySelector('.math-mirror') as HTMLElement).scrollLeft,
-      }));
-    expect(scroll.input).toBeGreaterThan(0);
-    expect(scroll.mirror).toBe(scroll.input);
+    const text = `y = ${'x + '.repeat(16)}(x`;
+    await input.pressSequentially(text);
+    const row = page.locator('.expr-row').first();
+    await expect(row.getByRole('alert')).toBeVisible();
+    // The math scrolled to keep the caret in view, and the mark on the open '(' scrolled with it.
+    const math = row.locator('.math-view').first();
+    expect(await math.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
+    const area = await math.boundingBox();
+    const mark = await math.locator('.m-mark').boundingBox();
+    const caret = await math.locator('.m-caret').boundingBox();
+    if (!area || !mark || !caret) throw new Error('no boxes');
+    await expect(math.locator('.m-mark')).toHaveText('(');
+    expect(contains(area, mark)).toBe(true);
+    expect(contains(area, caret)).toBe(true);
+    expect(mark.x).toBeLessThan(caret.x);
+    expect(await input.evaluate((el: HTMLInputElement) => el.selectionStart)).toBe(text.length);
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatCoordinate, formatSliderValue, formatValue } from './format';
+import { formatCoordinate, formatPlain, formatSliderValue, formatValue } from './format';
 
 describe('formatValue', () => {
   it.each([
@@ -95,5 +95,26 @@ describe('formatCoordinate', () => {
     [Number.POSITIVE_INFINITY, 50, '∞'],
   ])('(%d at %d px/unit) → %s', (v, ppu, expected) => {
     expect(formatCoordinate(v, ppu)).toBe(expected);
+  });
+});
+
+describe('formatPlain', () => {
+  it.each([
+    [0, 4, '0'],
+    [-0, 4, '0'],
+    [Math.SQRT2, 4, '1.414'],
+    [-Math.SQRT2, 4, '-1.414'],
+    [2.5, 4, '2.5'],
+    [12345.6, 4, '12346'],
+    [0.000123456, 4, '0.0001235'],
+    [0.99996, 4, '1'],
+    [-0.00001, 2, '-0.00001'],
+    [1.23e-15, 4, '0'],
+    [1e21, 4, '1000000000000000000000'],
+    [Number.NaN, 4, 'undefined'],
+    [Number.POSITIVE_INFINITY, 4, '∞'],
+    [Math.PI, 6, '3.14159'],
+  ])('%d to %d digits is %s', (v, digits, text) => {
+    expect(formatPlain(v, digits)).toBe(text);
   });
 });

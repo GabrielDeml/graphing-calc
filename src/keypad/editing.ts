@@ -18,6 +18,8 @@ export type EditOp =
   | { type: 'wrap'; before: string; after: string }
   /** `name(sel)` with the caret after `)`, or `name()` with the caret inside. */
   | { type: 'function'; name: string }
+  /** `^exponent` (a²), the caret after it: in a typeset row, out of the exponent. */
+  | { type: 'power'; exponent: string }
   | { type: 'backspace' }
   | { type: 'deleteForward' }
   | { type: 'left' }
@@ -50,17 +52,17 @@ function isLatin(c: number): boolean {
  * Letters that continue an identifier run, mirroring the tokenizer: Latin and Greek, except π and
  * τ, which are tokens of their own.
  */
-function isRunLetter(c: number): boolean {
+export function isRunLetter(c: number): boolean {
   if (isLatin(c)) return true;
   return ((c >= 0x391 && c <= 0x3a9) || (c >= 0x3b1 && c <= 0x3c9)) && c !== PI && c !== TAU;
 }
 
 /** Characters of an unbraced subscript, mirroring the tokenizer. */
-function isSubscriptChar(c: number): boolean {
+export function isSubscriptChar(c: number): boolean {
   return (c >= 48 && c <= 57) || isLatin(c);
 }
 
-function isSpace(c: number): boolean {
+export function isSpace(c: number): boolean {
   return (
     c === 32 ||
     (c >= 9 && c <= 13) ||
@@ -108,7 +110,7 @@ function isLowSurrogate(c: number): boolean {
 }
 
 /** Offset of the code point that ends at `p` (p > 0). */
-function prevCodePoint(text: string, p: number): number {
+export function prevCodePoint(text: string, p: number): number {
   if (p >= 2 && isLowSurrogate(text.charCodeAt(p - 1)) && isHighSurrogate(text.charCodeAt(p - 2))) {
     return p - 2;
   }
@@ -116,7 +118,7 @@ function prevCodePoint(text: string, p: number): number {
 }
 
 /** Offset just past the code point that starts at `p` (p < text.length). */
-function nextCodePoint(text: string, p: number): number {
+export function nextCodePoint(text: string, p: number): number {
   if (isHighSurrogate(text.charCodeAt(p)) && isLowSurrogate(text.charCodeAt(p + 1))) return p + 2;
   return p + 1;
 }
@@ -148,7 +150,7 @@ function identifierStart(text: string, s: number, end: number): number {
  * letter run: split from the left into the longest builtin function or constant names, else
  * single letters, so `xsin` is x·sin and `basin` is b·asin. √ and ∛ are names of their own.
  */
-function builtinNameStart(text: string, end: number): number {
+export function builtinNameStart(text: string, end: number): number {
   if (end <= 0) return -1;
   const last = text.charCodeAt(end - 1);
   if (last === SQRT_SIGN || last === CBRT_SIGN) return end - 1;
@@ -215,7 +217,7 @@ function strayCloses(text: string, start: number): number {
  * then be left unclosed, as in `sqrt((x-1‸)`, where that `)` belongs to `sqrt(`. Decides
  * type-over and whether backspace removes a `)` along with its `(`.
  */
-function isSpareClose(text: string, i: number): boolean {
+export function isSpareClose(text: string, i: number): boolean {
   return unclosedOpens(text, i) <= strayCloses(text, i + 1) + 1;
 }
 
@@ -272,7 +274,7 @@ function barContext(text: string, end: number): BarContext {
 }
 
 /** Whether the parser reads the `|` at `i` as an opening bar. */
-function barOpens(text: string, i: number): boolean {
+export function barOpens(text: string, i: number): boolean {
   const { depth, prev } = barContext(text, i);
   return depth === 0 || prev !== 'operand';
 }
@@ -281,7 +283,7 @@ function barOpens(text: string, i: number): boolean {
  * Whether typing `|` before the `|` at `i` should move past it: it closes an open absolute
  * value, or is the closing half of an empty `|‸|` template.
  */
-function barTypesOver(text: string, i: number): boolean {
+export function barTypesOver(text: string, i: number): boolean {
   const { depth, prev } = barContext(text, i);
   return depth > 0 && prev !== 'prefix';
 }
@@ -386,6 +388,8 @@ export function applyEdit(state: EditState, op: EditOp): EditState {
       return wrap(s, op.before, op.after);
     case 'function':
       return wrap(s, `${op.name}(`, ')');
+    case 'power':
+      return insert(s, `^${op.exponent}`);
     case 'backspace':
       return backspace(s);
     case 'deleteForward':

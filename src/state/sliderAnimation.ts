@@ -57,7 +57,7 @@ createRoot(() => {
       }
       direction.set(row.id, dir);
       position.set(row.id, v);
-      setSliderValue(row.id, v);
+      setSliderValue(row.id, v, 'animation');
       const after = analysis().byId.get(row.id)?.slider?.value;
       if (after === undefined) written.delete(row.id);
       else written.set(row.id, after);

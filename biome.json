@@ -30,7 +30,7 @@
   },
   "overrides": [
     {
-      "includes": ["src/engine/**", "src/plot/**", "src/keypad/**"],
+      "includes": ["src/engine/**", "src/plot/**", "src/keypad/**", "src/mathedit/**"],
       "linter": {
         "rules": {
           "style": {
@@ -38,9 +38,9 @@
               "level": "error",
               "options": {
                 "paths": {
-                  "solid-js": "Engine/plot/keypad layers must stay framework-free.",
-                  "solid-js/store": "Engine/plot/keypad layers must stay framework-free.",
-                  "solid-js/web": "Engine/plot/keypad layers must stay framework-free."
+                  "solid-js": "Engine/plot/keypad/mathedit layers must stay framework-free.",
+                  "solid-js/store": "Engine/plot/keypad/mathedit layers must stay framework-free.",
+                  "solid-js/web": "Engine/plot/keypad/mathedit layers must stay framework-free."
                 }
               }
             }

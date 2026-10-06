@@ -27,6 +27,25 @@ export interface ParametricSampleOptions {
  */
 export const MAX_PARAMETER_RANGE = 1e6;
 
+/**
+ * The part of a parameter range that is drawn: all of it, or for a longer one a window of
+ * MAX_PARAMETER_RANGE around the value nearest 0, slid back inside the range where it would
+ * run past an end. Null for an empty or infinite range. (Zoom to fit and the points of interest
+ * read the curve over the same window.)
+ */
+export function parameterWindow(min: number, max: number): [number, number] | null {
+  if (!Number.isFinite(min) || !Number.isFinite(max) || !(max > min)) return null;
+  if (max - min <= MAX_PARAMETER_RANGE) return [min, max];
+  const near0 = min > 0 ? min : max < 0 ? max : 0;
+  let lo = Math.max(min, near0 - MAX_PARAMETER_RANGE / 2);
+  let hi = lo + MAX_PARAMETER_RANGE;
+  if (hi > max) {
+    hi = max;
+    lo = hi - MAX_PARAMETER_RANGE;
+  }
+  return hi > lo ? [lo, hi] : null;
+}
+
 const MAX_DEPTH = 10;
 const EDGE_STEPS = 30;
 const MAX_STEPS = 1100;
@@ -670,25 +689,12 @@ function sampleCurve(
   view: Viewport,
   opts: ParametricSampleOptions,
 ): Polyline {
-  if (!Number.isFinite(tMin) || !Number.isFinite(tMax) || !(tMax > tMin)) {
-    return new Float64Array(0);
-  }
+  const window = parameterWindow(tMin, tMax);
+  if (!window) return new Float64Array(0);
   if (!(view.ppuX > 0 && view.ppuY > 0 && view.width > 0 && view.height > 0)) {
     return new Float64Array(0);
   }
-  let loT = tMin;
-  let hiT = tMax;
-  if (!(hiT - loT <= MAX_PARAMETER_RANGE)) {
-    // A window around the parameter value nearest 0, kept inside the range.
-    const near0 = loT > 0 ? loT : hiT < 0 ? hiT : 0;
-    loT = Math.max(tMin, near0 - MAX_PARAMETER_RANGE / 2);
-    hiT = loT + MAX_PARAMETER_RANGE;
-    if (hiT > tMax) {
-      hiT = tMax;
-      loT = hiT - MAX_PARAMETER_RANGE;
-    }
-    if (!(hiT > loT)) return new Float64Array(0);
-  }
+  const [loT, hiT] = window;
   const range = hiT - loT;
   const maxEvals = opts.maxEvals ?? DEFAULT_MAX_EVALS;
   // About 64 intervals per turn, up to a quarter of the budget, so that a long range starts from

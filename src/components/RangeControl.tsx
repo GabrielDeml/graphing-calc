@@ -1,4 +1,4 @@
-import { evalNumber } from '../state/analysis';
+import { evalNumber, nameContext } from '../state/analysis';
 import { type Row, setDomain } from '../state/doc';
 import { blurActive, MathField } from './MathField';
 
@@ -21,6 +21,7 @@ export function RangeControl(props: {
         onEnter={blurActive}
         invalid={bad(props.row.domain.min)}
         ariaLabel={`${props.variable} minimum`}
+        names={nameContext()}
       />
       <span class="range-var">≤ {props.variable} ≤</span>
       <MathField
@@ -30,6 +31,7 @@ export function RangeControl(props: {
         onEnter={blurActive}
         invalid={bad(props.row.domain.max)}
         ariaLabel={`${props.variable} maximum`}
+        names={nameContext()}
       />
     </div>
   );
