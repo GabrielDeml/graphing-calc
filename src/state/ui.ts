@@ -1,9 +1,9 @@
 import { batch, createEffect, createRoot, createSignal, on } from 'solid-js';
 import { doc } from './doc';
-import { SIDEBAR_DEFAULT } from './layout';
+import { type PanelSnap, SIDEBAR_DEFAULT } from './layout';
 import { savedState } from './persist';
 
-export type PanelSnap = 'collapsed' | 'half' | 'full';
+export type { PanelSnap } from './layout';
 
 /**
  * Layout state: desktop sidebar visibility and width and the mobile expression panel's snap height

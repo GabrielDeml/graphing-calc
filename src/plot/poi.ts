@@ -26,6 +26,7 @@
 // zooming out on sin x drops its extrema, then its roots, rather than thinning them at random. Evaluations are budgeted (sin(1/x) cannot hang).
 
 import type { Fn1, Fn2, PlotItem } from '../engine/types';
+import { parameterWindow } from './sampleParametric';
 import type { RowGeometry, Viewport } from './types';
 import { toScreenX, toScreenY, viewBounds } from './viewport';
 
@@ -103,8 +104,6 @@ const GOLD = 0.3819660112501051;
 const T_PER_TURN = 256;
 const T_MIN_SAMPLES = 512;
 const T_MAX_SAMPLES = 4096;
-/** Parameter ranges longer than this are scanned in a window (as the sampler draws them). */
-const MAX_PARAMETER_RANGE = 1e6;
 /** World-aligned grid offset, irrational so periodic inputs cannot alias with the grid. */
 const PHI = 0.3819660112501051;
 
@@ -450,14 +449,9 @@ function sampleAll(f: Fn1, us: Float64Array): Float64Array {
 
 /** The parameter range a parametric or polar curve is drawn over, and the scan's samples. */
 function paramSamples(min: number, max: number): Float64Array {
-  if (!Number.isFinite(min) || !Number.isFinite(max) || !(max > min)) return new Float64Array(0);
-  let lo = min;
-  let hi = max;
-  if (!(hi - lo <= MAX_PARAMETER_RANGE)) {
-    const near0 = lo > 0 ? lo : hi < 0 ? hi : 0;
-    lo = Math.max(min, near0 - MAX_PARAMETER_RANGE / 2);
-    hi = Math.min(max, lo + MAX_PARAMETER_RANGE);
-  }
+  const window = parameterWindow(min, max);
+  if (!window) return new Float64Array(0);
+  const [lo, hi] = window;
   let n = Math.ceil((T_PER_TURN * (hi - lo)) / (2 * Math.PI));
   n = n < T_MIN_SAMPLES ? T_MIN_SAMPLES : n > T_MAX_SAMPLES ? T_MAX_SAMPLES : n;
   const h = (hi - lo) / (n - 2 + 2 * PHI);

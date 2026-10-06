@@ -1,9 +1,13 @@
 // Short math set in a line of UI text (a fix chip's `x^2`, `log(x)/log(2)`, a slider's name):
 // italic letters, upright digits and function names, raised exponents, lowered subscripts, and
 // − · ≤ ≥ instead of - * <= >=. No fractions or radicals: it stays one line, as tall as the text
-// around it. The whole layout (src/mathedit/plan.ts) is for rows.
+// around it. The whole layout (src/mathedit/plan.ts) is for rows; a row named in a line of text
+// reads as it does there, given the document's names.
 
 import { BUILTIN_FUNCTION_NAMES } from '../engine/builtinNames';
+import { definitionContext, detectDefinition } from '../engine/definition';
+import { type NameContext, splitIdentifier } from '../engine/names';
+import { NAME_SYMBOLS, RELATION_SYMBOLS } from './plan';
 
 export interface InlinePiece {
   text: string;
@@ -14,8 +18,16 @@ export interface InlinePiece {
 }
 
 const FUNCTIONS: ReadonlySet<string> = new Set(BUILTIN_FUNCTION_NAMES);
-const GREEK: Readonly<Record<string, string>> = { pi: 'π', theta: 'θ' };
-const RELATIONS: Readonly<Record<string, string>> = { '<=': '≤', '>=': '≥' };
+
+/**
+ * The names a letter run reads as: with the document's names, as the engine splits it (`pix` is
+ * π·x, `asin` a·sin once there is a slider a); else whole.
+ */
+function namesOf(letters: string, ctx: NameContext | undefined): string[] {
+  if (!ctx) return [letters];
+  const token = { kind: 'ident' as const, text: letters, start: 0, end: letters.length };
+  return splitIdentifier(token, ctx).map((unit) => unit.name);
+}
 
 /** The end of the group opened at `open` (past its `)`), or the text's end when it isn't closed. */
 function groupEnd(text: string, open: number): number {
@@ -48,8 +60,16 @@ function operand(text: string, at: number, sub: boolean): { inner: string; end: 
   return { inner: text.slice(start, k + match.length), end: k + match.length };
 }
 
-/** `text` as pieces of inline math, all in `script` when it is an exponent's or a subscript's. */
-export function inlineMath(text: string, script?: 'sup' | 'sub'): InlinePiece[] {
+/**
+ * `text` as pieces of inline math. `names`: the document's, to read a row's letters as the
+ * engine does (else each run of letters is one name).
+ */
+export function inlineMath(text: string, names?: NameContext): InlinePiece[] {
+  return pieces(text, names && definitionContext(detectDefinition(text), names));
+}
+
+/** All in `script` when it is an exponent's or a subscript's. */
+function pieces(text: string, ctx: NameContext | undefined, script?: 'sup' | 'sub'): InlinePiece[] {
   const out: InlinePiece[] = [];
   const push = (piece: InlinePiece) => out.push(script ? { ...piece, script } : piece);
   /** The last piece ends an operand, so a sign after it is a binary operator. */
@@ -69,14 +89,15 @@ export function inlineMath(text: string, script?: 'sup' | 'sub'): InlinePiece[] 
     }
     const letters = /^\p{L}+/u.exec(rest)?.[0];
     if (letters) {
-      const greek = GREEK[letters];
-      // A subscript's letters are part of a name (`v_max`), not a function.
-      const fn = script !== 'sub' && FUNCTIONS.has(letters);
-      push({ text: greek ?? letters, role: fn ? 'fn' : 'var' });
+      // A subscript's letters are part of a name (`v_max`), not names or functions.
+      for (const name of script === 'sub' ? [letters] : namesOf(letters, ctx)) {
+        const fn = script !== 'sub' && FUNCTIONS.has(name);
+        push({ text: NAME_SYMBOLS[name] ?? name, role: fn ? 'fn' : 'var' });
+      }
       i += letters.length;
       if (text[i] === '_') {
         const { inner, end } = operand(text, i + 1, true);
-        for (const p of inlineMath(inner, 'sub')) out.push(p);
+        for (const p of pieces(inner, ctx, 'sub')) out.push(p);
         i = end;
       }
       continue;
@@ -89,11 +110,11 @@ export function inlineMath(text: string, script?: 'sup' | 'sub'): InlinePiece[] 
     }
     if (ch === '^' || rest.startsWith('**')) {
       const { inner, end } = operand(text, i + (ch === '^' ? 1 : 2), false);
-      for (const p of inlineMath(inner, 'sup')) out.push(p);
+      for (const p of pieces(inner, ctx, 'sup')) out.push(p);
       i = end;
       continue;
     }
-    const relation = RELATIONS[rest.slice(0, 2)];
+    const relation = RELATION_SYMBOLS[rest.slice(0, 2)];
     if (relation || '=<>≤≥'.includes(ch)) {
       push({ text: relation ?? ch, role: 'rel' });
       i += relation ? 2 : 1;

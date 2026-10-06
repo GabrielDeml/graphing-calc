@@ -1,3 +1,4 @@
+import { type Accessor, batch, createEffect, createSignal, onCleanup, untrack } from 'solid-js';
 import { DUR_2, EASE_OUT, reducedMotion } from '../state/motion';
 
 /**
@@ -74,4 +75,39 @@ export function leaveRow(el: HTMLElement): void {
   const remove = () => gone.remove();
   animation.addEventListener('finish', remove);
   animation.addEventListener('cancel', remove);
+}
+
+/**
+ * What a line under a row shows (its error, a chip, its insight), kept while it closes: what
+ * `source` gives, or once that is gone, what it last gave for `ms` more (`closing` meanwhile),
+ * so the line animates away still saying it. `onGone`: called whenever nothing is shown any more
+ * (at once, or once the line has closed).
+ */
+export function createClosing<T>(
+  source: () => T | null | undefined,
+  ms = DUR_2,
+  onGone?: () => void,
+): [shown: Accessor<T | undefined>, closing: Accessor<boolean>] {
+  const [shown, setShown] = createSignal<T | undefined>();
+  const [closing, setClosing] = createSignal(false);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  createEffect(() => {
+    const next = source();
+    clearTimeout(timer);
+    if (next) {
+      setShown(() => next);
+      setClosing(false);
+    } else if (untrack(shown)) {
+      setClosing(true);
+      timer = setTimeout(() => {
+        batch(() => {
+          setShown(undefined);
+          setClosing(false);
+          onGone?.();
+        });
+      }, ms);
+    } else onGone?.();
+  });
+  onCleanup(() => clearTimeout(timer));
+  return [shown, closing];
 }

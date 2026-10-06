@@ -46,6 +46,22 @@ test.describe('unknown names become sliders', () => {
     await expect(page.getByTestId('toast')).toHaveCount(0);
   });
 
+  test('Enter goes on past them, however soon it is pressed', async ({ page }) => {
+    await openApp(page);
+    const input = exprInput(page, 0);
+    await input.click();
+    await input.pressSequentially('y = a x^2', { delay: 30 });
+    // Made as typing paused, then Enter: the new row goes under the slider, as at once.
+    await expect(exprInput(page, 1)).toHaveValue('a = 1');
+    await input.press('Enter');
+    await expect(exprInput(page, 2)).toBeFocused();
+    expect(await sources(page)).toEqual(['y = a x^2', 'a = 1', '']);
+    await setExpr(page, 2, 'y = b x');
+    await exprInput(page, 2).press('Enter');
+    await expect(exprInput(page, 4)).toBeFocused();
+    expect(await sources(page)).toEqual(['y = a x^2', 'a = 1', 'y = b x', 'b = 1', '']);
+  });
+
   test('for letters a builtin starts with too, once the caret has left them', async ({ page }) => {
     await openApp(page);
     const input = exprInput(page, 0);

@@ -17,19 +17,18 @@ import {
   type InsightValue,
   rowInsight,
 } from '../plot/insights';
-import { analysis, engine } from '../state/analysis';
+import { analysis, engine, nameContext } from '../state/analysis';
 import { doc } from '../state/doc';
 import { censusHolds, insightSources } from '../state/insight';
 import { palette } from '../state/theme';
 import { ui } from '../state/ui';
 import { InlineMath } from './InlineMath';
+import { createClosing } from './rowMotion';
 
 /** A row's line is read this long after what it reads last changed (typing, a new curve)… */
 const SETTLE_MS = 300;
 /** …and while only values change (a slider playing or dragged), at most this often. */
 const THROTTLE_MS = 300;
-/** How long the line takes to close (--dur-2 in global.css). */
-const CLOSE_MS = 160;
 
 /**
  * What the line is read from. 'closed': nothing to say (no math, an error showing, a hidden
@@ -109,33 +108,14 @@ export function InsightLine(props: {
   const [insight, setInsight] = createSignal<Insight | null>(null);
   /** The line waits for its row to settle: what it says may no longer hold. */
   const [dim, setDim] = createSignal(false);
-  // The line keeps showing what it said while it closes.
-  const [shown, setShown] = createSignal<Insight | null>(null);
-  const [closing, setClosing] = createSignal(false);
-  let closeTimer: ReturnType<typeof setTimeout> | undefined;
   /**
    * The row came with its math already settled (a reload, an undo, a slider made for it): its
    * line is there at once, as the row is, rather than opening under it a moment later and
    * pushing the list down. Only that first line: one that opens later opens.
    */
   const [instant, setInstant] = createSignal(false);
-  createEffect(() => {
-    const next = insight();
-    clearTimeout(closeTimer);
-    if (next) {
-      setShown(next);
-      setClosing(false);
-    } else if (untrack(shown)) {
-      setClosing(true);
-      closeTimer = setTimeout(() => {
-        batch(() => {
-          setShown(null);
-          setClosing(false);
-          setInstant(false);
-        });
-      }, CLOSE_MS);
-    } else setInstant(false);
-  });
+  // The line keeps showing what it said while it closes.
+  const [shown, closing] = createClosing(insight, undefined, () => setInstant(false));
   let line: HTMLParagraphElement | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let lastRun = Number.NEGATIVE_INFINITY;
@@ -166,7 +146,7 @@ export function InsightLine(props: {
       setDim(true);
       return;
     }
-    const shownBefore = untrack(shown) !== null && !untrack(closing);
+    const shownBefore = untrack(shown) !== undefined && !untrack(closing);
     batch(() => {
       setDim(false);
       // The same words and places (a slider moving what the line doesn't name): left as it is.
@@ -231,7 +211,6 @@ export function InsightLine(props: {
 
   onCleanup(() => {
     clearTimeout(timer);
-    clearTimeout(closeTimer);
   });
 
   /** A line longer than the row fades out at its end (and its start, once scrolled along). */
@@ -389,7 +368,7 @@ function RowRef(props: { id: string }) {
   };
   return (
     <span class="insight-row" classList={{ colored: !!color() }} style={{ '--ref-color': color() }}>
-      <InlineMath text={row()?.source.trim() ?? ''} max={ROW_REF_MAX} />
+      <InlineMath text={row()?.source.trim() ?? ''} max={ROW_REF_MAX} names={nameContext().ctx} />
     </span>
   );
 }

@@ -91,7 +91,7 @@ Syntax notes:
   first settles into a curve, and only when none of it shows: never for a slider moving, for a
   later edit to a curve (`y = x + 1`, left, then changed to `y = x + 100` stays where you put
   the view), for a curve brought back by undo, or within two seconds of you moving the view
-  yourself. A curve without end is brought into view at the scale you had; a closed one is
+  yourself. A row emptied and typed into again holds a new curve. A curve without end is brought into view at the scale you had; a closed one is
   shown whole.
 - **Trace:** hover a curve to see its coordinates, in a pill with the curve's color; its row in the
   list lights up faintly. On touch, tap a curve to pin the trace; with a mouse, click the selected
@@ -121,7 +121,8 @@ Syntax notes:
   reaches them and the arrow keys walk from one to the next. Only what is in view is shown, and
   only while it stays readable: kinds of points that would crowd the graph are left out whole,
   extrema first and then crossings of the axes (zoomed out on `sin(x)`, its extrema go, then its
-  roots), until you zoom in. While you type in the selected row, its rings stay, faded, until the
+  roots), until you zoom in. However many curves cross it, a curve keeps rings for its own
+  points (its vertex, its roots). While you type in the selected row, its rings stay, faded, until the
   new ones are found.
 - **Insights:** a moment after a row settles, a quiet line fades in under it saying what its
   curve is, and nothing it can't check: every model is fitted on a few samples and then held to
@@ -271,7 +272,7 @@ Syntax notes:
 - **Fixes:** when an error's hint names a rewrite, the rewrite is offered as a chip on the error
   line, set as math (`x²`, `≤`): `x2` → `x^2` or `2x`, `=<` → `<=`, `==` → `=`, `2e3` →
   `2*10^3`, `sin^-1(x)` → `asin(x)`, `a = x^2` → `a(x) = x^2`, `log_2(x)` → `log(x)/log(2)`
-  (`_` after `log` types its base). The hint then only says what the chips don't. Click a chip,
+  (`_` after `log` types its base), and a group left open, `(x+1`, closes at the end. The hint then only says what the chips don't. Click a chip,
   or press `Tab` in a row you have typed in to take the first one (and the sliders chip the same
   way); `Tab` moves on as usual otherwise. A fix is one undo step of its own (typing after it is
   another), and the caret stays where it was.
@@ -284,7 +285,7 @@ Syntax notes:
   the rows (delete, a color, New graph) is scrolled into view. On a phone, the keypad's top row
   has an **Undo** key (dimmed when there is nothing to undo; pressing it keeps the caret in the
   row), and after it a toast offers **Redo**, for the step a slip took back. **New graph**,
-  deleting a row by touch, sliders made for you and rows the trace adds also
+  deleting a row by touch, sliders made for you and, on touch, rows the trace adds also
   show an Undo button for a few seconds (it waits while you point at it or it has focus).
 - **Saved automatically:** the expression list, the view and the panel layout (including the
   list's width) are kept in the browser and come back on the next visit (sliders come back

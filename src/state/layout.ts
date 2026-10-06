@@ -1,5 +1,18 @@
-// Desktop sidebar width (the expression list beside the graph). Pure, so the saved value and a
-// drag share the same bounds.
+// Desktop sidebar width (the expression list beside the graph), and the phone panel's snap
+// heights. Pure, so the saved value and a drag share the same bounds.
+
+/** The phone's expression panel heights, smallest first. */
+export type PanelSnap = 'collapsed' | 'half' | 'full';
+export const PANEL_SNAPS: readonly PanelSnap[] = ['collapsed', 'half', 'full'];
+/**
+ * The panel's share (percent) of the room it splits with the graph at each snap (collapsed: just
+ * its minimum height, which the app measures; about none of it).
+ */
+export const PANEL_SHARE: Readonly<Record<PanelSnap, number>> = {
+  collapsed: 0,
+  half: 45,
+  full: 85,
+};
 
 /** Width of a new sidebar, in CSS px. */
 export const SIDEBAR_DEFAULT = 400;

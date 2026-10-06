@@ -2,7 +2,14 @@ import { createSignal, onCleanup, onMount } from 'solid-js';
 import { doc } from '../state/doc';
 import { focusRow, revealRow } from '../state/focus';
 import { keypad } from '../state/keypad';
-import { clampSidebarWidth, SIDEBAR_DEFAULT, SIDEBAR_MIN, sidebarMaxWidth } from '../state/layout';
+import {
+  clampSidebarWidth,
+  PANEL_SHARE,
+  PANEL_SNAPS,
+  SIDEBAR_DEFAULT,
+  SIDEBAR_MIN,
+  sidebarMaxWidth,
+} from '../state/layout';
 import { mobileQuery, type PanelSnap, ui } from '../state/ui';
 import { Examples } from './Examples';
 import { ExpressionList } from './ExpressionList';
@@ -12,11 +19,9 @@ import { Icon } from './icons';
 /** Arrow keys on the sidebar's edge resize it by this much (Shift: four times as much). */
 const RESIZE_STEP_PX = 16;
 
-const SNAPS: readonly PanelSnap[] = ['collapsed', 'half', 'full'];
-
-/** Approximate panel height for each snap state: its share of the room it splits with the graph. */
+/** Approximate panel height for each snap state: its share (0…1) of the room it splits. */
 function snapFraction(snap: PanelSnap): number {
-  return snap === 'collapsed' ? 0 : snap === 'half' ? 0.45 : 0.85;
+  return PANEL_SHARE[snap] / 100;
 }
 
 export function ExpressionPanel() {
@@ -85,11 +90,11 @@ export function ExpressionPanel() {
       handle.removeEventListener('pointercancel', up);
       const frac = ui.panelDrag();
       if (!moved || frac === null) {
-        const i = SNAPS.indexOf(ui.panelSnap());
-        ui.setPanelSnap(SNAPS[(i + 1) % SNAPS.length]);
+        const i = PANEL_SNAPS.indexOf(ui.panelSnap());
+        ui.setPanelSnap(PANEL_SNAPS[(i + 1) % PANEL_SNAPS.length]);
       } else {
         let best: PanelSnap = 'half';
-        for (const s of SNAPS) {
+        for (const s of PANEL_SNAPS) {
           if (Math.abs(snapFraction(s) - frac) < Math.abs(snapFraction(best) - frac)) best = s;
         }
         ui.setPanelSnap(best);

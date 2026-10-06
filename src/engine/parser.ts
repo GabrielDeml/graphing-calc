@@ -405,7 +405,11 @@ class Parser {
   private expectClose(open: PTok): PTok {
     const t = this.peek();
     if (t.kind === 'rparen') return this.advance();
-    if (t.kind === 'eof') syntaxError('missing-rparen', "Missing ')'", spanOf(open));
+    if (t.kind === 'eof') {
+      // Closed at the end, every group still open (the editor draws them there already).
+      const close = replaceFix({ start: t.start, end: t.start }, ')'.repeat(this.parenDepth));
+      syntaxError('missing-rparen', "Missing ')'", spanOf(open), undefined, [close]);
+    }
     syntaxError(
       'unexpected-token',
       `Unexpected '${this.sourceText(t)}' inside parentheses`,

@@ -8,8 +8,7 @@
 
 import type { ViewCenter } from '../plot/types';
 import { PALETTE_SIZE } from './colors';
-import { clampSidebarWidth } from './layout';
-import type { PanelSnap } from './ui';
+import { clampSidebarWidth, PANEL_SNAPS, type PanelSnap } from './layout';
 
 /**
  * One key for every format: the `version` inside says which one it is, and MIGRATIONS upgrade
@@ -40,9 +39,13 @@ export interface SavedState {
   panelSnap?: PanelSnap;
 }
 
-const DEFAULT_SLIDER = { min: '-10', max: '10', step: '' };
-const DEFAULT_DOMAIN = { min: '0', max: '2pi' };
-const SNAPS: readonly string[] = ['collapsed', 'half', 'full'];
+/** A new row's slider bounds and parameter range (and what a saved row lacking them gets). */
+export const DEFAULT_SLIDER: Readonly<{ min: string; max: string; step: string }> = {
+  min: '-10',
+  max: '10',
+  step: '',
+};
+export const DEFAULT_DOMAIN: Readonly<{ min: string; max: string }> = { min: '0', max: '2pi' };
 
 type Json = Record<string, unknown>;
 
@@ -130,7 +133,7 @@ export function validate(data: unknown): SavedState | null {
   if (typeof data.keypad === 'boolean') state.keypad = data.keypad;
   if (typeof data.sidebarOpen === 'boolean') state.sidebarOpen = data.sidebarOpen;
   if (finite(data.sidebarWidth)) state.sidebarWidth = clampSidebarWidth(data.sidebarWidth);
-  if (typeof data.panelSnap === 'string' && SNAPS.includes(data.panelSnap)) {
+  if (typeof data.panelSnap === 'string' && (PANEL_SNAPS as string[]).includes(data.panelSnap)) {
     state.panelSnap = data.panelSnap as PanelSnap;
   }
   return state;

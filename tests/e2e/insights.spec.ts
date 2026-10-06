@@ -278,6 +278,18 @@ test.describe('framing', () => {
     expect(await place(page)).toEqual(panned);
   });
 
+  test('a row emptied and typed into again is a new curve', async ({ page }) => {
+    await openApp(page);
+    await setExpr(page, 0, 'y = x');
+    await exprInput(page, 0).press('Escape');
+    await drawn(page);
+    await exprInput(page, 0).fill('');
+    await drawn(page);
+    await exprInput(page, 0).fill('y = x + 100');
+    await exprInput(page, 0).press('Escape');
+    await expect.poll(async () => (await center(page))[1]).toBeCloseTo(100, 3);
+  });
+
   test('a curve typed key by key is framed once the typing pauses', async ({ page }) => {
     await openApp(page);
     const input = exprInput(page, 0);

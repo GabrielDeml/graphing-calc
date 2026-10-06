@@ -9,6 +9,7 @@ import { doc, isBlank } from './state/doc';
 import { focusRow } from './state/focus';
 import { attachHistoryKeys } from './state/historyUi';
 import { keypad } from './state/keypad';
+import { PANEL_SHARE } from './state/layout';
 import { DUR_2, reducedMotion } from './state/motion';
 import './state/sliderAnimation';
 import { ui } from './state/ui';
@@ -117,16 +118,9 @@ export default function App() {
   const panelRows = () => {
     const drag = ui.panelDrag();
     if (drag !== null) return { graph: `${100 - 100 * drag}fr`, panel: `${100 * drag}fr` };
-    switch (ui.panelSnap()) {
-      case 'collapsed': {
-        const share = collapsedShare();
-        return { graph: `${100 - share}fr`, panel: `${share}fr` };
-      }
-      case 'full':
-        return { graph: '15fr', panel: '85fr' };
-      default:
-        return { graph: '55fr', panel: '45fr' };
-    }
+    const snap = ui.panelSnap();
+    const share = snap === 'collapsed' ? collapsedShare() : PANEL_SHARE[snap];
+    return { graph: `${100 - share}fr`, panel: `${share}fr` };
   };
 
   return (

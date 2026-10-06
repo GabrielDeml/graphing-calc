@@ -19,6 +19,7 @@
 // equally scaled; fitCurves does so for several, an open one counted at least so big.
 
 import type { Fn1, Fn2, PlotItem } from '../engine/types';
+import { parameterWindow } from './sampleParametric';
 import type { Bounds, RowGeometry, Viewport } from './types';
 import { clampViewport, viewBounds } from './viewport';
 
@@ -41,8 +42,6 @@ const IMPLICIT_BUDGET = (MAX_WIDEN + 1 + MAX_NARROW) * (GRID + 1) ** 2;
 const EDGE_STEPS = 24;
 /** A sign change is a crossing once |F| falls below this fraction of its values at the ends. */
 const CROSS_RATIO = 1e-2;
-/** Longest parameter range sampled (as the parametric sampler draws them). */
-const MAX_PARAMETER_RANGE = 1e6;
 /** Room kept around a fitted box: this share of the view's shorter side, and at least… */
 const FIT_MARGIN = 0.08;
 /** …this many px (the controls float over the top right corner). */
@@ -195,17 +194,9 @@ function explicitBounds(f: Fn1, axis: 'x' | 'y', view: Bounds): CurveBounds | nu
   return null;
 }
 
-/** The parameter range drawn: a window of MAX_PARAMETER_RANGE around 0 for longer ones. */
-function parameterRange(min: number, max: number): [number, number] | null {
-  if (!Number.isFinite(min) || !Number.isFinite(max) || !(max > min)) return null;
-  if (max - min <= MAX_PARAMETER_RANGE) return [min, max];
-  const near0 = min > 0 ? min : max < 0 ? max : 0;
-  const lo = Math.max(min, near0 - MAX_PARAMETER_RANGE / 2);
-  return [lo, Math.min(max, lo + MAX_PARAMETER_RANGE)];
-}
-
 function pathBounds(x: Fn1, y: Fn1, min: number, max: number): CurveBounds | null {
-  const range = parameterRange(min, max);
+  // Over the parameter range drawn.
+  const range = parameterWindow(min, max);
   if (!range) return null;
   const ts = samples(range[0], range[1], 4 * SAMPLES);
   const box = robustBox(ts.map(x), ts.map(y));

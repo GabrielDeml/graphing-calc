@@ -2,7 +2,7 @@ import { batch, createSignal } from 'solid-js';
 import { createStore, produce, reconcile, unwrap } from 'solid-js/store';
 import { focusedRow, focusRow } from './focus';
 import { caretAfterChange, type EditKind, editGroup, History } from './history';
-import { type SavedRow, savedState } from './persist';
+import { DEFAULT_DOMAIN, DEFAULT_SLIDER, type SavedRow, savedState } from './persist';
 import { matchRowIds } from './rowMatch';
 
 export interface SliderSettings {
@@ -31,8 +31,8 @@ let idCounter = 0;
 function freshSettings(): Pick<Row, 'hidden' | 'slider' | 'domain'> {
   return {
     hidden: false,
-    slider: { min: '-10', max: '10', step: '', playing: false },
-    domain: { min: '0', max: '2pi' },
+    slider: { ...DEFAULT_SLIDER, playing: false },
+    domain: { ...DEFAULT_DOMAIN },
   };
 }
 

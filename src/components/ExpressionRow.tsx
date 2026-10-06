@@ -13,7 +13,7 @@ import {
 } from 'solid-js';
 import { errorFixes, hintBesideFixes, sliderFixNames } from '../engine/errors';
 import { formatValue } from '../engine/format';
-import type { MathError, QuickFix } from '../engine/types';
+import type { QuickFix } from '../engine/types';
 import { analysis, engine, nameContext, steadyRows } from '../state/analysis';
 import { offeredNames } from '../state/autoSlider';
 import {
@@ -52,12 +52,10 @@ import { InsightLine } from './InsightLine';
 import { Icon } from './icons';
 import { blurActive, MathField } from './MathField';
 import { RangeControl } from './RangeControl';
-import { enterRow, leaveRow } from './rowMotion';
+import { createClosing, enterRow, leaveRow } from './rowMotion';
 import { SliderControl } from './SliderControl';
 
 const ERROR_DELAY_MS = 500;
-/** How long a fixed error's line takes to close (--dur-2 in global.css). */
-const ERROR_CLOSE_MS = 160;
 /** A mouse resting on a row this long makes its curve stand out (passing over it does not). */
 const HOVER_INTENT_MS = 120;
 /** The pulse of a row picked on the graph (keep in sync with .expr-row.pulse in global.css). */
@@ -101,6 +99,8 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
   let typed: string | null = null;
   /** Names this row made sliders of (by itself, or with a fix): never again by itself. */
   const tried = new Set<string>();
+  /** The slider rows it made by itself (by id): Enter goes on past them. */
+  const madeIds = new Set<string>();
   /** Cancels the end of an edit waiting for a click to finish (see onBlur). */
   let cancelEnd = () => {};
 
@@ -202,44 +202,11 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
   };
 
   // The error line keeps showing a fixed error while it closes (no longer an alert by then).
-  const [shownError, setShownError] = createSignal<MathError | undefined>();
-  const [closing, setClosing] = createSignal(false);
-  let closeTimer: ReturnType<typeof setTimeout> | undefined;
-  createEffect(() => {
-    const err = error();
-    clearTimeout(closeTimer);
-    if (err) {
-      setShownError(err);
-      setClosing(false);
-    } else if (untrack(shownError)) {
-      setClosing(true);
-      closeTimer = setTimeout(() => {
-        setShownError(undefined);
-        setClosing(false);
-      }, ERROR_CLOSE_MS);
-    }
-  });
-  onCleanup(() => clearTimeout(closeTimer));
-
+  const [shownError, closing] = createClosing(error);
   // The chip closes like the error line (taken, made into sliders, or the error's line instead).
-  const [shownSuggestion, setShownSuggestion] = createSignal<readonly string[] | null>(null);
-  const [suggestClosing, setSuggestClosing] = createSignal(false);
-  let suggestCloseTimer: ReturnType<typeof setTimeout> | undefined;
-  createEffect(() => {
-    const names = shownError() ? null : suggestion();
-    clearTimeout(suggestCloseTimer);
-    if (names) {
-      setShownSuggestion(names);
-      setSuggestClosing(false);
-    } else if (untrack(shownSuggestion)) {
-      setSuggestClosing(true);
-      suggestCloseTimer = setTimeout(() => {
-        setShownSuggestion(null);
-        setSuggestClosing(false);
-      }, ERROR_CLOSE_MS);
-    }
-  });
-  onCleanup(() => clearTimeout(suggestCloseTimer));
+  const [shownSuggestion, suggestClosing] = createClosing(() =>
+    shownError() ? null : suggestion(),
+  );
 
   const rangeVariable = (): 't' | 'θ' | null => {
     const kind = shown()?.kind;
@@ -272,6 +239,7 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
       if (!input || document.activeElement !== input) return;
       const selection = { start: input.selectionStart ?? 0, end: input.selectionEnd ?? 0 };
       const made = autoAddSliders(props.row.id, 'idle', tried, selection);
+      for (const id of made.ids) madeIds.add(id);
       if (made.names.length > 0) offerUndo(sliderToast(made.names));
     }, IDLE_SLIDERS_MS);
   };
@@ -297,16 +265,22 @@ export function ExpressionRow(props: { row: Row; index: number; palette: readonl
     clearTimeout(idleTimer);
     if (!edited) return { names: [], ids: [] };
     edited = false;
-    return autoAddSliders(props.row.id, 'commit', tried);
+    const made = autoAddSliders(props.row.id, 'commit', tried);
+    for (const id of made.ids) madeIds.add(id);
+    return made;
   };
 
   /**
    * Enter, or the keypad's ↵: sliders first, then on to the row after them (a new one there, or
-   * the empty one at the end), as one undo step. Returns whether focus moved.
+   * the empty one at the end), as one undo step: after every slider right under the row that it
+   * made, now or when typing paused a moment ago. Returns whether focus moved.
    */
   const enter = (): boolean => {
     const made = commitSliders();
-    const moved = enterFrom(made.ids.at(-1) ?? props.row.id);
+    let from = props.row.id;
+    let i = doc.rows.findIndex((r) => r.id === from);
+    while (i >= 0 && madeIds.has(doc.rows[i + 1]?.id ?? '')) from = doc.rows[++i].id;
+    const moved = enterFrom(from);
     if (made.names.length > 0) offerUndo(sliderToast(made.names));
     return moved;
   };

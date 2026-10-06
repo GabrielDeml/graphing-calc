@@ -992,6 +992,12 @@ describe('quick fixes', () => {
     ['y = log_{10} x', ['y = log(x)/log(10)']],
     ['y = a log_2(x + 1)', ['+a']],
     ['y = log_2(x) + c', ['y = log(x)/log(2) + c', '+c']],
+    // An unclosed group closes at the end, all of it; an empty one has nothing to close.
+    ['y = (x+1', ['y = (x+1)']],
+    ['(cos(t), sin(2t)', ['(cos(t), sin(2t))']],
+    ['y = sin((x+1', ['y = sin((x+1))']],
+    ['y = (', []],
+    ['y = sin(', []],
   ])('%s', (source, expected) => {
     expect(fixed(source)).toEqual(expected);
   });
@@ -1021,7 +1027,15 @@ describe('quick fixes', () => {
   });
 
   it('every fix makes the row read as the hint says', () => {
-    for (const source of ['y =< x', 'y == 2x', 'y = 1e-3x', 'y = x2', 'y = sin^-1(x)', 'a = x^2']) {
+    for (const source of [
+      'y =< x',
+      'y == 2x',
+      'y = 1e-3x',
+      'y = x2',
+      'y = sin^-1(x)',
+      'a = x^2',
+      'y = (x+1',
+    ]) {
       const e = err(new DocumentEngine().update(rows(source)), 'r0');
       const fix = e.quickFix;
       if (fix?.kind !== 'replace') throw new Error(`${source}: no replace fix`);

@@ -46,6 +46,21 @@ describe('inlineMath', () => {
     expect(show(inlineMath(text))).toBe(expected);
   });
 
+  it('reads a row as the engine does, given the document names', () => {
+    const names = { vars: new Set(['a']), fns: new Map<string, number>() };
+    const none = { vars: new Set<string>(), fns: new Map<string, number>() };
+    expect(show(inlineMath('y = asin(x)', names))).toBe('y = a[sin](x)');
+    expect(show(inlineMath('y = asin(x)', none))).toBe('y = [asin](x)');
+    // The row that defines a keeps asin whole, as the engine does.
+    expect(show(inlineMath('a = asin(0.5)', names))).toBe('a = [asin](0.5)');
+    expect(show(inlineMath('y = pix', none))).toBe('y = πx');
+    expect(show(inlineMath('y = sin(tau x)', none))).toBe('y = [sin](τx)');
+    expect(show(inlineMath('y = ka_1', none))).toBe('y = ka_1');
+    // Without names, a run of letters is one name.
+    expect(show(inlineMath('y = pix'))).toBe('y = pix');
+    expect(show(inlineMath('tau'))).toBe('τ');
+  });
+
   it('keeps every character it was given, prettified', () => {
     const text = inlineMath('y = sin(x) - 2*x^2 <= 1')
       .map((p) => p.text)

@@ -210,6 +210,13 @@ describe('plotBounds', () => {
     );
     // An empty range draws nothing.
     expect(plotBounds(parametric(Math.cos, Math.sin, 1, 1), home)).toBeNull();
+    // A huge range: the window drawn (slid back from its end to its full length), all of it.
+    const b = plotBounds(
+      parametric((t) => t, Math.sin, -1e9, 1e5),
+      home,
+    );
+    expect(b?.xmin).toBeLessThan(-8.5e5);
+    expect(b?.xmax).toBeGreaterThan(0.9e5);
   });
 
   it('points', () => {

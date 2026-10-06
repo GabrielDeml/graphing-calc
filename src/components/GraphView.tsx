@@ -279,8 +279,9 @@ export function GraphView() {
 
     /**
      * Rows whose curve has been seen settled (see FRAME_SETTLE_MS): an edit to one later is no
-     * new curve, nor is one an undo brings back or a hidden one shown again. Those plotting as
-     * the graph opens (a restored list) are seen already.
+     * new curve, nor is one an undo brings back or a hidden one shown again (but one typed into
+     * a row emptied since is). Those plotting as the graph opens (a restored list) are seen
+     * already.
      */
     const seen = new Set<string>();
     /** Rows plotting for the first time, until they settle: what they were last, and a timer. */
@@ -320,6 +321,12 @@ export function GraphView() {
       for (const row of doc.rows) {
         const res = a.byId.get(row.id);
         const plots = res?.status === 'ok' && !!res.plot;
+        if (row.source.trim() === '' && (seen.has(row.id) || pending.has(row.id))) {
+          // Emptied: what is typed in it next is a new curve, not an edit of the old one.
+          clearTimeout(pending.get(row.id)?.timer);
+          pending.delete(row.id);
+          seen.delete(row.id);
+        }
         if (plots && !seen.has(row.id)) {
           const p = pending.get(row.id);
           if (!opened || row.hidden) seen.add(row.id);

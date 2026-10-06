@@ -156,7 +156,10 @@ function isSpaceChar(c: number): boolean {
 
 // ---- prettified text ----
 
-const RELATIONS: Readonly<Record<string, string>> = { '<=': '≤', '>=': '≥' };
+/** Relations typed with two characters, as they show (rows and inline math alike). */
+export const RELATION_SYMBOLS: Readonly<Record<string, string>> = { '<=': '≤', '>=': '≥' };
+/** Names that show as a symbol (rows and inline math alike). */
+export const NAME_SYMBOLS: Readonly<Record<string, string>> = { pi: 'π', tau: 'τ', theta: 'θ' };
 
 /** `*` shows as a centered dot; a typed × stays. */
 function timesText(source: string, span: Span): string {
@@ -166,10 +169,7 @@ function timesText(source: string, span: Span): string {
 function nameText(name: string): string {
   const underscore = name.indexOf('_');
   const base = underscore < 0 ? name : name.slice(0, underscore);
-  if (base === 'pi') return 'π';
-  if (base === 'tau') return 'τ';
-  if (base === 'theta') return 'θ';
-  return base;
+  return NAME_SYMBOLS[base] ?? base;
 }
 
 // ---- building ----
@@ -260,7 +260,7 @@ class Builder {
           out.push(
             sep.kind === 'comma'
               ? this.atom(',', 'punct', sep.span, 'punct')
-              : this.atom(RELATIONS[sep.text] ?? sep.text, 'rel', sep.span, 'rel'),
+              : this.atom(RELATION_SYMBOLS[sep.text] ?? sep.text, 'rel', sep.span, 'rel'),
           );
         }
       }
